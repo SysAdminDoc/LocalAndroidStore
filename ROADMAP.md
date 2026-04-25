@@ -1,6 +1,8 @@
 # Roadmap
 
-> **Document version 2** • Last revised 2026-04-25 • Author: SysAdminDoc
+> **Document version 2.1** • Last revised 2026-04-25 • Author: SysAdminDoc
+>
+> **v0.2.0 status** — *partial ship.* Items **1, 2, 3, 4, 7, 8, 11, 12, 13, 16, 17, 19, 22, 24** are merged in v0.2.0 (2026-04-25) — the security-and-attribution slice (14 of 24 Now items). Carry-forward into v0.2.1+: items **5** (`requestUserPreapproval`), **6** (`InstallConstraints`), **9** (UIDT), **10** (edge-to-edge audit pass), **14** (status-bar contrast tokens), **15** (Developer Verification preflight UX), **18** (Tink migration off security-crypto), **20** (multi-org UI), **21** (search + fuzzy filter), **23** (DataStore migration framework). The Now tier doesn't roll over to "Next" until those land.
 >
 > This is a working document, not a marketing page. Each item is tagged with **Impact (1–5)** and **Effort (1–5)** and links back to a primary source. Tier labels: **Now (v0.2.0)** / **Next (v0.3.0)** / **Later (v0.4.0+)** / **Under Consideration** / **Rejected**. Every claim cites a URL in the [Appendix](#appendix--sources).
 

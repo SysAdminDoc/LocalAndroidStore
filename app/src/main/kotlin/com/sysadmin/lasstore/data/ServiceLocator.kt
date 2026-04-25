@@ -22,6 +22,8 @@ object ServiceLocator {
         private set
     lateinit var installer: PackageInstallerService
         private set
+    lateinit var audit: InstallAuditLog
+        private set
 
     fun init(context: Context) {
         appContext = context.applicationContext
@@ -32,5 +34,6 @@ object ServiceLocator {
         installState = InstallStateRepo(appContext)
         github = GitHubClient(patProvider = { secrets.getPat() }, logger = logger)
         installer = PackageInstallerService(appContext, logger)
+        audit = InstallAuditLog(appContext)
     }
 }

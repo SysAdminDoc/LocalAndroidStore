@@ -16,8 +16,8 @@ android {
         applicationId = "com.sysadmin.lasstore"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -99,4 +99,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // apksig for lineage-aware signature verification (handles APK Signature
+    // Scheme v3 / v3.1 key rotation). Plain Java library, fine on Android.
+    implementation("com.android.tools.build:apksig:8.7.3")
 }

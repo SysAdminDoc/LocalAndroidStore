@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Single-color glyph for Android 13+ Themed Icons.
+  Same storefront silhouette as the foreground, drawn with the system tint
+  color (#FFFFFFFF in this layer; system retints at runtime).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Antennae dots and lines -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M44,34 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M64,34 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.6"
+        android:fillColor="#00000000"
+        android:pathData="M44,34 L48,40 M64,34 L60,40" />
+    <!-- Awning (filled) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M30,40 L78,40 L74,52 L34,52 Z" />
+    <!-- Body outline -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.5"
+        android:fillColor="#00000000"
+        android:pathData="M34,52 L74,52 L74,76 L34,76 Z" />
+    <!-- Door -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M48,58 L60,58 L60,76 L48,76 Z" />
+    <!-- Right window outline -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.4"
+        android:fillColor="#00000000"
+        android:pathData="M64,58 L72,58 L72,68 L64,68 Z" />
+</vector>

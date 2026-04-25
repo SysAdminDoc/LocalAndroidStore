@@ -8,7 +8,7 @@
 </h1>
 
 <p align="center">
-  <a href="https://github.com/SysAdminDoc/LocalAndroidStore/releases"><img src="https://img.shields.io/badge/version-0.1.0-cba6f7?style=for-the-badge" alt="Version" /></a>
+  <a href="https://github.com/SysAdminDoc/LocalAndroidStore/releases"><img src="https://img.shields.io/badge/version-0.2.0-cba6f7?style=for-the-badge" alt="Version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a6e3a1?style=for-the-badge" alt="License" /></a>
   <a href="https://developer.android.com/about/versions/oreo"><img src="https://img.shields.io/badge/Android-8.0%2B-74c7ec?style=for-the-badge" alt="Android 8.0+" /></a>
   <a href="https://kotlinlang.org/"><img src="https://img.shields.io/badge/Kotlin-2.1-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin" /></a>
@@ -176,11 +176,52 @@ See [ROADMAP.md](ROADMAP.md). Highlights:
 
 ---
 
+## Threat model
+
+LocalAndroidStore is in your trust boundary — once you grant it "Install unknown apps," it can install any APK on your device. Be honest about what that means.
+
+**What you trust:**
+
+- **The GitHub repo owner** of every catalog source you add. If they ship malware, LAS will install it. Signature pinning catches a *change* in publisher key, not a publisher who was malicious from the start.
+- **GitHub's TLS chain** to `api.github.com` and `objects.githubusercontent.com`. v0.2 pins these at the root CA SPKI (DigiCert + ISRG backup); a leaf-cert MITM cannot forge an APK download as long as the root CA isn't compromised.
+- **OkHttp 4.12+** — known-CVE-clean as of 2026-04-25.
+- **The Android platform's `PackageInstaller.Session` + `apksig`** for verifying signatures. Both are first-party Google code.
+- **LocalAndroidStore itself.** The signed v0.2 APK is reproducible from this repo + the cert SHA-256 published in CHANGELOG. Anyone can rebuild and compare. The publisher key (`9c6a9276…e6ebd3a0d`) is the project's identity — if it leaks, the project is compromised; mitigation is rotating the key and getting users to verify the new lineage manually.
+
+**What you don't trust:**
+
+- A *new* publisher key on a previously-installed app. v0.2 hard-rejects an unannounced key swap. Legitimate Android Signature Scheme v3 / v3.1 rotations (pin in the new APK's signing-cert lineage) are accepted automatically and the pin rolls forward.
+- A re-signed APK delivered via a hostile network. Even if a CA-issued leaf is compromised, the SPKI pinset means the APK download itself fails. Even if it succeeded, the signature pin rejects it.
+- A competing installer trying to silently update an LAS-installed app. v0.2 claims update ownership on first install (Android 14+), so other installers must show the user a system dialog before overwriting.
+- Anything LAS-installed targeting Accessibility / Notification Listener / Device Admin without your conscious consent. v0.2 declares `PACKAGE_SOURCE_STORE` so downstream apps don't get a free pass on Restricted Settings — *you still have to flip those toggles per-app*.
+
+**What we're not in the business of:**
+
+- We don't ship telemetry. Crash logs are local only (`<files>/logs/crash.log` + `install.log`).
+- We don't run silent installs. Stock Android doesn't allow it without device-owner status; the system dialog is unavoidable on first install of every catalog app. v0.4 will offer Shizuku as an opt-in tier-2 path.
+- We don't fetch a second APK at runtime. The APK staged for install is the APK published on GitHub Releases; nothing else.
+- We don't share your installed-app list with anyone.
+
+**How to verify a release yourself:**
+
+```bash
+# Compare the cert SHA-256 with the value in CHANGELOG.md
+apksigner verify --print-certs LocalAndroidStore-v0.2.0.apk
+
+# Compare the APK SHA-256 with the released sidecar
+sha256sum -c LocalAndroidStore-v0.2.0.apk.sha256
+```
+
+If either fails, treat the binary as untrusted and report it.
+
+---
+
 ## Limitations
 
-- No silent install. Stock Android doesn't allow it for non-device-owner apps. The system install dialog appears once per install.
+- No silent install. Stock Android doesn't allow it for non-device-owner apps. The system install dialog appears once per install. v0.4 will add Shizuku as an opt-in tier-2 path.
 - Uninstall opens the system uninstall confirmation. We can't bypass it without device-owner / Work Profile admin.
-- Catalog refresh and APK download happen on-tap; v0.2.0 will add scheduled background refresh.
+- Catalog refresh and APK download happen on-tap; v0.4 adds scheduled background refresh via WorkManager.
+- Multi-user / multi-org catalog UI lands in v0.3.
 
 ---
 

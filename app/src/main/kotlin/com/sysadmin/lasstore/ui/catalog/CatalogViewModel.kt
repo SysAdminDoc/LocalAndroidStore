@@ -110,13 +110,31 @@ class CatalogViewModel : ViewModel() {
                 }
 
                 // Signature pinning — block silent publisher swap.
+                // Allow legitimate v3 / v3.1 key rotations: if the new APK's lineage contains
+                // our pinned cert, accept it; the platform itself enforces "new cert was signed
+                // by previous". A pin mismatch with no lineage support is a hard reject.
                 val pinned = sl.secrets.getPin(meta.applicationId)
                 val installedAlready = sl.installState.info(meta.applicationId) != null
-                if (pinned != null && pinned.isNotEmpty() && pinned != meta.signingSha256) {
+                val pinAccepted = when {
+                    pinned.isNullOrEmpty() -> true   // no prior pin → first install captures it below
+                    pinned == meta.signingSha256 -> true
+                    pinned in meta.lineageSha256 -> {
+                        sl.logger.info(
+                            "Install",
+                            "Pinned cert $pinned appears in v3 lineage of ${meta.applicationId}; " +
+                                "accepting legitimate key rotation to ${meta.signingSha256}"
+                        )
+                        true
+                    }
+                    else -> false
+                }
+                if (!pinAccepted) {
                     sl.logger.error(
                         "Install",
-                        "Signature pin mismatch for ${meta.applicationId}: pinned=$pinned actual=${meta.signingSha256}"
+                        "Signature pin mismatch for ${meta.applicationId}: pinned=$pinned " +
+                            "actual=${meta.signingSha256} lineage=${meta.lineageSha256}"
                     )
+                    sl.audit.installBlocked(card.info, meta, reason = "signature_pin_mismatch")
                     updateCard(card.info) {
                         it.copy(
                             status = CardStatus.SignatureMismatch,
@@ -128,11 +146,25 @@ class CatalogViewModel : ViewModel() {
                 }
 
                 updateCard(card.info) { it.copy(message = "Installing…") }
-                val result = sl.installer.installApk(target)
+                val result = sl.installer.installApk(
+                    apk = target,
+                    firstInstall = !installedAlready,
+                    referrerUri = android.net.Uri.parse(card.info.asset.browserDownloadUrl),
+                )
                 when (result) {
                     is InstallResult.Success -> {
-                        // First successful install pins the signing cert.
-                        if (pinned == null) sl.secrets.setPin(meta.applicationId, meta.signingSha256)
+                        // Pin management: first install captures the cert; legitimate v3
+                        // lineage rotation rolls the pin forward to the new cert.
+                        if (pinned.isNullOrEmpty()) {
+                            sl.secrets.setPin(meta.applicationId, meta.signingSha256)
+                        } else if (pinned != meta.signingSha256 && pinned in meta.lineageSha256) {
+                            sl.secrets.setPin(meta.applicationId, meta.signingSha256)
+                            sl.logger.info(
+                                "Install",
+                                "Rolled pin forward for ${meta.applicationId}: $pinned -> ${meta.signingSha256}"
+                            )
+                        }
+                        sl.audit.installSucceeded(card.info, meta)
                         sl.logger.info("Install", "Installed ${meta.applicationId} ${meta.versionName}")
                         // Refresh installed-state row.
                         val installedInfo = sl.installState.info(meta.applicationId)
@@ -152,6 +184,7 @@ class CatalogViewModel : ViewModel() {
                         }
                     }
                     is InstallResult.Failure -> {
+                        sl.audit.installFailed(card.info, meta, result.message)
                         sl.logger.warn("Install", "Install failed for ${meta.applicationId}: ${result.message}")
                         updateCard(card.info) { it.copy(status = CardStatus.Error, message = result.message) }
                     }
@@ -166,6 +199,7 @@ class CatalogViewModel : ViewModel() {
     fun uninstall(card: CardState) {
         val applicationId = card.info.applicationId ?: return
         sl.installer.openAppInfo(applicationId)
+        sl.audit.uninstallInitiated(applicationId, card.info.handle)
         sl.logger.info("Uninstall", "Opened delete intent for $applicationId")
         // We let the user finish; on next refresh InstallStateRepo will catch up.
     }

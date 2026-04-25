@@ -9,6 +9,7 @@ import android.content.IntentSender
 import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
+import android.os.Process
 import android.provider.Settings
 import com.sysadmin.lasstore.data.Logger
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -55,13 +56,41 @@ class PackageInstallerService(
      * confirmation dialog — that is required on stock Android (we are not device-owner).
      *
      * Suspends until the system reports success/failure/cancel via the status receiver.
+     *
+     * @param firstInstall true if no prior version of [applicationId] is currently installed.
+     *                     When true on Android 14+ we claim update-ownership so that no other
+     *                     installer can silently overwrite our pinned APK. No-op on subsequent
+     *                     updates (the platform only honors the claim on first install).
+     * @param referrerUri  the upstream URL the APK was downloaded from. Surfaces in the system
+     *                     "App info → Installed from" UI for forensics.
      */
-    suspend fun installApk(apk: File): InstallResult = suspendCancellableCoroutine { cont ->
+    suspend fun installApk(
+        apk: File,
+        firstInstall: Boolean = true,
+        referrerUri: Uri? = null,
+    ): InstallResult = suspendCancellableCoroutine { cont ->
         val pi = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         params.setAppPackageName(null)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
+        }
+        // Item 3: explicit installer attribution.
+        params.setInstallerPackageName(context.packageName)
+        params.setOriginatingUid(Process.myUid())
+        if (referrerUri != null) {
+            params.setReferrerUri(referrerUri)
+        }
+        // Item 2: declare we are a curated store, not a one-off browser-download.
+        // Improves downstream apps' UX on Android 13+ (Restricted Settings exemption).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            params.setPackageSource(PackageInstaller.PACKAGE_SOURCE_STORE)
+        }
+        // Item 1: claim update ownership on first install (Android 14+).
+        // The platform ignores this on updates, but ignoring it on first install means
+        // a competing installer can later silently overwrite our pinned APK.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && firstInstall) {
+            params.setRequestUpdateOwnership(true)
         }
 
         val sessionId = try {
@@ -98,7 +127,7 @@ class PackageInstallerService(
                     PackageInstaller.STATUS_FAILURE_STORAGE -> {
                         runCatching { ctx.unregisterReceiver(this) }
                         if (cont.isActive) cont.resume(
-                            InstallResult.Failure("status=$status $message".trim())
+                            InstallResult.Failure(decodeFailure(status, message))
                         )
                     }
                 }
@@ -149,4 +178,32 @@ class PackageInstallerService(
 sealed interface InstallResult {
     data object Success : InstallResult
     data class Failure(val message: String) : InstallResult
+}
+
+/**
+ * Translate a [PackageInstaller] EXTRA_STATUS code + EXTRA_STATUS_MESSAGE into a single
+ * user-facing string. Replaces Android's generic "App not installed" with concrete causes.
+ */
+private fun decodeFailure(status: Int, systemMessage: String): String {
+    val cause = when (status) {
+        PackageInstaller.STATUS_FAILURE_ABORTED ->
+            "Install cancelled."
+        PackageInstaller.STATUS_FAILURE_BLOCKED ->
+            "Install blocked by the system. The device may be in a restricted state " +
+                "(work profile, parental controls, or kiosk mode)."
+        PackageInstaller.STATUS_FAILURE_CONFLICT ->
+            "A different version of this app is already installed and the signatures don't " +
+                "match. Uninstall the existing copy first."
+        PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
+            "This APK isn't compatible with your device. It may target a newer Android " +
+                "version, require an ABI your device doesn't have, or need more storage."
+        PackageInstaller.STATUS_FAILURE_INVALID ->
+            "The APK file is corrupt, unsigned, or its signing certificate doesn't match " +
+                "the installed copy."
+        PackageInstaller.STATUS_FAILURE_STORAGE ->
+            "Not enough storage to install. Free up space and try again."
+        else ->
+            "Install failed."
+    }
+    return if (systemMessage.isBlank()) cause else "$cause ($systemMessage)"
 }
