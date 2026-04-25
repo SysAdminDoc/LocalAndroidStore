@@ -5,6 +5,8 @@ import com.sysadmin.lasstore.data.GhAsset
 data class AppInfo(
     val owner: String,
     val repo: String,
+    val sourceKey: String,
+    val sourceLabel: String,
     val displayName: String,
     val description: String?,
     val stars: Int,

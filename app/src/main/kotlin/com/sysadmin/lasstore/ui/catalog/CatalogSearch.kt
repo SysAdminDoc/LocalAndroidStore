@@ -45,6 +45,7 @@ private fun CardState.searchFields(): List<String> = listOfNotNull(
     info.displayName,
     info.repo,
     info.owner,
+    info.sourceLabel,
     info.handle,
     info.description,
     info.tagName,

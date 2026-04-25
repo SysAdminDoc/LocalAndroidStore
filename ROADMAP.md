@@ -2,7 +2,7 @@
 
 > **Document version 2.1** • Last revised 2026-04-25 • Author: SysAdminDoc
 >
-> **v0.2.0 status** — *partial ship.* Items **1, 2, 3, 4, 7, 8, 11, 12, 13, 16, 17, 19, 22, 24** are merged in v0.2.0 (2026-04-25) — the security-and-attribution slice (14 of 24 Now items). A v0.2.1 implementation pass completed items **10** (edge-to-edge audit), **14** (status/nav bar contrast), **21** (catalog search + fuzzy filter), and **23** (DataStore migration framework). Carry-forward into v0.2.1+: items **5** (`requestUserPreapproval`), **6** (`InstallConstraints`), **9** (UIDT), **15** (Developer Verification preflight UX), **18** (Tink migration off security-crypto), **20** (multi-org UI). The Now tier doesn't roll over to "Next" until those land.
+> **v0.2.0 status** — *partial ship.* Items **1, 2, 3, 4, 7, 8, 11, 12, 13, 16, 17, 19, 22, 24** are merged in v0.2.0 (2026-04-25) — the security-and-attribution slice (14 of 24 Now items). A v0.2.1 implementation pass completed items **10** (edge-to-edge audit), **14** (status/nav bar contrast), **20** (multi-org UI), **21** (catalog search + fuzzy filter), and **23** (DataStore migration framework). Carry-forward into v0.2.1+: items **5** (`requestUserPreapproval`), **6** (`InstallConstraints`), **9** (UIDT), **15** (Developer Verification preflight UX), and **18** (Tink migration off security-crypto). The Now tier doesn't roll over to "Next" until those land.
 >
 > This is a working document, not a marketing page. Each item is tagged with **Impact (1–5)** and **Effort (1–5)** and links back to a primary source. Tier labels: **Now (v0.2.0)** / **Next (v0.3.0)** / **Later (v0.4.0+)** / **Under Consideration** / **Rejected**. Every claim cites a URL in the [Appendix](#appendix--sources).
 
@@ -100,7 +100,7 @@ Theme distribution: **T-COMPLIANCE × 6, T-INSTALL × 5, T-SEC × 4, T-UPDATE ×
 
 ### Theme: Catalog UX (smallest viable set)
 
-20. **Multi-org / multi-source UI** [I 5 / E 3] — Settings screen lists configured GitHub users / orgs; per-source toggle, per-source PAT, per-source topic-filter. Default = `SysAdminDoc`. **Top demand item** — F-Droid #1601, Obtainium #2013, Droid-ify #18. Direct user request (existing v0.5 placeholder). Sources: [E26, E120, E134].
+20. **Multi-org / multi-source UI** [I 5 / E 3] — **Done in v0.2.1 pass.** Settings now lists configured GitHub users / orgs with per-source enablement, PAT, topic filter, and pre-release controls. Catalog discovery aggregates enabled sources, uses source-specific credentials for private repo listing and APK downloads, labels cards by source when needed, and searches by source name. Default remains `SysAdminDoc`. Sources: [E26, E120, E134].
 21. **Search + fuzzy filter on catalog** [I 4 / E 2] — **Done in v0.2.1 pass.** Catalog has a top search field that matches app name, repo owner/handle, description, tag, version, and package id; ranking prefers exact and prefix hits, supports compact-name subsequence matches, and shows count + no-match recovery. Covered by focused JVM unit tests. Sources: [E5, F-Droid #336, F-Droid #2008, Droid-ify #87].
 
 ### Theme: Observability

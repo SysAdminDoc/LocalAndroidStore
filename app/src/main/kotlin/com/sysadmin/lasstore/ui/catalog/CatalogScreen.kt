@@ -114,7 +114,7 @@ fun CatalogScreen(viewModel: CatalogViewModel = viewModel()) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(visibleCards, key = { "${it.info.owner}/${it.info.repo}" }) { card ->
+                    items(visibleCards, key = { "${it.info.sourceKey}/${it.info.owner}/${it.info.repo}" }) { card ->
                         AppCard(
                             state = card,
                             onInstall = { viewModel.install(card) },

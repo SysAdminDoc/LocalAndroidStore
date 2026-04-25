@@ -2,7 +2,6 @@ package com.sysadmin.lasstore.ui.catalog
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.sysadmin.lasstore.data.AppSettings
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.domain.AppInfo
 import com.sysadmin.lasstore.domain.CardStatus
@@ -37,7 +36,9 @@ data class CatalogUiState(
 
 class CatalogViewModel : ViewModel() {
     private val sl = ServiceLocator
-    private val discovery = DiscoveryUseCase(sl.github, sl.logger)
+    private val discovery = DiscoveryUseCase(sl.github, sl.logger) { sourceKey ->
+        sl.settings.getPat(sourceKey)
+    }
 
     private val _state = MutableStateFlow(CatalogUiState())
     val state: StateFlow<CatalogUiState> = _state.asStateFlow()
@@ -60,11 +61,15 @@ class CatalogViewModel : ViewModel() {
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
             _state.update { it.copy(refreshing = true, errorMessage = null) }
-            val settings: AppSettings = sl.settings.flow.first()
-            val infos = runCatching { discovery.discover(settings) }
+            val settings = sl.settings.flow.first()
+            val enabledSources = settings.sources.filter { it.enabled }
+            val infos = runCatching { discovery.discover(settings.sources) }
                 .onFailure { sl.logger.error("Catalog", "discover failed", it) }
                 .getOrElse { emptyList() }
-            sl.logger.info("Catalog", "Discovered ${infos.size} APK-bearing repos for ${settings.githubUser}")
+            sl.logger.info(
+                "Catalog",
+                "Discovered ${infos.size} APK-bearing repos across ${enabledSources.size} enabled sources"
+            )
             val cards = infos.map { info -> buildCardState(info) }
             _state.update { it.copy(refreshing = false, cards = cards) }
         }
@@ -102,7 +107,11 @@ class CatalogViewModel : ViewModel() {
             try {
                 val cacheDir = File(sl.appContext.cacheDir, "apks").apply { mkdirs() }
                 val target = File(cacheDir, "${card.info.owner}_${card.info.repo}_${card.info.tagName}.apk")
-                sl.github.download(card.info.asset.browserDownloadUrl, target) { d, t ->
+                sl.github.download(
+                    url = card.info.asset.browserDownloadUrl,
+                    target = target,
+                    patOverride = sl.settings.getPat(card.info.sourceKey),
+                ) { d, t ->
                     val frac = if (t > 0) (d.toFloat() / t.toFloat()).coerceIn(0f, 1f) else 0f
                     updateCard(card.info) { it.copy(progress = frac, message = "Downloading… ${(frac * 100).toInt()}%") }
                 }
@@ -227,7 +236,11 @@ class CatalogViewModel : ViewModel() {
     private fun updateCard(info: AppInfo, transform: (CardState) -> CardState) {
         _state.update { ui ->
             ui.copy(cards = ui.cards.map {
-                if (it.info.owner == info.owner && it.info.repo == info.repo) transform(it) else it
+                if (it.info.sourceKey == info.sourceKey && it.info.owner == info.owner && it.info.repo == info.repo) {
+                    transform(it)
+                } else {
+                    it
+                }
             })
         }
     }

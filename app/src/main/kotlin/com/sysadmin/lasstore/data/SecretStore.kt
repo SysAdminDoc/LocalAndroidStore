@@ -38,6 +38,20 @@ class SecretStore(context: Context) {
         prefs.edit().putString(KEY_PAT, pat).apply()
     }
 
+    fun getPat(sourceKey: String): String =
+        prefs.getString(sourcePatKey(sourceKey), null) ?: getPat()
+
+    fun setPat(sourceKey: String, pat: String) {
+        val key = sourcePatKey(sourceKey)
+        prefs.edit().apply {
+            if (pat.isBlank()) {
+                remove(key)
+            } else {
+                putString(key, pat.trim())
+            }
+        }.apply()
+    }
+
     fun getPin(packageName: String): String? = prefs.getString("pin_$packageName", null)
     fun setPin(packageName: String, sha256Hex: String) {
         prefs.edit().putString("pin_$packageName", sha256Hex).apply()
@@ -45,6 +59,8 @@ class SecretStore(context: Context) {
     fun clearPin(packageName: String) {
         prefs.edit().remove("pin_$packageName").apply()
     }
+
+    private fun sourcePatKey(sourceKey: String): String = "github_pat_source_$sourceKey"
 
     companion object { private const val KEY_PAT = "github_pat" }
 }

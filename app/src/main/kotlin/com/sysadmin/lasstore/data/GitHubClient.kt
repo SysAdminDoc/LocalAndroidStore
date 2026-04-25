@@ -13,6 +13,9 @@ import okio.buffer
 import okio.sink
 import java.io.File
 import java.io.IOException
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 @Serializable
@@ -68,8 +71,8 @@ class GitHubClient(
         coerceInputValues = true
     }
 
-    private fun authHeaders(): Map<String, String> {
-        val pat = patProvider().trim()
+    private fun authHeaders(patOverride: String? = null): Map<String, String> {
+        val pat = (patOverride ?: patProvider()).trim()
         val base = mapOf(
             "Accept" to "application/vnd.github+json",
             "X-GitHub-Api-Version" to "2022-11-28",
@@ -78,44 +81,62 @@ class GitHubClient(
         return if (pat.isNotEmpty()) base + ("Authorization" to "Bearer $pat") else base
     }
 
-    suspend fun listUserRepos(user: String): List<GhRepo> = withContext(Dispatchers.IO) {
-        val out = mutableListOf<GhRepo>()
-        var page = 1
-        while (true) {
-            val url = "https://api.github.com/users/${user}/repos?per_page=100&type=owner&sort=updated&page=$page"
-            val body = getJson(url)
-            val batch = json.decodeFromString<List<GhRepo>>(body)
-            if (batch.isEmpty()) break
-            out += batch
-            if (batch.size < 100) break
-            page += 1
-            if (page > 10) break // 1000-repo cap, defensive
+    suspend fun listUserRepos(user: String, patOverride: String? = null): List<GhRepo> = withContext(Dispatchers.IO) {
+        val source = user.trim()
+        val sourcePath = encodePathSegment(source)
+        val publicRepos = listReposPaged(
+            urlForPage = { page ->
+                "https://api.github.com/users/$sourcePath/repos?per_page=100&type=owner&sort=updated&page=$page"
+            },
+            patOverride = patOverride,
+        )
+        val authenticatedRepos = if (hasAuth(patOverride)) {
+            listReposPaged(
+                urlForPage = { page ->
+                    "https://api.github.com/user/repos?" +
+                        "per_page=100&visibility=all&affiliation=owner,organization_member&sort=updated&page=$page"
+                },
+                patOverride = patOverride,
+            ).filter { it.owner.login.equals(source, ignoreCase = true) }
+        } else {
+            emptyList()
         }
-        out
+        (publicRepos + authenticatedRepos)
+            .distinctBy { it.fullName.lowercase(Locale.US) }
     }
 
-    suspend fun latestRelease(owner: String, repo: String, includePrereleases: Boolean): GhRelease? =
+    suspend fun latestRelease(
+        owner: String,
+        repo: String,
+        includePrereleases: Boolean,
+        patOverride: String? = null,
+    ): GhRelease? =
         withContext(Dispatchers.IO) {
             if (includePrereleases) {
                 val list = runCatching {
                     json.decodeFromString<List<GhRelease>>(
-                        getJson("https://api.github.com/repos/$owner/$repo/releases?per_page=10")
+                        getJson("https://api.github.com/repos/$owner/$repo/releases?per_page=10", patOverride)
                     )
                 }.getOrElse { return@withContext null }
                 list.firstOrNull { !it.draft }
             } else {
                 runCatching {
                     json.decodeFromString<GhRelease>(
-                        getJson("https://api.github.com/repos/$owner/$repo/releases/latest")
+                        getJson("https://api.github.com/repos/$owner/$repo/releases/latest", patOverride)
                     )
                 }.getOrNull()
             }
         }
 
-    suspend fun download(url: String, target: File, onProgress: (downloaded: Long, total: Long) -> Unit): File =
+    suspend fun download(
+        url: String,
+        target: File,
+        patOverride: String? = null,
+        onProgress: (downloaded: Long, total: Long) -> Unit,
+    ): File =
         withContext(Dispatchers.IO) {
             val req = Request.Builder().url(url).apply {
-                authHeaders().forEach { (k, v) -> header(k, v) }
+                authHeaders(patOverride).forEach { (k, v) -> header(k, v) }
             }.build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) throw IOException("HTTP ${resp.code} downloading $url")
@@ -144,9 +165,9 @@ class GitHubClient(
             target
         }
 
-    private fun getJson(url: String): String {
+    private fun getJson(url: String, patOverride: String? = null): String {
         val req = Request.Builder().url(url).apply {
-            authHeaders().forEach { (k, v) -> header(k, v) }
+            authHeaders(patOverride).forEach { (k, v) -> header(k, v) }
         }.build()
         client.newCall(req).execute().use { resp ->
             if (resp.code == 404) return "[]"
@@ -157,4 +178,24 @@ class GitHubClient(
             return resp.body?.string() ?: "[]"
         }
     }
+
+    private fun listReposPaged(urlForPage: (Int) -> String, patOverride: String?): List<GhRepo> {
+        val out = mutableListOf<GhRepo>()
+        var page = 1
+        while (true) {
+            val body = getJson(urlForPage(page), patOverride)
+            val batch = json.decodeFromString<List<GhRepo>>(body)
+            if (batch.isEmpty()) break
+            out += batch
+            if (batch.size < 100) break
+            page += 1
+            if (page > 10) break // 1000-repo cap, defensive
+        }
+        return out
+    }
+
+    private fun hasAuth(patOverride: String?): Boolean = (patOverride ?: patProvider()).trim().isNotEmpty()
+
+    private fun encodePathSegment(value: String): String =
+        URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")
 }

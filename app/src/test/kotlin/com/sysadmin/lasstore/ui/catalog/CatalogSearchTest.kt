@@ -63,6 +63,8 @@ class CatalogSearchTest {
         info = AppInfo(
             owner = "SysAdminDoc",
             repo = repo,
+            sourceKey = "sysadmindoc",
+            sourceLabel = "SysAdminDoc",
             displayName = name,
             description = description,
             stars = stars,

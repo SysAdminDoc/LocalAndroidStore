@@ -3,6 +3,7 @@ package com.sysadmin.lasstore.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sysadmin.lasstore.data.AppSettings
+import com.sysadmin.lasstore.data.GitHubSource
 import com.sysadmin.lasstore.data.ServiceLocator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,7 +14,7 @@ import kotlinx.coroutines.launch
 
 data class SettingsUiState(
     val settings: AppSettings = AppSettings(),
-    val pat: String = "",
+    val sourcePats: Map<String, String> = emptyMap(),
     val encryptedAtRest: Boolean = true,
     val savedAt: Long = 0L,
 )
@@ -29,7 +30,7 @@ class SettingsViewModel : ViewModel() {
                 _state.update {
                     it.copy(
                         settings = current,
-                        pat = sl.settings.getPat(),
+                        sourcePats = current.sources.associate { source -> source.key to sl.settings.getPat(source.key) },
                         encryptedAtRest = sl.secrets.encrypted,
                     )
                 }
@@ -38,24 +39,18 @@ class SettingsViewModel : ViewModel() {
     }
 
     fun save(
-        user: String,
-        topic: String,
-        filterByTopic: Boolean,
-        showPrereleases: Boolean,
-        pat: String,
+        sources: List<GitHubSource>,
+        sourcePats: Map<String, String>,
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            sl.settings.update(
-                AppSettings(
-                    githubUser = user,
-                    topic = topic,
-                    filterByTopic = filterByTopic,
-                    showPrereleases = showPrereleases,
-                )
-            )
-            sl.settings.setPat(pat)
-            sl.logger.info("Settings", "Saved settings for user=$user filter=$filterByTopic prereleases=$showPrereleases")
-            _state.update { it.copy(savedAt = System.currentTimeMillis(), pat = pat) }
+            val updated = AppSettings(sources = sources)
+            sl.settings.update(updated)
+            sources.forEach { source ->
+                sl.settings.setPat(source.key, sourcePats[source.key].orEmpty())
+            }
+            val enabled = sources.count { it.enabled }
+            sl.logger.info("Settings", "Saved ${sources.size} GitHub sources ($enabled enabled)")
+            _state.update { it.copy(savedAt = System.currentTimeMillis(), sourcePats = sourcePats) }
         }
     }
 }

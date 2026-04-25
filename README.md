@@ -39,7 +39,7 @@ That's what this is.
 
 ## Features (current)
 
-- **GitHub-sourced discovery** — every public repo for any user / org with a `.apk` asset on its latest release. Optional topic filter (default `android-app`). Optional pre-release toggle.
+- **Multi-source GitHub discovery** — every enabled GitHub user / org source with a `.apk` asset on its latest release. Each source has its own enable toggle, optional topic filter, pre-release toggle, and optional PAT.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black. Repo handle, star count, version tag, status badge, two-line description.
 - **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
 - **One-tap install** — APK is downloaded to app cache, then driven through `PackageInstaller.Session`. The system shows its install dialog, the user confirms once, done.
@@ -47,7 +47,7 @@ That's what this is.
 - **One-tap open** — launches the installed app's main activity.
 - **APK signature pinning** — first successful install captures the signing-cert SHA-256 fingerprint. Future updates that don't match the pin are **blocked** with a clear "publisher key changed — possible MITM or repo takeover" warning. We never auto-accept a key swap.
 - **Installed-state detection** — `PackageManager` tells us what's installed; remote `versionCode > local` flips the badge to "Update available".
-- **GitHub PAT (optional)** — bumps API rate limit from 60 → 5,000/hr and unlocks private repos. Stored in `EncryptedSharedPreferences`, backed by the Android Keystore.
+- **GitHub PATs (optional)** — source-specific tokens bump API rate limits from 60 → 5,000/hr and unlock private repos for that source. Stored in `EncryptedSharedPreferences`, backed by the Android Keystore.
 - **Activity log + crash log** — every download, install, uninstall, and crash is logged in-app and to disk at `<app files dir>/logs/crash.log`.
 - **Async everywhere** — the UI never blocks on a download or an API call.
 
@@ -77,10 +77,10 @@ For a signed release build, copy `keystore.properties.template` to `keystore.pro
 ## Usage
 
 1. Tap **Settings** in the bottom nav.
-2. Set **GitHub user / org** (defaults to `SysAdminDoc`).
-3. *(Optional)* Paste a personal access token to raise rate limits and surface private repos. The field is masked; the value lives in the Android Keystore via `EncryptedSharedPreferences`.
-4. *(Optional)* Enable **Filter by topic** if you want to limit discovery to repos tagged with a specific GitHub topic.
-5. *(Optional)* Toggle **Show pre-releases** if you want to see `prerelease: true` releases.
+2. Configure one or more **GitHub sources**. Each source is a GitHub user or org; the default source is `SysAdminDoc`.
+3. *(Optional)* Paste a source-specific personal access token to raise rate limits and surface private repos owned by that source. The field is masked; the value lives in the Android Keystore via `EncryptedSharedPreferences`.
+4. *(Optional)* Enable **Filter by topic** per source if you want to limit discovery to repos tagged with that source's topic.
+5. *(Optional)* Toggle **Show pre-releases** per source if you want to see `prerelease: true` releases.
 6. Tap **Save settings**, hop back to **Catalog**, hit **Refresh**.
 
 Every qualifying repo appears as a card. Tap **Install** — the APK downloads, the system install dialog appears, you confirm. Tap **Open** to launch. Tap **Uninstall** to land on the system uninstall confirmation.
@@ -89,12 +89,13 @@ Every qualifying repo appears as a card. Tap **Install** — the APK downloads, 
 
 ## How discovery works
 
-For the configured GitHub user / org, LocalAndroidStore:
+For each enabled GitHub source, LocalAndroidStore:
 
-1. Lists their owned, non-archived, non-fork repos via the GitHub REST API (`/users/{user}/repos`).
-2. For each repo, fetches the latest release (`/repos/{owner}/{repo}/releases/latest`, or the first non-draft from `/releases?per_page=10` when pre-releases are enabled).
-3. Picks one APK asset per release: skips `*.apk.idsig` sidecars and `*.aab` files, prefers an asset whose name contains `universal`, otherwise picks the largest `.apk`.
-4. Drops repos with no APK asset on their latest release. Archived repos and forks are dropped at step 1.
+1. Lists owned, non-archived, non-fork public repos via the GitHub REST API (`/users/{user}/repos`).
+2. If the source has a PAT, also lists authenticated repos via `/user/repos`, filters them back to the source owner, and dedupes them with the public list so private user / org repos can appear.
+3. For each repo, fetches the latest release (`/repos/{owner}/{repo}/releases/latest`, or the first non-draft from `/releases?per_page=10` when pre-releases are enabled).
+4. Picks one APK asset per release: skips `*.apk.idsig` sidecars and `*.aab` files, prefers an asset whose name contains `universal`, otherwise picks the largest `.apk`.
+5. Drops repos with no APK asset on their latest release. Archived repos and forks are dropped at step 1.
 
 There is no opinionated topic filter unless you turn one on — your own user / org listing already keeps the catalog tight.
 
@@ -106,8 +107,8 @@ There is no opinionated topic filter unless you turn one on — your own user / 
 | --- | --- |
 | `<files-dir>/logs/crash.log` | On-disk crash log |
 | `<cache-dir>/apks/` | Downloaded APKs (transient, OS-cleanable) |
-| EncryptedSharedPreferences `secrets` | GitHub PAT, signing-cert pins per `applicationId` |
-| DataStore `settings` | GitHub user, topic, filter / pre-release toggles |
+| EncryptedSharedPreferences `secrets` | GitHub PATs, signing-cert pins per `applicationId` |
+| DataStore `settings` | GitHub sources, topic filters, pre-release toggles |
 
 The app declares `android:allowBackup="false"` and excludes everything from cloud / device-transfer backups — secrets stay on the device.
 
@@ -124,6 +125,7 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 │   ├── ApkInspector.kt        PackageManager.getPackageArchiveInfo → applicationId, versionCode, signing SHA-256
 │   ├── InstallStateRepo.kt    PackageManager wrapper for "is X installed at version Y?"
 │   ├── SecretStore.kt         EncryptedSharedPreferences for PAT + per-package signing pins
+│   ├── AppSettings.kt         Source settings model + normalization
 │   ├── SettingsStore.kt       DataStore Preferences for non-secret settings
 │   ├── Logger.kt              In-memory + on-disk log with crash handler
 │   └── ServiceLocator.kt      Hand-rolled DI, init from App.onCreate()
@@ -148,7 +150,7 @@ The signature-pin store is keyed by `applicationId`. On a successful install we 
 
 Obtainium is great for what it does — point-and-shoot any GitHub release URL into a generic source list. This is more opinionated:
 
-- Tailored UI for your catalog (one user / org first-class, not a generic source-URL bag).
+- Tailored UI for your catalog (a small, intentional set of GitHub users / orgs instead of a generic source-URL bag).
 - Shared visual language with [LocalChromeStore](https://github.com/SysAdminDoc/LocalChromeStore).
 - Signature pinning is enforced per `applicationId`, not optional.
 - AMOLED-true-black + Catppuccin accents.
@@ -161,7 +163,7 @@ Use Obtainium if you want the bigger source ecosystem (F-Droid, IzzyOnDroid, htm
 
 See [ROADMAP.md](ROADMAP.md). Highlights:
 
-- **v0.2.x** — Preapproval/constraints for update installs, UIDT download work, Developer Verification preflight UX, Tink-backed secret migration, multi-org UI.
+- **v0.2.x** — Preapproval/constraints for update installs, UIDT download work, Developer Verification preflight UX, Tink-backed secret migration.
 - **v0.3.0** — Source plugin contract, F-Droid index consume/export, Wear OS companion, multi-device ADB pair.
 - **v0.4.0** — Light theme + accent picker.
 
@@ -221,7 +223,7 @@ If either fails, treat the binary as untrusted and report it.
 - No silent install. Stock Android doesn't allow it for non-device-owner apps. The system install dialog appears once per install. v0.4 will add Shizuku as an opt-in tier-2 path.
 - Uninstall opens the system uninstall confirmation. We can't bypass it without device-owner / Work Profile admin.
 - Catalog refresh and APK download happen on-tap; v0.4 adds scheduled background refresh via WorkManager.
-- Multi-user / multi-org catalog UI lands in v0.3.
+- Only GitHub Releases sources are supported today. F-Droid, GitLab, and HTML source plugins are planned for v0.3+.
 
 ---
 

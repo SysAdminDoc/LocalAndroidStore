@@ -77,7 +77,11 @@ fun AppCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = state.info.handle,
+                        text = if (state.info.sourceLabel == state.info.owner) {
+                            state.info.handle
+                        } else {
+                            "${state.info.sourceLabel} · ${state.info.handle}"
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         color = Catppuccin.Subtext,
                         maxLines = 1,

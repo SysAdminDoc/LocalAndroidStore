@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Catalog search field with exact, prefix, and lightweight fuzzy matching across app names, repo handles, descriptions, tags, versions, and package ids.
+- Multi-source GitHub settings: configure multiple user / org sources, enable or disable each source, set per-source topic and pre-release filters, and store per-source PATs with shared-token fallback.
+- Catalog discovery now aggregates enabled sources, labels cards by source when needed, searches by source name, and uses source-specific credentials for private repo listing and APK downloads.
 - Edge-to-edge polish: safe drawing insets at the root scaffold, IME padding for Settings, explicit dark transparent system bar styles, and API-27 navigation-bar contrast resources.
 - DataStore migration hook for future settings schema changes.
 - `lintDebug` blockers fixed for minSdk 26: API-guarded installer attribution and a `values-v27` style split.
