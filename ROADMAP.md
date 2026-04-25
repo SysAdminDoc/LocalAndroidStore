@@ -2,7 +2,7 @@
 
 > **Document version 2.1** • Last revised 2026-04-25 • Author: SysAdminDoc
 >
-> **v0.2.0 status** — *partial ship.* Items **1, 2, 3, 4, 7, 8, 11, 12, 13, 16, 17, 19, 22, 24** are merged in v0.2.0 (2026-04-25) — the security-and-attribution slice (14 of 24 Now items). Carry-forward into v0.2.1+: items **5** (`requestUserPreapproval`), **6** (`InstallConstraints`), **9** (UIDT), **10** (edge-to-edge audit pass), **14** (status-bar contrast tokens), **15** (Developer Verification preflight UX), **18** (Tink migration off security-crypto), **20** (multi-org UI), **21** (search + fuzzy filter), **23** (DataStore migration framework). The Now tier doesn't roll over to "Next" until those land.
+> **v0.2.0 status** — *partial ship.* Items **1, 2, 3, 4, 7, 8, 11, 12, 13, 16, 17, 19, 22, 24** are merged in v0.2.0 (2026-04-25) — the security-and-attribution slice (14 of 24 Now items). A v0.2.1 implementation pass completed items **10** (edge-to-edge audit), **14** (status/nav bar contrast), **21** (catalog search + fuzzy filter), and **23** (DataStore migration framework). Carry-forward into v0.2.1+: items **5** (`requestUserPreapproval`), **6** (`InstallConstraints`), **9** (UIDT), **15** (Developer Verification preflight UX), **18** (Tink migration off security-crypto), **20** (multi-org UI). The Now tier doesn't roll over to "Next" until those land.
 >
 > This is a working document, not a marketing page. Each item is tagged with **Impact (1–5)** and **Effort (1–5)** and links back to a primary source. Tier labels: **Now (v0.2.0)** / **Next (v0.3.0)** / **Later (v0.4.0+)** / **Under Consideration** / **Rejected**. Every claim cites a URL in the [Appendix](#appendix--sources).
 
@@ -84,11 +84,11 @@ Theme distribution: **T-COMPLIANCE × 6, T-INSTALL × 5, T-SEC × 4, T-UPDATE ×
 
 8. **`FOREGROUND_SERVICE_DATA_SYNC` + WorkManager FGS-type override** [I 5 / E 2] — declare `&lt;uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" /&gt;`, override `androidx.work.impl.foreground.SystemForegroundService` in our manifest with `android:foregroundServiceType="dataSync"`. Without this, any scheduled-update Worker crashes with `SecurityException` on Android 14+. Sources: [3, 24].
 9. **UIDT for the actual download** [I 4 / E 2] — Android 15's 6-hour FGS aggregate cap means `dataSync` workers will hit the wall. Use `setUserInitiated(true)` (User-Initiated Data Transfer) on the download `OneTimeWorkRequest`. UIDT exempts from the 6-hour cap. Sources: [25].
-10. **Edge-to-edge audit** [I 4 / E 2] — Android 15 (target API 35) auto-enables edge-to-edge. Replace any raw `padding(16.dp)` near system bars with `Modifier.safeDrawingPadding()` / `imePadding()` / `consumeWindowInsets(...)`. Verify: Catalog top bar, bottom-nav, Install button, Settings save button, Log scroll padding. Sources: [26, 56].
+10. **Edge-to-edge audit** [I 4 / E 2] — **Done in v0.2.1 pass.** `AppRoot` now uses `WindowInsets.safeDrawing` with consumed scaffold insets, Settings uses `imePadding()`, and the nav/content layout compiles under target API 35 edge-to-edge. Device screenshot verification is still pending because no adb device/emulator was attached in this pass. Sources: [26, 56].
 11. **`PredictiveBackHandler`** [I 3 / E 2] — set `android:enableOnBackInvokedCallback="true"` on `&lt;application&gt;`; default-on for apps targeting API 36. Replace any current `BackHandler` on detail surfaces with `PredictiveBackHandler { progress -> … }` for the animated preview pop. Sources: [27].
 12. **Adaptive icon `<monochrome>` layer** [I 2 / E 1] — confirm `mipmap-anydpi-v26/ic_launcher.xml` ships a clean monochrome glyph; verify on Android 13+ "Themed icons" toggle. *We currently reuse `ic_launcher_foreground` as the monochrome — replace with a single-color glyph that reads cleanly under the system tint.* Sources: [28].
 13. **`POST_NOTIFICATIONS` runtime permission flow** [I 3 / E 2] — required on API 33+ for the silent self-update path; `ActivityResultContracts.RequestPermission`. Graceful fallback: if denied, `setRequireUserAction(USER_ACTION_REQUIRED)`. Sources: [1].
-14. **`enableEdgeToEdge()` + status / nav bar contrast tokens** [I 2 / E 1] — already use `enableEdgeToEdge()` in MainActivity; verify Material 3 `Scaffold` honors `contentWindowInsets`; set `setSystemBarsAppearance` for icon contrast on light surfaces (future light theme).
+14. **`enableEdgeToEdge()` + status / nav bar contrast tokens** [I 2 / E 1] — **Done in v0.2.1 pass.** `MainActivity` now passes explicit dark transparent `SystemBarStyle` tokens to `enableEdgeToEdge()`, and API-27-only navigation-bar contrast attributes live in `values-v27` so `lintDebug` stays clean on minSdk 26.
 15. **Developer Verification preflight + warning UX** [I 5 / E 3] — detect the `Android Developer Verifier` Play-Services component (presence is the trigger). Before `commit`, query the verifier (or cache its known-good list) for the catalog APK's `applicationId + signing cert`. If the developer is unverified, surface a clear pre-install banner: *"This developer hasn't enrolled in Android Developer Verification. After Sept 30, 2026 in your region, installing this app will require the system 'advanced flow' (developer mode → reboot → 1-day cooldown → biometric)."* Don't block — inform. **Differentiated UX**: no other store surfaces this in the catalog detail today. Sources: [21, 51, 65, A21, A126].
 
 ### Theme: Security / secrets / network
@@ -101,7 +101,7 @@ Theme distribution: **T-COMPLIANCE × 6, T-INSTALL × 5, T-SEC × 4, T-UPDATE ×
 ### Theme: Catalog UX (smallest viable set)
 
 20. **Multi-org / multi-source UI** [I 5 / E 3] — Settings screen lists configured GitHub users / orgs; per-source toggle, per-source PAT, per-source topic-filter. Default = `SysAdminDoc`. **Top demand item** — F-Droid #1601, Obtainium #2013, Droid-ify #18. Direct user request (existing v0.5 placeholder). Sources: [E26, E120, E134].
-21. **Search + fuzzy filter on catalog** [I 4 / E 2] — single text field at the top of Catalog: matches on app name, repo handle, description, tag. Fuzzy ranking (token-set ratio). Discoverium fork was created specifically because Obtainium lacks search. Sources: [E5, F-Droid #336, F-Droid #2008, Droid-ify #87].
+21. **Search + fuzzy filter on catalog** [I 4 / E 2] — **Done in v0.2.1 pass.** Catalog has a top search field that matches app name, repo owner/handle, description, tag, version, and package id; ranking prefers exact and prefix hits, supports compact-name subsequence matches, and shows count + no-match recovery. Covered by focused JVM unit tests. Sources: [E5, F-Droid #336, F-Droid #2008, Droid-ify #87].
 
 ### Theme: Observability
 
@@ -109,7 +109,7 @@ Theme distribution: **T-COMPLIANCE × 6, T-INSTALL × 5, T-SEC × 4, T-UPDATE ×
 
 ### Theme: Migration
 
-23. **DataStore migration framework** [I 2 / E 1] — wire `Migration<Preferences>` into the DataStore builder before adding a single field, so v0.3+ can schema-evolve cleanly. No-op on first install.
+23. **DataStore migration framework** [I 2 / E 1] — **Done in v0.2.1 pass.** `SettingsStore` now wires a no-op `DataMigration<Preferences>` into the DataStore builder, preserving current data while giving v0.3+ a stable migration insertion point.
 
 ### Theme: Docs
 

@@ -37,10 +37,11 @@ That's what this is.
 
 ---
 
-## Features (v0.1.0)
+## Features (current)
 
 - **GitHub-sourced discovery** — every public repo for any user / org with a `.apk` asset on its latest release. Optional topic filter (default `android-app`). Optional pre-release toggle.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black. Repo handle, star count, version tag, status badge, two-line description.
+- **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
 - **One-tap install** — APK is downloaded to app cache, then driven through `PackageInstaller.Session`. The system shows its install dialog, the user confirms once, done.
 - **One-tap uninstall** — fires `Intent.ACTION_DELETE`, lands on the system uninstall confirmation. Catalog refreshes after.
 - **One-tap open** — launches the installed app's main activity.
@@ -114,7 +115,7 @@ The app declares `android:allowBackup="false"` and excludes everything from clou
 
 ## Architecture
 
-Single-Activity Compose app, ~1,700 lines of Kotlin. No DI framework, no Retrofit — the surface is small enough that a hand-rolled `ServiceLocator` + OkHttp is cleaner.
+Single-Activity Compose app, ~2,100 lines of Kotlin. No DI framework, no Retrofit — the surface is small enough that a hand-rolled `ServiceLocator` + OkHttp is cleaner.
 
 ```
 app/src/main/kotlin/com/sysadmin/lasstore/
@@ -133,7 +134,7 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 │   └── PackageInstallerService.kt   Session-backed install, intent-based uninstall, launch
 ├── ui/
 │   ├── theme/                 Catppuccin Mocha + AMOLED black dark theme
-│   ├── catalog/               LazyVerticalGrid + AppCard + StatusBadge + ViewModel
+│   ├── catalog/               LazyVerticalGrid + search/filter + AppCard + StatusBadge + ViewModel
 │   ├── settings/              Form + ViewModel
 │   └── log/                   Live log viewer
 └── App.kt + MainActivity.kt
@@ -160,10 +161,9 @@ Use Obtainium if you want the bigger source ecosystem (F-Droid, IzzyOnDroid, htm
 
 See [ROADMAP.md](ROADMAP.md). Highlights:
 
-- **v0.2.0** — WorkManager-driven background update worker (6h cadence). Wear OS companion. Multi-device push via ADB pair (TLS).
-- **v0.3.0** — F-Droid index export (turn your GitHub releases into an F-Droid-compatible repo).
+- **v0.2.x** — Preapproval/constraints for update installs, UIDT download work, Developer Verification preflight UX, Tink-backed secret migration, multi-org UI.
+- **v0.3.0** — Source plugin contract, F-Droid index consume/export, Wear OS companion, multi-device ADB pair.
 - **v0.4.0** — Light theme + accent picker.
-- **v0.5.0** — Multi-org support UI.
 
 ---
 

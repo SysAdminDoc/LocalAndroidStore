@@ -1,6 +1,8 @@
 package com.sysadmin.lasstore.data
 
 import android.content.Context
+import androidx.datastore.core.DataMigration
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -8,7 +10,18 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.settingsDataStore by preferencesDataStore(name = "settings")
+private val Context.settingsDataStore by preferencesDataStore(
+    name = "settings",
+    produceMigrations = { listOf(SettingsSchemaMigration) },
+)
+
+private object SettingsSchemaMigration : DataMigration<Preferences> {
+    override suspend fun shouldMigrate(currentData: Preferences): Boolean = false
+
+    override suspend fun migrate(currentData: Preferences): Preferences = currentData
+
+    override suspend fun cleanUp() = Unit
+}
 
 data class AppSettings(
     val githubUser: String = "SysAdminDoc",

@@ -46,7 +46,7 @@ fun AppCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Catppuccin.Surface0),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(8.dp),
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -56,7 +56,7 @@ fun AppCard(
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(8.dp))
                         .background(Catppuccin.Surface1),
                     contentAlignment = Alignment.Center,
                 ) {

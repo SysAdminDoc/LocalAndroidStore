@@ -29,6 +29,7 @@ data class CardState(
 data class CatalogUiState(
     val refreshing: Boolean = false,
     val cards: List<CardState> = emptyList(),
+    val searchQuery: String = "",
     val canRequestInstalls: Boolean = true,
     val errorMessage: String? = null,
     val warning: String? = null,
@@ -51,6 +52,10 @@ class CatalogViewModel : ViewModel() {
     }
 
     fun openInstallPermissionSettings() = sl.installer.openInstallPermissionSettings()
+
+    fun updateSearchQuery(query: String) {
+        _state.update { it.copy(searchQuery = query) }
+    }
 
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {

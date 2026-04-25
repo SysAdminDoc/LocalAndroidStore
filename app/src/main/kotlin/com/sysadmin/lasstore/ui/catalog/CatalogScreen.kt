@@ -9,23 +9,27 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +41,9 @@ import com.sysadmin.lasstore.ui.theme.Catppuccin
 @Composable
 fun CatalogScreen(viewModel: CatalogViewModel = viewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val visibleCards = remember(state.cards, state.searchQuery) {
+        filterCards(state.cards, state.searchQuery)
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(Catppuccin.Crust)) {
         TopHeader(
@@ -53,6 +60,12 @@ fun CatalogScreen(viewModel: CatalogViewModel = viewModel()) {
         state.warning?.let {
             WarningBanner(text = it, onDismiss = { viewModel.dismissWarning() })
         }
+        CatalogSearchBar(
+            query = state.searchQuery,
+            totalCount = state.cards.size,
+            visibleCount = visibleCards.size,
+            onQueryChange = viewModel::updateSearchQuery,
+        )
 
         when {
             state.refreshing && state.cards.isEmpty() -> {
@@ -73,6 +86,26 @@ fun CatalogScreen(viewModel: CatalogViewModel = viewModel()) {
                     )
                 }
             }
+            visibleCards.isEmpty() -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = "No matches for \"${state.searchQuery.trim()}\".",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = Catppuccin.Subtext,
+                        )
+                        Button(onClick = { viewModel.updateSearchQuery("") }) {
+                            Text("Clear search")
+                        }
+                    }
+                }
+            }
             else -> {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 320.dp),
@@ -81,7 +114,7 @@ fun CatalogScreen(viewModel: CatalogViewModel = viewModel()) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(state.cards, key = { "${it.info.owner}/${it.info.repo}" }) { card ->
+                    items(visibleCards, key = { "${it.info.owner}/${it.info.repo}" }) { card ->
                         AppCard(
                             state = card,
                             onInstall = { viewModel.install(card) },
@@ -93,6 +126,47 @@ fun CatalogScreen(viewModel: CatalogViewModel = viewModel()) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun CatalogSearchBar(
+    query: String,
+    totalCount: Int,
+    visibleCount: Int,
+    onQueryChange: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("Search catalog") },
+            placeholder = { Text("Name, repo, tag, package") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = {
+                if (query.isNotBlank()) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(Icons.Default.Close, contentDescription = "Clear search")
+                    }
+                }
+            },
+            shape = RoundedCornerShape(8.dp),
+        )
+        if (query.isNotBlank() && totalCount > 0) {
+            Text(
+                text = "$visibleCount of $totalCount apps",
+                style = MaterialTheme.typography.labelMedium,
+                color = Catppuccin.Subtext,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
         }
     }
 }
@@ -147,11 +221,11 @@ private fun PermissionBanner(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Default.Warning, contentDescription = null, tint = Catppuccin.Yellow)
-        Spacer(Modifier.height(0.dp))
+        Spacer(Modifier.width(8.dp))
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 8.dp),
+                .padding(end = 8.dp),
         ) {
             Text(
                 text = "Install permission required",
@@ -174,7 +248,7 @@ private fun WarningBanner(text: String, onDismiss: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp)
-            .background(Catppuccin.Surface0, RoundedCornerShape(12.dp))
+            .background(Catppuccin.Surface0, RoundedCornerShape(8.dp))
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

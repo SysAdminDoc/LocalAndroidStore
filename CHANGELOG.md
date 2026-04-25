@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Catalog search field with exact, prefix, and lightweight fuzzy matching across app names, repo handles, descriptions, tags, versions, and package ids.
+- Edge-to-edge polish: safe drawing insets at the root scaffold, IME padding for Settings, explicit dark transparent system bar styles, and API-27 navigation-bar contrast resources.
+- DataStore migration hook for future settings schema changes.
+- `lintDebug` blockers fixed for minSdk 26: API-guarded installer attribution and a `values-v27` style split.
+
 ## v0.2.0 — 2026-04-25 — Hardening pass
 
 Closes the Android 14/15/16 platform-compliance gap and completes the install-flow primitives that v0.1.0 stubbed. No new big surfaces (Wear OS, ADB-pair, F-Droid emit) — those are v0.3+. Roadmap items 1–4, 7, 8, 12, 13, 16, 22 from the [v2 ROADMAP](ROADMAP.md).

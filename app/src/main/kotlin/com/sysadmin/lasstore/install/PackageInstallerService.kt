@@ -76,7 +76,9 @@ class PackageInstallerService(
             params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
         }
         // Item 3: explicit installer attribution.
-        params.setInstallerPackageName(context.packageName)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            params.setInstallerPackageName(context.packageName)
+        }
         params.setOriginatingUid(Process.myUid())
         if (referrerUri != null) {
             params.setReferrerUri(referrerUri)

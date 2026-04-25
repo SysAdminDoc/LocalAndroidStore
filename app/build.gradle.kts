@@ -103,4 +103,6 @@ dependencies {
     // apksig for lineage-aware signature verification (handles APK Signature
     // Scheme v3 / v3.1 key rotation). Plain Java library, fine on Android.
     implementation("com.android.tools.build:apksig:8.7.3")
+
+    testImplementation("junit:junit:4.13.2")
 }

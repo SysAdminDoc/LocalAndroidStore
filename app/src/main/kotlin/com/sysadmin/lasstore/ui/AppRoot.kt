@@ -1,6 +1,9 @@
 package com.sysadmin.lasstore.ui
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Description
@@ -33,6 +36,7 @@ fun AppRoot() {
     val current = backStack?.destination
 
     Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(
@@ -65,7 +69,9 @@ fun AppRoot() {
         NavHost(
             navController = nav,
             startDestination = ROUTE_CATALOG,
-            modifier = Modifier.padding(padding),
+            modifier = Modifier
+                .padding(padding)
+                .consumeWindowInsets(padding),
         ) {
             composable(ROUTE_CATALOG) { CatalogScreen() }
             composable(ROUTE_SETTINGS) { SettingsScreen() }
