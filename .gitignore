@@ -1,0 +1,29 @@
+# Working notes (local only, never committed)
+CLAUDE.md
+CODEX_CHANGELOG.md
+.claude/
+
+# Backups
+*.bak
+
+# Gradle
+.gradle/
+build/
+**/build/
+captures/
+local.properties
+.cxx/
+
+# Keystores & keystore properties
+*.jks
+*.keystore
+keystore.properties
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+.DS_Store
+
+# Misc
+*.log
+hs_err_pid*

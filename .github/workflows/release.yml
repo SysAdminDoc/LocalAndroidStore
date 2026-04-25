@@ -1,0 +1,124 @@
+name: Build & Release APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to publish (e.g. v0.1.0). Leave blank for a dry-run build.'
+        required: false
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Materialise release keystore (if base64 secret is provided)
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            KS_PATH="$RUNNER_TEMP/localandroidstore.jks"
+            echo "$KEYSTORE_BASE64" | base64 -d > "$KS_PATH"
+            cat > keystore.properties <<EOF
+          storeFile=$KS_PATH
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::KEYSTORE_BASE64 not set — falling back to debug build."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Release APK
+        if: steps.keystore.outputs.signed == 'true'
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Build Debug APK (no keystore secret)
+        if: steps.keystore.outputs.signed != 'true'
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Stage release artifact
+        id: stage
+        run: |
+          mkdir -p out
+          if [ "${{ steps.keystore.outputs.signed }}" = "true" ]; then
+            SRC=$(ls app/build/outputs/apk/release/*.apk | head -1)
+            BASE="LocalAndroidStore-${GITHUB_REF_NAME:-dev}-release.apk"
+          else
+            SRC=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+            BASE="LocalAndroidStore-${GITHUB_REF_NAME:-dev}-debug.apk"
+          fi
+          DEST="out/$BASE"
+          cp "$SRC" "$DEST"
+          ( cd out && sha256sum "$BASE" > "$BASE.sha256" )
+          echo "apk=$DEST"           >> "$GITHUB_OUTPUT"
+          echo "sha256=$DEST.sha256"  >> "$GITHUB_OUTPUT"
+          echo "Built: $DEST"
+          ls -la out/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: localandroidstore-apk
+          path: out/*
+
+      - name: Create Release (tag push)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "${{ steps.stage.outputs.apk }}" \
+            "${{ steps.stage.outputs.sha256 }}" \
+            --title "LocalAndroidStore ${{ github.ref_name }}" \
+            --generate-notes \
+            || gh release upload "${{ github.ref_name }}" \
+              "${{ steps.stage.outputs.apk }}" \
+              "${{ steps.stage.outputs.sha256 }}" \
+              --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release (manual dispatch with version)
+        if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+        run: |
+          TAG="${{ inputs.version }}"
+          git tag -f "$TAG"
+          git push -f origin "$TAG"
+          gh release create "$TAG" \
+            "${{ steps.stage.outputs.apk }}" \
+            "${{ steps.stage.outputs.sha256 }}" \
+            --title "LocalAndroidStore $TAG" \
+            --generate-notes \
+            || gh release upload "$TAG" \
+              "${{ steps.stage.outputs.apk }}" \
+              "${{ steps.stage.outputs.sha256 }}" \
+              --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

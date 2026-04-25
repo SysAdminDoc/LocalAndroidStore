@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Catppuccin Mocha + AMOLED -->
+    <color name="amoled_black">#FF000000</color>
+    <color name="surface">#FF101014</color>
+    <color name="surface_high">#FF1A1A22</color>
+    <color name="text">#FFCDD6F4</color>
+    <color name="text_dim">#FFA6ADC8</color>
+    <color name="mauve">#FFCBA6F7</color>
+    <color name="sapphire">#FF74C7EC</color>
+    <color name="green">#FFA6E3A1</color>
+    <color name="yellow">#FFF9E2AF</color>
+    <color name="red">#FFF38BA8</color>
+</resources>
