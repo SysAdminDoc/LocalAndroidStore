@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.2.2 — 2026-05-01 — Pre-approval install flow (API 34+)
+
+### New feature
+- **`requestUserPreapproval` install flow (API 34+)** — For known updates (applicationId cached from a prior install), the system pre-approval sheet is now shown *before* the APK download begins. If the user approves, the session is held open; after download, inspection, and pinning checks pass, `commitSession()` is called and no second prompt is shown. Falls back silently to the standard `installApk` flow on older APIs or if the user declines. Key changes:
+  - `PackageInstallerService`: added `createSessionAndRequestPreapproval()`, `commitSession()`, `abandonSession()`, `buildSessionParams()` shared helper, `PreapprovalSessionResult` sealed interface.
+  - `CatalogViewModel.install()`: pre-approval block before download; abandons session on download/inspection failure or cancellation; uses `commitSession` vs `installApk` based on result.
+  - Pre-approval is skipped for fresh installs (no cached applicationId) — those use the normal flow unchanged.
+
 ## v0.2.1 — 2026-05-01 — UpdateAvailable fix + UX polish
 
 ### Bug fix

@@ -1,5 +1,6 @@
 package com.sysadmin.lasstore.ui.catalog
 
+import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sysadmin.lasstore.data.AppIdEntry
@@ -9,6 +10,7 @@ import com.sysadmin.lasstore.domain.AppInfo
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.domain.DiscoveryUseCase
 import com.sysadmin.lasstore.install.InstallResult
+import com.sysadmin.lasstore.install.PreapprovalSessionResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -128,6 +130,34 @@ class CatalogViewModel : ViewModel() {
         val job = viewModelScope.launch(Dispatchers.IO) {
             val cached = sl.appIdCache.get(card.info.owner, card.info.repo)
 
+            // Item 5: Request pre-approval on API 34+ for known updates.
+            // Pre-approval prompts the user *before* the download, reducing perceived latency.
+            // Falls back silently to the normal flow on older APIs or if the user declines.
+            var preapprovalSessionId: Int? = null
+            val knownApplicationId = cached?.applicationId
+            if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                knownApplicationId != null &&
+                sl.installState.info(knownApplicationId) != null
+            ) {
+                updateCard(card.info) { it.copy(status = CardStatus.Working, progress = 0f, message = "Requesting pre-approval…") }
+                val referrer = android.net.Uri.parse(card.info.asset.browserDownloadUrl)
+                val preapprovalResult = sl.installer.createSessionAndRequestPreapproval(
+                    applicationId = knownApplicationId,
+                    label = card.info.displayName,
+                    referrerUri = referrer,
+                )
+                when (preapprovalResult) {
+                    is PreapprovalSessionResult.Approved -> {
+                        sl.logger.info("Install", "Pre-approval granted for $knownApplicationId (sessionId=${preapprovalResult.sessionId})")
+                        preapprovalSessionId = preapprovalResult.sessionId
+                    }
+                    is PreapprovalSessionResult.Declined -> {
+                        sl.logger.info("Install", "Pre-approval declined for $knownApplicationId — falling back to standard install")
+                    }
+                }
+            }
+
             updateCard(card.info) { it.copy(status = CardStatus.Working, progress = 0.01f, message = "Downloading…") }
             try {
                 val cacheDir = File(sl.appContext.cacheDir, "apks").apply { mkdirs() }
@@ -143,6 +173,7 @@ class CatalogViewModel : ViewModel() {
 
                 val meta = sl.apkInspector.inspect(target)
                 if (meta == null) {
+                    preapprovalSessionId?.let { sl.installer.abandonSession(it) }
                     sl.logger.error("Install", "ApkInspector returned null for ${target.absolutePath}")
                     updateCard(card.info) { it.copy(status = CardStatus.Error, message = "APK metadata read failed") }
                     return@launch
@@ -165,6 +196,7 @@ class CatalogViewModel : ViewModel() {
                     else -> false
                 }
                 if (!pinAccepted) {
+                    preapprovalSessionId?.let { sl.installer.abandonSession(it) }
                     sl.logger.error(
                         "Install",
                         "Signature pin mismatch for ${meta.applicationId}: pinned=$pinned " +
@@ -199,11 +231,15 @@ class CatalogViewModel : ViewModel() {
                 }
 
                 updateCard(card.info) { it.copy(message = "Installing…") }
-                val result = sl.installer.installApk(
-                    apk = target,
-                    firstInstall = !installedAlready,
-                    referrerUri = android.net.Uri.parse(card.info.asset.browserDownloadUrl),
-                )
+                val result = if (preapprovalSessionId != null) {
+                    sl.installer.commitSession(sessionId = preapprovalSessionId, apk = target)
+                } else {
+                    sl.installer.installApk(
+                        apk = target,
+                        firstInstall = !installedAlready,
+                        referrerUri = android.net.Uri.parse(card.info.asset.browserDownloadUrl),
+                    )
+                }
                 when (result) {
                     is InstallResult.Success -> {
                         if (pinned.isNullOrEmpty()) {
@@ -244,8 +280,10 @@ class CatalogViewModel : ViewModel() {
                     }
                 }
             } catch (t: CancellationException) {
+                preapprovalSessionId?.let { sl.installer.abandonSession(it) }
                 throw t // Always rethrow so coroutine machinery works correctly.
             } catch (t: Throwable) {
+                preapprovalSessionId?.let { sl.installer.abandonSession(it) }
                 sl.logger.error("Install", "Install pipeline crashed", t)
                 updateCard(card.info) { it.copy(status = CardStatus.Error, message = t.message ?: "install failed") }
             }
