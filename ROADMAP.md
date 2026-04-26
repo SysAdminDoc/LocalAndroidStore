@@ -2,7 +2,7 @@
 
 > **Document version 2.1** • Last revised 2026-04-25 • Author: SysAdminDoc
 >
-> **v0.2.0 status** — *partial ship.* Items **1, 2, 3, 4, 7, 8, 11, 12, 13, 16, 17, 19, 22, 24** are merged in v0.2.0 (2026-04-25) — the security-and-attribution slice (14 of 24 Now items). A v0.2.1 implementation pass completed items **10** (edge-to-edge audit), **14** (status/nav bar contrast), **20** (multi-org UI), **21** (catalog search + fuzzy filter), and **23** (DataStore migration framework). Carry-forward into v0.2.1+: items **5** (`requestUserPreapproval`), **6** (`InstallConstraints`), **9** (UIDT), **15** (Developer Verification preflight UX), and **18** (Tink migration off security-crypto). The Now tier doesn't roll over to "Next" until those land.
+> **v0.2.0 status** — *partial ship.* Items **1, 2, 3, 4, 7, 8, 11, 12, 13, 16, 17, 19, 22, 24** are merged in v0.2.0 (2026-04-25) — the security-and-attribution slice (14 of 24 Now items). A v0.2.1 implementation pass completed items **10** (edge-to-edge audit), **14** (status/nav bar contrast), **18** (Tink secret migration), **20** (multi-org UI), **21** (catalog search + fuzzy filter), and **23** (DataStore migration framework). Carry-forward into v0.2.1+: items **5** (`requestUserPreapproval`), **6** (`InstallConstraints`), **9** (UIDT), and **15** (Developer Verification preflight UX). The Now tier doesn't roll over to "Next" until those land.
 >
 > This is a working document, not a marketing page. Each item is tagged with **Impact (1–5)** and **Effort (1–5)** and links back to a primary source. Tier labels: **Now (v0.2.0)** / **Next (v0.3.0)** / **Later (v0.4.0+)** / **Under Consideration** / **Rejected**. Every claim cites a URL in the [Appendix](#appendix--sources).
 
@@ -95,7 +95,7 @@ Theme distribution: **T-COMPLIANCE × 6, T-INSTALL × 5, T-SEC × 4, T-UPDATE ×
 
 16. **Network Security Config + OkHttp TLS 1.3** [I 3 / E 2] — ship `res/xml/network_security_config.xml` pinning `api.github.com` and `objects.githubusercontent.com` at the **root CA** (DigiCert Global Root G2 + ISRG Root X1 backup) with a 6-month `expiration`. OkHttp `connectionSpecs(listOf(ConnectionSpec.RESTRICTED_TLS))`. Pin **SPKI**, never the leaf — GitHub rotates leaves frequently. Sources: [29].
 17. **OkHttp ≥ 4.12.0 pin** [I 3 / E 1] — already on 4.12.0 in v0.1.0; lock with a build-fail comparator to prevent transitive downgrade. CVE-2023-0833 ban for older. Sources: [Agent D §15, 30].
-18. **Stop using `androidx.security:security-crypto`** [I 4 / E 3] — deprecated at 1.1.0-alpha07 (April 2025), no fix coming. Migrate the GitHub PAT + per-package signing pins to **Tink + StreamingAead over a Proto DataStore file**. Plain DataStore for non-secret data. Migration code path: detect existing EncryptedSharedPreferences entries → re-encrypt under Tink → delete the old store. Sources: [31, 32, 33].
+18. **Stop using `androidx.security:security-crypto`** [I 4 / E 3] — **Done in v0.2.1 pass.** Active secret storage now uses Tink AEAD over an app-private encrypted snapshot file for GitHub PATs, per-source PATs, and signing pins. Existing EncryptedSharedPreferences entries and any prior plaintext fallback entries migrate on first launch and are then cleared. The `security-crypto` dependency remains only as a one-release migration bridge; remove it after the migration window. Sources: [31, 32, 33].
 19. **`dataExtractionRules` audit** [I 2 / E 1] — already present in v0.1.0; explicitly exclude downloaded-APK cache, install-state-per-device, and signing pins from cloud backup; allow device-transfer of catalog config + PAT only if a local-only setting "Migrate secrets on device transfer" is on. Sources: [Agent D §12.1].
 
 ### Theme: Catalog UX (smallest viable set)
@@ -278,7 +278,7 @@ These came up in research and will not ship. Stated up-front to prevent silent r
 - **`KEYSTORE_BASE64` + `STORE_PASSWORD` + `KEY_ALIAS` + `KEY_PASSWORD`** secrets must remain configured. Cert SHA-256 (`9c6a9276…e6ebd3a0d`) is the LAS publisher key — log it in CHANGELOG on every release for transparency.
 - **OkHttp ≥ 4.12.0** (CVE-2023-0833 ban).
 - **Wear Tiles ≥ 1.4.1 / ProtoLayout ≥ 1.2.1** (CVE-2024-7254 protobuf-javalite) — only when item 29 lands.
-- **`androidx.security:security-crypto` is dead.** v0.2 item 18 migrates off. Don't add new code that depends on it.
+- **`androidx.security:security-crypto` is deprecated.** v0.2 item 18 moved active secret storage to Tink; the dependency is retained only for the legacy EncryptedSharedPreferences migration bridge and should be removed after that window.
 - **Developer Verification regional rollout dates: BR / ID / SG / TH = Sept 30, 2026; global through 2027** [21]. Item 15 must ship in v0.2.0 or earlier.
 - **F-Droid client lives at gitlab.com/fdroid/fdroidclient** (the GitHub mirror is downstream). Sister-project URLs: gitlab.com/fdroid/repomaker, gitlab.com/fdroid/fdroidserver. Cross-reference when item 27 lands.
 

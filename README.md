@@ -47,7 +47,7 @@ That's what this is.
 - **One-tap open** — launches the installed app's main activity.
 - **APK signature pinning** — first successful install captures the signing-cert SHA-256 fingerprint. Future updates that don't match the pin are **blocked** with a clear "publisher key changed — possible MITM or repo takeover" warning. We never auto-accept a key swap.
 - **Installed-state detection** — `PackageManager` tells us what's installed; remote `versionCode > local` flips the badge to "Update available".
-- **GitHub PATs (optional)** — source-specific tokens bump API rate limits from 60 → 5,000/hr and unlock private repos for that source. Stored in `EncryptedSharedPreferences`, backed by the Android Keystore.
+- **GitHub PATs (optional)** — source-specific tokens bump API rate limits from 60 → 5,000/hr and unlock private repos for that source. Stored in a Tink AEAD-encrypted app-private file, with the keyset protected by the Android Keystore.
 - **Activity log + crash log** — every download, install, uninstall, and crash is logged in-app and to disk at `<app files dir>/logs/crash.log`.
 - **Async everywhere** — the UI never blocks on a download or an API call.
 
@@ -78,7 +78,7 @@ For a signed release build, copy `keystore.properties.template` to `keystore.pro
 
 1. Tap **Settings** in the bottom nav.
 2. Configure one or more **GitHub sources**. Each source is a GitHub user or org; the default source is `SysAdminDoc`.
-3. *(Optional)* Paste a source-specific personal access token to raise rate limits and surface private repos owned by that source. The field is masked; the value lives in the Android Keystore via `EncryptedSharedPreferences`.
+3. *(Optional)* Paste a source-specific personal access token to raise rate limits and surface private repos owned by that source. The field is masked; the value lives in a Tink AEAD-encrypted app-private file with an Android Keystore-protected keyset.
 4. *(Optional)* Enable **Filter by topic** per source if you want to limit discovery to repos tagged with that source's topic.
 5. *(Optional)* Toggle **Show pre-releases** per source if you want to see `prerelease: true` releases.
 6. Tap **Save settings**, hop back to **Catalog**, hit **Refresh**.
@@ -107,7 +107,8 @@ There is no opinionated topic filter unless you turn one on — your own user / 
 | --- | --- |
 | `<files-dir>/logs/crash.log` | On-disk crash log |
 | `<cache-dir>/apks/` | Downloaded APKs (transient, OS-cleanable) |
-| EncryptedSharedPreferences `secrets` | GitHub PATs, signing-cert pins per `applicationId` |
+| `<files-dir>/secrets/secrets.v1.tinkaead` | Tink AEAD-encrypted GitHub PATs and signing-cert pins per `applicationId` |
+| EncryptedSharedPreferences `secrets` | Legacy one-time migration source for existing PATs and signing-cert pins |
 | DataStore `settings` | GitHub sources, topic filters, pre-release toggles |
 
 The app declares `android:allowBackup="false"` and excludes everything from cloud / device-transfer backups — secrets stay on the device.
@@ -124,7 +125,7 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 │   ├── GitHubClient.kt        OkHttp + kotlinx.serialization, paginated repo + release listing
 │   ├── ApkInspector.kt        PackageManager.getPackageArchiveInfo → applicationId, versionCode, signing SHA-256
 │   ├── InstallStateRepo.kt    PackageManager wrapper for "is X installed at version Y?"
-│   ├── SecretStore.kt         EncryptedSharedPreferences for PAT + per-package signing pins
+│   ├── SecretStore.kt         Tink AEAD secret file for PAT + per-package signing pins
 │   ├── AppSettings.kt         Source settings model + normalization
 │   ├── SettingsStore.kt       DataStore Preferences for non-secret settings
 │   ├── Logger.kt              In-memory + on-disk log with crash handler
@@ -143,6 +144,8 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 ```
 
 The signature-pin store is keyed by `applicationId`. On a successful install we read the signing cert from the *exact APK we just installed* (not from PackageManager, which would also work but loses provenance), SHA-256 it, and store it. On every subsequent install for the same `applicationId`, we re-read the SHA-256 from the new APK's signing cert and refuse to install if it doesn't match the pin.
+
+Existing installs that used the older EncryptedSharedPreferences-backed secret store migrate on first launch: PATs and signing pins are re-encrypted into the Tink store, then the legacy entries are cleared. Any previous plaintext fallback entries are also pulled forward and cleared when Tink is available. The `security-crypto` dependency remains only as a migration bridge for this release line.
 
 ---
 
@@ -163,7 +166,7 @@ Use Obtainium if you want the bigger source ecosystem (F-Droid, IzzyOnDroid, htm
 
 See [ROADMAP.md](ROADMAP.md). Highlights:
 
-- **v0.2.x** — Preapproval/constraints for update installs, UIDT download work, Developer Verification preflight UX, Tink-backed secret migration.
+- **v0.2.x** — Preapproval/constraints for update installs, UIDT download work, Developer Verification preflight UX.
 - **v0.3.0** — Source plugin contract, F-Droid index consume/export, Wear OS companion, multi-device ADB pair.
 - **v0.4.0** — Light theme + accent picker.
 
@@ -187,6 +190,7 @@ LocalAndroidStore is in your trust boundary — once you grant it "Install unkno
 - **The GitHub repo owner** of every catalog source you add. If they ship malware, LAS will install it. Signature pinning catches a *change* in publisher key, not a publisher who was malicious from the start.
 - **GitHub's TLS chain** to `api.github.com` and `objects.githubusercontent.com`. v0.2 pins these at the root CA SPKI (DigiCert + ISRG backup); a leaf-cert MITM cannot forge an APK download as long as the root CA isn't compromised.
 - **OkHttp 4.12+** — known-CVE-clean as of 2026-04-25.
+- **The Android Keystore-backed Tink keyset** that protects local PATs and signing pins.
 - **The Android platform's `PackageInstaller.Session` + `apksig`** for verifying signatures. Both are first-party Google code.
 - **LocalAndroidStore itself.** The signed v0.2 APK is reproducible from this repo + the cert SHA-256 published in CHANGELOG. Anyone can rebuild and compare. The publisher key (`9c6a9276…e6ebd3a0d`) is the project's identity — if it leaks, the project is compromised; mitigation is rotating the key and getting users to verify the new lineage manually.
 
