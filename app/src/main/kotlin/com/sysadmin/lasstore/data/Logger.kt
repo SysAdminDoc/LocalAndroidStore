@@ -48,6 +48,8 @@ class Logger(private val context: Context) {
         _entries.update { (it + entry).takeLast(MAX_ENTRIES) }
     }
 
+    fun clear() = _entries.update { emptyList() }
+
     fun installCrashHandler() {
         val previous = AtomicReference(Thread.getDefaultUncaughtExceptionHandler())
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->

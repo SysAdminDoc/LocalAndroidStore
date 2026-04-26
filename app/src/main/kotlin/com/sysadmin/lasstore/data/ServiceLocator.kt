@@ -26,6 +26,8 @@ object ServiceLocator {
         private set
     lateinit var audit: InstallAuditLog
         private set
+    lateinit var appIdCache: AppIdCache
+        private set
 
     fun init(context: Context) {
         appContext = context.applicationContext
@@ -38,5 +40,6 @@ object ServiceLocator {
         github = GitHubClient(patProvider = { secrets.getPat() }, logger = logger)
         installer = PackageInstallerService(appContext, logger)
         audit = InstallAuditLog(appContext)
+        appIdCache = AppIdCache(appContext)
     }
 }

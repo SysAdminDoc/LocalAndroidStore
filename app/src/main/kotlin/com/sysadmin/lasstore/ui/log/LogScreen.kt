@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -35,12 +36,24 @@ fun LogScreen() {
     val df = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
 
     Column(modifier = Modifier.fillMaxSize().background(Catppuccin.Crust)) {
-        Text(
-            text = "Activity log",
-            style = MaterialTheme.typography.titleLarge,
-            color = Catppuccin.Mauve,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Activity log",
+                style = MaterialTheme.typography.titleLarge,
+                color = Catppuccin.Mauve,
+                modifier = Modifier.weight(1f),
+            )
+            if (entries.isNotEmpty()) {
+                TextButton(onClick = { ServiceLocator.logger.clear() }) {
+                    Text("Clear", color = Catppuccin.Subtext)
+                }
+            }
+        }
 
         if (entries.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

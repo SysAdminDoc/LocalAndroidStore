@@ -122,6 +122,7 @@ fun CatalogScreen(viewModel: CatalogViewModel = viewModel()) {
                             onUninstall = { viewModel.uninstall(card) },
                             onOpen = { viewModel.open(card) },
                             onRepo = { viewModel.openRepo(card) },
+                            onCancel = { viewModel.cancelInstall(card) },
                         )
                     }
                 }

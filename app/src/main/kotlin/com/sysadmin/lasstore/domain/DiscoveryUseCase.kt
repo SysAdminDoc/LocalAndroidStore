@@ -64,6 +64,7 @@ class DiscoveryUseCase(
                         asset = asset,
                         publishedAt = release.publishedAt,
                         prerelease = release.prerelease,
+                        releaseBody = release.body?.takeIf { it.isNotBlank() },
                     )
                 }.onFailure { logger.warn("Discovery", "${repo.owner.login}/${repo.name}: ${it.message}") }
                     .getOrNull()

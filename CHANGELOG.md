@@ -2,7 +2,23 @@
 
 ## Unreleased
 
-- Catalog search field with exact, prefix, and lightweight fuzzy matching across app names, repo handles, descriptions, tags, versions, and package ids.
+## v0.2.1 — 2026-05-01 — UpdateAvailable fix + UX polish
+
+### Bug fix
+- **UpdateAvailable never showed after cold start** — `AppInfo.applicationId` is always `null` at discovery time (by design: only available post-APK-inspection). `buildCardState()` always returned `NotInstalled`. Fixed by adding `AppIdCache` (SharedPreferences), which persists `owner/repo → applicationId + installedTagName` on every successful install. `refresh()` hydrates from the cache; `buildCardState()` compares tagName to detect available updates reliably across process restarts.
+
+### UX polish
+- **Channel labels** — release channel chip on cards whose tag or prerelease flag indicates alpha / beta / rc / nightly. Peach tinted, auto-hides for stable releases.
+- **Stale release indicator** — Surface2-tinted chip on cards where the latest release is >12 months old. Encourages manual verification before installing aged APKs.
+- **Release notes** — collapsible "Release notes" section on each card, populated from the GitHub release body. Hidden when the release has no body text.
+- **Cancel download** — "Cancel" button appears on cards in Working state. Cancels the in-flight coroutine job, resets the card to its pre-working state derived from the cache.
+- **Log clear button** — "Clear" text button in the log screen header. Visible only when the log has entries.
+
+### Correctness
+- `CancellationException` in the install pipeline is re-thrown so coroutine cancellation propagates correctly (was silently swallowed by the catch-all `Throwable` block).
+- `developerVerificationNotice` is cleared on a successful install (was persisting stale warning after update).
+
+
 - Multi-source GitHub settings: configure multiple user / org sources, enable or disable each source, set per-source topic and pre-release filters, and store per-source PATs with shared-token fallback.
 - Catalog discovery now aggregates enabled sources, labels cards by source when needed, searches by source name, and uses source-specific credentials for private repo listing and APK downloads.
 - Edge-to-edge polish: safe drawing insets at the root scaffold, IME padding for Settings, explicit dark transparent system bar styles, and API-27 navigation-bar contrast resources.

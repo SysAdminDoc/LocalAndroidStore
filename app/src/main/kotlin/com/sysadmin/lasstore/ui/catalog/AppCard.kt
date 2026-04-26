@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
@@ -25,6 +26,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.ui.theme.Catppuccin
+import java.time.Instant
 
 @Composable
 fun AppCard(
@@ -42,8 +48,17 @@ fun AppCard(
     onUninstall: () -> Unit,
     onOpen: () -> Unit,
     onRepo: () -> Unit,
+    onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Stale: last release published more than 12 months ago.
+    val isStale = remember(state.info.publishedAt) {
+        val publishedAt = state.info.publishedAt ?: return@remember false
+        val published = runCatching { Instant.parse(publishedAt).toEpochMilli() }.getOrNull()
+            ?: return@remember false
+        published < System.currentTimeMillis() - 365L * 24 * 60 * 60 * 1000
+    }
+
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Catppuccin.Surface0),
@@ -116,9 +131,10 @@ fun AppCard(
                 overflow = TextOverflow.Ellipsis,
             )
 
+            // Version / channel row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -134,11 +150,26 @@ fun AppCard(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                if (state.info.prerelease) {
+                // Channel label (alpha/beta/rc/nightly/pre) — derived from tag name.
+                state.info.channelLabel?.let { label ->
                     Text(
-                        text = "pre-release",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Catppuccin.Peach,
+                        text = label.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Catppuccin.Crust,
+                        modifier = Modifier
+                            .background(Catppuccin.Peach, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+                // Stale indicator — no release in over a year.
+                if (isStale) {
+                    Text(
+                        text = "stale",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Catppuccin.Subtext,
+                        modifier = Modifier
+                            .background(Catppuccin.Surface2, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
             }
@@ -154,7 +185,6 @@ fun AppCard(
             if (state.message != null) {
                 val color = when (state.status) {
                     CardStatus.Error, CardStatus.SignatureMismatch -> Catppuccin.Red
-                    CardStatus.Working -> Catppuccin.Subtext
                     else -> Catppuccin.Subtext
                 }
                 Text(
@@ -165,6 +195,36 @@ fun AppCard(
             }
             state.developerVerificationNotice?.let { notice ->
                 DeveloperVerificationNoticeBlock(title = notice.title, body = notice.body)
+            }
+
+            // Release notes — collapsible.
+            if (state.info.releaseBody != null) {
+                var notesExpanded by remember { mutableStateOf(false) }
+                TextButton(
+                    onClick = { notesExpanded = !notesExpanded },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 0.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                ) {
+                    Text(
+                        text = if (notesExpanded) "Hide release notes" else "What's new",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Catppuccin.Sapphire,
+                    )
+                    Spacer(Modifier.weight(1f))
+                }
+                if (notesExpanded) {
+                    Text(
+                        text = state.info.releaseBody,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Subtext,
+                        maxLines = 10,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Catppuccin.Surface1, RoundedCornerShape(6.dp))
+                            .padding(10.dp),
+                    )
+                }
             }
 
             Row(
@@ -198,6 +258,15 @@ fun AppCard(
                     CardStatus.Working -> {
                         FilledTonalButton(onClick = {}, enabled = false, modifier = Modifier.weight(1f)) {
                             Text("Working…")
+                        }
+                        OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Cancel",
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Cancel")
                         }
                     }
                 }

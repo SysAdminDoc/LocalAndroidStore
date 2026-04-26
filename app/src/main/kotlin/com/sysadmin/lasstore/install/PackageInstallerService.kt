@@ -175,6 +175,7 @@ class PackageInstallerService(
             if (cont.isActive) cont.resume(InstallResult.Failure(t.message ?: "session commit failed"))
         }
     }
+
 }
 
 sealed interface InstallResult {
