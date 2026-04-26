@@ -23,7 +23,7 @@ class InstallAuditLog(context: Context) {
     @Serializable
     data class Entry(
         val ts: Long,
-        val event: String,                  // "install_ok" | "install_blocked" | "install_failed" | "uninstall_initiated"
+        val event: String,
         val applicationId: String,
         val source: String,                 // owner/repo
         val tagName: String,
@@ -58,6 +58,15 @@ class InstallAuditLog(context: Context) {
             tagName = info.tagName, versionName = meta.versionName,
             versionCode = meta.versionCode, certSha256 = meta.signingSha256,
             message = message,
+        ))
+
+    fun developerVerificationWarned(info: AppInfo, meta: ApkMetadata, reason: String) =
+        append(Entry(
+            ts = System.currentTimeMillis(), event = "developer_verification_warned",
+            applicationId = meta.applicationId, source = info.handle,
+            tagName = info.tagName, versionName = meta.versionName,
+            versionCode = meta.versionCode, certSha256 = meta.signingSha256,
+            reason = reason,
         ))
 
     fun uninstallInitiated(applicationId: String, source: String) =

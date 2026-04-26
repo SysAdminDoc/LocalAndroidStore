@@ -3,6 +3,7 @@ package com.sysadmin.lasstore.ui.catalog
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sysadmin.lasstore.data.ServiceLocator
+import com.sysadmin.lasstore.data.DeveloperVerificationNotice
 import com.sysadmin.lasstore.domain.AppInfo
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.domain.DiscoveryUseCase
@@ -23,6 +24,7 @@ data class CardState(
     val installedVersionCode: Long? = null,
     val progress: Float = 0f,
     val message: String? = null,
+    val developerVerificationNotice: DeveloperVerificationNotice? = null,
 )
 
 data class CatalogUiState(
@@ -157,6 +159,23 @@ class CatalogViewModel : ViewModel() {
                         )
                     }
                     return@launch
+                }
+
+                val developerVerificationNotice = sl.developerVerification.evaluate(meta)
+                if (developerVerificationNotice != null) {
+                    sl.logger.warn(
+                        "DeveloperVerification",
+                        "Preflight warning for ${meta.applicationId}: " +
+                            developerVerificationNotice.reason
+                    )
+                    sl.audit.developerVerificationWarned(
+                        info = card.info,
+                        meta = meta,
+                        reason = developerVerificationNotice.reason,
+                    )
+                    updateCard(card.info) {
+                        it.copy(developerVerificationNotice = developerVerificationNotice)
+                    }
                 }
 
                 updateCard(card.info) { it.copy(message = "Installing…") }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -162,6 +163,9 @@ fun AppCard(
                     color = color,
                 )
             }
+            state.developerVerificationNotice?.let { notice ->
+                DeveloperVerificationNoticeBlock(title = notice.title, body = notice.body)
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -199,6 +203,40 @@ fun AppCard(
                 }
                 TextButton(onClick = onRepo) { Text("Repo") }
             }
+        }
+    }
+}
+
+@Composable
+private fun DeveloperVerificationNoticeBlock(title: String, body: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Catppuccin.Surface1, RoundedCornerShape(8.dp))
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            Icons.Default.Info,
+            contentDescription = null,
+            tint = Catppuccin.Yellow,
+            modifier = Modifier.size(18.dp),
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                color = Catppuccin.Yellow,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Subtext,
+            )
         }
     }
 }

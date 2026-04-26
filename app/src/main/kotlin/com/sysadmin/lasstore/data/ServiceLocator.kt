@@ -16,6 +16,8 @@ object ServiceLocator {
         private set
     lateinit var apkInspector: ApkInspector
         private set
+    lateinit var developerVerification: DeveloperVerificationPreflight
+        private set
     lateinit var installState: InstallStateRepo
         private set
     lateinit var github: GitHubClient
@@ -31,6 +33,7 @@ object ServiceLocator {
         secrets = SecretStore(appContext)
         settings = SettingsStore(appContext, secrets)
         apkInspector = ApkInspector(appContext)
+        developerVerification = DeveloperVerificationPreflight(appContext)
         installState = InstallStateRepo(appContext)
         github = GitHubClient(patProvider = { secrets.getPat() }, logger = logger)
         installer = PackageInstallerService(appContext, logger)

@@ -8,6 +8,7 @@
 - Edge-to-edge polish: safe drawing insets at the root scaffold, IME padding for Settings, explicit dark transparent system bar styles, and API-27 navigation-bar contrast resources.
 - DataStore migration hook for future settings schema changes.
 - Secret storage migrated to a Tink AEAD-encrypted app-private file with a one-time legacy migration bridge for existing PATs and signing pins.
+- Developer Verification preflight advisory: devices with Android Developer Verifier or Google verification services present now show a non-blocking package/signing-key registration warning before install commit, with local audit logging.
 - `lintDebug` blockers fixed for minSdk 26: API-guarded installer attribution and a `values-v27` style split.
 
 ## v0.2.0 — 2026-04-25 — Hardening pass
