@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -49,6 +50,10 @@ fun AppCard(
     onOpen: () -> Unit,
     onRepo: () -> Unit,
     onCancel: () -> Unit,
+    onProceedPermissions: () -> Unit = {},
+    onCancelPermissions: () -> Unit = {},
+    onIgnore: () -> Unit = {},
+    onSaveApk: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Stale: last release published more than 12 months ago.
@@ -196,6 +201,9 @@ fun AppCard(
             state.developerVerificationNotice?.let { notice ->
                 DeveloperVerificationNoticeBlock(title = notice.title, body = notice.body)
             }
+            if (state.newDangerousPermissions.isNotEmpty()) {
+                PermissionDiffBlock(permissions = state.newDangerousPermissions)
+            }
 
             // Release notes — collapsible.
             if (state.info.releaseBody != null) {
@@ -238,6 +246,7 @@ fun AppCard(
                             enabled = state.status != CardStatus.SignatureMismatch,
                             modifier = Modifier.weight(1f),
                         ) { Text("Install") }
+                        TextButton(onClick = onSaveApk) { Text("Save") }
                     }
                     CardStatus.UpdateAvailable -> {
                         FilledTonalButton(onClick = onUpdate, modifier = Modifier.weight(1f)) {
@@ -246,6 +255,8 @@ fun AppCard(
                         OutlinedButton(onClick = onOpen, modifier = Modifier.weight(1f)) {
                             Text("Open")
                         }
+                        TextButton(onClick = onIgnore) { Text("Ignore") }
+                        TextButton(onClick = onSaveApk) { Text("Save") }
                     }
                     CardStatus.Installed -> {
                         FilledTonalButton(onClick = onOpen, modifier = Modifier.weight(1f)) {
@@ -254,6 +265,10 @@ fun AppCard(
                         OutlinedButton(onClick = onUninstall, modifier = Modifier.weight(1f)) {
                             Text("Uninstall")
                         }
+                        if (state.isIgnored) {
+                            TextButton(onClick = onIgnore) { Text("Unignore") }
+                        }
+                        TextButton(onClick = onSaveApk) { Text("Save") }
                     }
                     CardStatus.Working -> {
                         FilledTonalButton(onClick = {}, enabled = false, modifier = Modifier.weight(1f)) {
@@ -269,6 +284,17 @@ fun AppCard(
                             Text("Cancel")
                         }
                     }
+                    CardStatus.PermissionReview -> {
+                        FilledTonalButton(onClick = onProceedPermissions, modifier = Modifier.weight(1f)) {
+                            Text("Install anyway")
+                        }
+                        OutlinedButton(onClick = onCancelPermissions, modifier = Modifier.weight(1f)) {
+                            Text("Cancel")
+                        }
+                    }
+                }
+                if (state.status !in listOf(CardStatus.Working, CardStatus.PermissionReview, CardStatus.UpdateAvailable, CardStatus.Installed, CardStatus.NotInstalled, CardStatus.Error, CardStatus.SignatureMismatch)) {
+                    // fallback — never reached with current enum
                 }
                 TextButton(onClick = onRepo) { Text("Repo") }
             }

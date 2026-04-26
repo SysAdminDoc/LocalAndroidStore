@@ -16,8 +16,8 @@ android {
         applicationId = "com.sysadmin.lasstore"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.2.2"
+        versionCode = 5
+        versionName = "0.2.3"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -107,4 +107,14 @@ dependencies {
     implementation("com.android.tools.build:apksig:8.7.3")
 
     testImplementation("junit:junit:4.13.2")
+}
+
+// Item 17: Prevent transitive downgrade of OkHttp below the pinned safe version.
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "com.squareup.okhttp3") {
+            useVersion("4.12.0")
+            because("Pin OkHttp to minimum safe version; prevent transitive downgrade")
+        }
+    }
 }

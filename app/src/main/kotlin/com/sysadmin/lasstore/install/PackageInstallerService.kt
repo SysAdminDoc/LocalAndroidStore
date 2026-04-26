@@ -273,7 +273,7 @@ class PackageInstallerService(
                 PackageInstaller.STATUS_FAILURE_STORAGE -> {
                     runCatching { ctx.unregisterReceiver(this) }
                     if (cont.isActive) cont.resume(
-                        InstallResult.Failure(decodeFailure(status, message))
+                        InstallResult.Failure(decodeFailure(ctx, status, message))
                     )
                 }
             }
@@ -322,8 +322,9 @@ sealed interface PreapprovalSessionResult {
 /**
  * Translate a [PackageInstaller] EXTRA_STATUS code + EXTRA_STATUS_MESSAGE into a single
  * user-facing string. Replaces Android's generic "App not installed" with concrete causes.
+ * Includes device ABI and free-storage context for actionable failure messages (Item 7).
  */
-private fun decodeFailure(status: Int, systemMessage: String): String {
+private fun decodeFailure(context: Context, status: Int, systemMessage: String): String {
     val cause = when (status) {
         PackageInstaller.STATUS_FAILURE_ABORTED ->
             "Install cancelled."
@@ -333,14 +334,20 @@ private fun decodeFailure(status: Int, systemMessage: String): String {
         PackageInstaller.STATUS_FAILURE_CONFLICT ->
             "A different version of this app is already installed and the signatures don't " +
                 "match. Uninstall the existing copy first."
-        PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
-            "This APK isn't compatible with your device. It may target a newer Android " +
-                "version, require an ABI your device doesn't have, or need more storage."
+        PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> {
+            val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
+            val sdk = android.os.Build.VERSION.SDK_INT
+            "This APK isn't compatible with your device (ABI: $abi, SDK: $sdk). " +
+                "It may require a different CPU architecture or a newer Android version."
+        }
         PackageInstaller.STATUS_FAILURE_INVALID ->
             "The APK file is corrupt, unsigned, or its signing certificate doesn't match " +
                 "the installed copy."
-        PackageInstaller.STATUS_FAILURE_STORAGE ->
-            "Not enough storage to install. Free up space and try again."
+        PackageInstaller.STATUS_FAILURE_STORAGE -> {
+            val freeMb = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+                .availableBytes / (1024 * 1024)
+            "Not enough storage to install. Free up space and try again (available: ${freeMb} MB)."
+        }
         else ->
             "Install failed."
     }

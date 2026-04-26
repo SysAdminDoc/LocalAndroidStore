@@ -19,6 +19,8 @@ data class ApkMetadata(
      * the last entry when [lineageSha256] is non-empty.
      */
     val lineageSha256: List<String> = emptyList(),
+    /** All permissions declared in the APK's manifest, as returned by GET_PERMISSIONS. */
+    val requestedPermissions: List<String> = emptyList(),
 )
 
 /**
@@ -30,9 +32,9 @@ class ApkInspector(private val context: Context) {
     fun inspect(apk: File): ApkMetadata? {
         val pm = context.packageManager
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            PackageManager.GET_SIGNING_CERTIFICATES
+            PackageManager.GET_SIGNING_CERTIFICATES or PackageManager.GET_PERMISSIONS
         } else {
-            @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
+            @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES or PackageManager.GET_PERMISSIONS
         }
         @Suppress("DEPRECATION")
         val info = pm.getPackageArchiveInfo(apk.absolutePath, flags) ?: return null
@@ -48,6 +50,7 @@ class ApkInspector(private val context: Context) {
         }
         val sigSha256 = signingCertSha256(info) ?: ""
         val lineage = readLineageSha256(apk)
+        val perms = info.requestedPermissions?.toList() ?: emptyList()
         return ApkMetadata(
             applicationId = info.packageName,
             versionName = info.versionName,
@@ -55,6 +58,7 @@ class ApkInspector(private val context: Context) {
             label = label,
             signingSha256 = sigSha256,
             lineageSha256 = lineage,
+            requestedPermissions = perms,
         )
     }
 

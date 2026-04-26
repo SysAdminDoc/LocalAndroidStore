@@ -28,6 +28,8 @@ object ServiceLocator {
         private set
     lateinit var appIdCache: AppIdCache
         private set
+    lateinit var ignoreList: IgnoreListStore
+        private set
 
     fun init(context: Context) {
         appContext = context.applicationContext
@@ -41,5 +43,6 @@ object ServiceLocator {
         installer = PackageInstallerService(appContext, logger)
         audit = InstallAuditLog(appContext)
         appIdCache = AppIdCache(appContext)
+        ignoreList = IgnoreListStore(appContext)
     }
 }

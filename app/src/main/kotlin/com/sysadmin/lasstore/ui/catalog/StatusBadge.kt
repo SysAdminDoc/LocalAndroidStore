@@ -21,6 +21,7 @@ fun StatusBadge(status: CardStatus, modifier: Modifier = Modifier) {
         CardStatus.Working -> "Working…" to Catppuccin.Mauve
         CardStatus.Error -> "Error" to Catppuccin.Red
         CardStatus.SignatureMismatch -> "Key mismatch" to Catppuccin.Red
+        CardStatus.PermissionReview -> "Review required" to Catppuccin.Peach
     }
     Text(
         text = label,
