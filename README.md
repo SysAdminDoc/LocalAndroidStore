@@ -1,11 +1,4 @@
-<p align="center">
-  <img src="banner.png" alt="LocalAndroidStore" />
-</p>
-
-<h1 align="center">
-  <img src="logo.png" alt="" width="36" align="center" />
-  &nbsp;LocalAndroidStore
-</h1>
+<h1 align="center">LocalAndroidStore</h1>
 
 <p align="center">
   <a href="https://github.com/SysAdminDoc/LocalAndroidStore/releases"><img src="https://img.shields.io/badge/version-0.2.2-cba6f7?style=for-the-badge" alt="Version" /></a>
