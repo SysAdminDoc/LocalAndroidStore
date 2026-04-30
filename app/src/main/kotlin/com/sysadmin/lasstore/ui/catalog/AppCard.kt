@@ -303,6 +303,42 @@ fun AppCard(
 }
 
 @Composable
+private fun PermissionDiffBlock(permissions: List<String>) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Catppuccin.Surface1, RoundedCornerShape(8.dp))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = Catppuccin.Peach,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = "New dangerous permissions",
+                style = MaterialTheme.typography.labelLarge,
+                color = Catppuccin.Peach,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        permissions.forEach { perm ->
+            Text(
+                text = "• " + perm.removePrefix("android.permission."),
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Subtext,
+            )
+        }
+    }
+}
+
+@Composable
 private fun DeveloperVerificationNoticeBlock(title: String, body: String) {
     Row(
         modifier = Modifier

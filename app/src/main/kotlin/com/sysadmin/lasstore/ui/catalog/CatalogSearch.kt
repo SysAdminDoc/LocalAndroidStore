@@ -76,6 +76,7 @@ private fun CardStatus.searchBoost(): Int = when (this) {
     CardStatus.UpdateAvailable -> 8
     CardStatus.Installed -> 5
     CardStatus.NotInstalled -> 2
+    CardStatus.PermissionReview -> 6
     CardStatus.Working,
     CardStatus.Error,
     CardStatus.SignatureMismatch -> 0
