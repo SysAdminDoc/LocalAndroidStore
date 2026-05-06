@@ -1,31 +1,47 @@
 # Roadmap
 
-> **Document version 2.3** • Last revised 2026-05-01 • Author: SysAdminDoc
+> **Document version 2.4** • Last revised 2026-05-06 • Author: SysAdminDoc
 >
-> **v0.2.2 status** — Item **5** (`requestUserPreapproval`) shipped: `createSessionAndRequestPreapproval()` + `commitSession()` + `abandonSession()` + `buildSessionParams()` + `PreapprovalSessionResult` in `PackageInstallerService`; two-phase coroutine in `CatalogViewModel.install()`. Carry-forward into v0.2.3: item **6** (`InstallConstraints`), item **9** (UIDT) — both blocked on WorkManager not yet in the codebase.
+> **v0.2.3 status** — Released 2026-04-29 (`tag: v0.2.3`, `versionCode = 5`, `versionName = "0.2.3"`). Shipped this cut:
+>   - Item **34** (Permission diff before update) — new `CardStatus.PermissionReview` state, `PermissionDiffBlock` composable in `AppCard.kt`, dangerous-permission diff in `CatalogViewModel.install()`, search-rank boost = 6 in `CatalogSearch.searchBoost()`.
+>   - Item **35** (Per-app "ignore updates") — `IgnoreListStore.kt` (DataStore-backed), respected in `buildCardState()` so ignored apps stay `Installed` rather than flipping to `UpdateAvailable`.
+>   - Item **62** (Save APK without installing) — `CatalogViewModel.saveApk()` + `saveToDownloads()` (MediaStore on API 29+, app-scoped Downloads on API 26–28).
+>   - Hardening pass on installer attribution (`setInstallerPackageName` / `setOriginatingUid` / `setReferrerUri`), source claim, and signature-verification cleanup over `PackageInstallerService` and `ApkInspector`.
+>   - Post-release: rebrand pass (logo and launcher icon) — no behavior change.
 >
-> This is a working document, not a marketing page. Each item is tagged with **Impact (1–5)** and **Effort (1–5)** and links back to a primary source. Tier labels: **Now (v0.2.0)** / **Next (v0.3.0)** / **Later (v0.4.0+)** / **Under Consideration** / **Rejected**. Every claim cites a URL in the [Appendix](#appendix--sources).
+> **Carry-forward into v0.2.4 (cleanup tier):** item **6** (`InstallConstraints`), item **9** (UIDT) — both still blocked on WorkManager not in the codebase; item **18** (drop `androidx.security:security-crypto` after the migration window has elapsed since v0.2.1).
+>
+> This is a working document, not a marketing page. Each item is tagged with **Impact (1–5)** and **Effort (1–5)** and links back to a primary source. Tier labels: **Now (v0.2.x cleanup)** / **Next (v0.3.0)** / **Later (v0.4.0+)** / **Under Consideration** / **Rejected**. Every claim cites a URL in the [Appendix](#appendix--sources).
 
 ---
 
-## State of the repo (v0.1.0 — shipped 2026-04-25)
+## State of the repo (v0.2.3 — shipped 2026-04-29)
 
-LocalAndroidStore v0.1.0 ships:
+Three milestones have shipped against the v2.3 roadmap: **v0.2.0** (hardening pass), **v0.2.1** (multi-source / search / Tink / edge-to-edge / Dev Verification preflight), **v0.2.2** (`requestUserPreapproval`), **v0.2.3** (permission diff + ignore list + save APK + installer-attribution polish). Resulting v0.2.3 ships:
 
-- GitHub-Releases discovery for one configured user / org, optional `android-app` topic filter, optional pre-release toggle.
-- Catalog grid (`LazyVerticalGrid`, 320 dp adaptive) with status badge, install / uninstall / update / open / repo buttons.
-- Install via `PackageInstaller.Session` (broadcast-receiver status sink).
-- Signature pinning per `applicationId`: first install captures the APK signing-cert SHA-256, future installs that don't match are blocked. Never auto-accepts.
-- Installed-state detection via `PackageManager`; "Update available" when remote `versionCode > local`.
-- GitHub PAT in `EncryptedSharedPreferences`; non-secret settings in DataStore.
-- Activity log + on-disk `crash.log` with global uncaught handler.
-- AMOLED-true-black + Catppuccin Mocha theme.
-- CI-signed release APK + sha256 sidecar (`KEYSTORE_BASE64` secret).
-- Branch protection on main with `enforce_admins=true`.
+- GitHub-Releases discovery for **multiple** configured users / orgs, per-source PAT (Tink AEAD-encrypted), per-source topic filter, per-source pre-release toggle.
+- Catalog grid (`LazyVerticalGrid`, 320 dp adaptive) with status badge (`NotInstalled / Installed / UpdateAvailable / Working / Error / SignatureMismatch / PermissionReview`), install / uninstall / update / open / cancel / save-APK / repo buttons, channel labels (alpha / beta / rc / nightly), stale-release indicator (>12 months), collapsible release notes, and per-app ignore-updates.
+- Search across name / owner / handle / description / tag / version / package id with exact + prefix + subsequence ranking and `searchBoost()` per status.
+- Install via `PackageInstaller.Session` with `setRequestUpdateOwnership(true)` (API 34+) on first install, `setPackageSource(PACKAGE_SOURCE_STORE)` on every session, explicit installer attribution (`setInstallerPackageName` + `setOriginatingUid` + `setReferrerUri`), `requestUserPreapproval()` two-phase flow on known updates (API 34+), and decoded `STATUS_FAILURE_*` messages.
+- Lineage-aware signature pinning per `applicationId` via Google `apksig` 8.7.3 — accepts legitimate APK Signature Scheme v3 / v3.1 rotations through `signingCertificateHistory`, hard-rejects unannounced key swaps, surfaces a "Key mismatch" card.
+- Permission-diff gate: dangerous permissions added by an update render a `PermissionReview` state with the diff inline before the user can commit; cleared on successful install.
+- Installed-state via `PackageManager`; remote-vs-local `versionCode` flips the badge to "Update available"; `AppIdCache` (SharedPreferences) persists `owner/repo → applicationId + installedTagName` so update-available state survives cold start.
+- Tink AEAD secret file (`<files>/secrets/secrets.v1.tinkaead`) stores PATs and signing pins under an Android-Keystore-protected keyset; one-time migration bridge from EncryptedSharedPreferences runs on first launch.
+- Network Security Config pinning `api.github.com`, `objects.githubusercontent.com`, `codeload.github.com`, `raw.githubusercontent.com` at the **root CA SPKI** (DigiCert Global Root G2 + ISRG Root X1 backup), 6-month expiration, cleartext disabled.
+- Developer Verification preflight: detects `com.google.android.verifier` / Google verification services and surfaces a non-blocking advisory before commit.
+- `<files>/logs/install.log` JSONL audit trail (rotates at 256 KB), `<files>/logs/crash.log` global uncaught handler, in-app live log viewer with clear button.
+- Edge-to-edge under target API 35 with `WindowInsets.safeDrawing` + `imePadding()` + explicit dark transparent system-bar styles + `values-v27` nav-bar contrast split; predictive back opted in on `<application>`; monochrome adaptive-icon layer.
+- AMOLED-true-black + Catppuccin Mocha theme, rebranded launcher / download-arrow icon (post-v0.2.3 commits).
+- WorkManager `FOREGROUND_SERVICE_DATA_SYNC` + `POST_NOTIFICATIONS` + `ENFORCE_UPDATE_OWNERSHIP` permissions declared, ready for the v0.4 background-update worker.
+- Save-APK-without-installing: MediaStore Downloads on API 29+, app-scoped Downloads on API 26–28.
+- Resume / cancel of in-flight downloads (cancel only — resume across process death is item 36, still pending).
+- DataStore migration framework hook installed.
+- CI-signed release APK + sha256 sidecar (`KEYSTORE_BASE64` secret); branch protection on main with `enforce_admins=true`.
+- OkHttp 4.12.0 pinned with `resolutionStrategy.eachDependency` floor to prevent transitive downgrade. apksig 8.7.3, kotlinx.serialization 1.7.3, kotlinx-coroutines 1.9.0, AGP 8.7.3, Kotlin 2.1.0, Compose BOM 2024.12.01, target/compileSdk 35, minSdk 26.
 
-**It does not yet:** claim update ownership, declare `PACKAGE_SOURCE_STORE`, schedule background updates, run as a foreground-service-typed worker, support split / XAPK / AAB, ship Material You / light theme, render edge-to-edge cleanly on Android 15, opt into predictive back, surface anti-features or VirusTotal scans, support more than one GitHub user, expose a Wear OS surface, support ADB pairing, emit an F-Droid repo, handle key-rotation lineage, or detect the Android Developer Verifier.
+**It does not yet:** support `InstallConstraints` for gentle background install (item 6, blocked on WorkManager); use `setUserInitiated(true)` UIDT for the download Worker (item 9); ship a `WorkManager` periodic update check (item 46); resume interrupted downloads across process death (item 36); support split / XAPK / APKM / AAB bundle install (item 55); render an APKMirror-style variant matrix (item 54); ship Material You / light theme / accent picker (items 40, 41); expose Wear OS / Android TV / desktop ADB-pair surfaces (items 29, 30, 65); emit or consume an F-Droid index v2 (items 26, 27); support GitLab / IzzyOnDroid / generic plugin sources (item 25); offer Shizuku silent install (item 50); offer reproducible-build verification or a Minisign-signed catalog (items 43, 44, 45); show anti-features (item 33); display tracker / manifest viewers (item 51); rollback on crash-correlated regression (item 48).
 
-**Stated philosophy** (preserved from README):
+**Stated philosophy** (preserved from README, unchanged through v0.2.3):
 
 1. Personal store, GitHub-Releases-first, opinionated — not a generic source bag.
 2. Signature pinning is mandatory, never optional, never silently overridden.
@@ -34,9 +50,9 @@ LocalAndroidStore v0.1.0 ships:
 5. No silent install on stock Android (we are not a device-owner). Privileged paths (Shizuku) are tier-2 add-ons, never required.
 6. MIT license. No Co-Authored-By, no AI-attribution in committed files.
 
-**Strategic frame from the research.** Five existential platform shifts dominate every decision below: **(a)** Android 14's `setRequestUpdateOwnership` lets a curated installer claim the update channel and is the missing half of the signature-pin guarantee — without it, a competing installer can silently overwrite our pinned apps [1, 6, 23]. **(b)** Android 15's `PACKAGE_SOURCE_STORE` exempts our downstream apps from Restricted Settings (Accessibility / Notification Listener unlock), directly improving every Accessibility-using app installed via LAS [22, 53]. **(c)** Android 14's mandatory foreground-service-type and Android 15's 6-hour FGS cap force any background updater to be UIDT-based (`setUserInitiated(true)`), not `dataSync`-based [3, 24]. **(d)** Android Developer Verification begins enforcement Sept 30, 2026 in BR/ID/SG/TH [21, 51, 65] — every catalog APK from an unverified developer becomes uninstallable on certified devices unless the user walks the per-install "advanced flow," and surfacing this in our catalog *before* users hit the wall is differentiated UX nobody else ships. **(e)** APK Signature Scheme v3 / v3.1 key-rotation lineage means a naive SHA-256 pin will incorrectly reject *legitimate* publisher rotations — we must walk `signingCertificateHistory` before we reject [13, 19].
+**Strategic frame from the research.** Five existential platform shifts dominate every decision below: **(a)** Android 14's `setRequestUpdateOwnership` lets a curated installer claim the update channel and is the missing half of the signature-pin guarantee — without it, a competing installer can silently overwrite our pinned apps [1, 6, 23]. **(b)** Android 15's `PACKAGE_SOURCE_STORE` exempts our downstream apps from Restricted Settings (Accessibility / Notification Listener unlock), directly improving every Accessibility-using app installed via LAS [22, 53]. **(c)** Android 14's mandatory foreground-service-type and Android 15's 6-hour FGS cap force any background updater to be UIDT-based (`setUserInitiated(true)`), not `dataSync`-based [3, 24]. **(d)** Android Developer Verification is now in phased rollout: the `com.google.android.verifier` system app appeared April 2026, the **"advanced sideloading flow"** with a 24-hour wait period launches August 2026, and enforcement begins Sept 30, 2026 in BR/ID/SG/TH [21, 51, 65, 213, 214] — every catalog APK from an unverified developer becomes uninstallable on certified devices unless the user walks the per-install "advanced flow," and surfacing this in our catalog *before* users hit the wall is differentiated UX nobody else ships. **(e)** APK Signature Scheme v3 / v3.1 key-rotation lineage means a naive SHA-256 pin will incorrectly reject *legitimate* publisher rotations — we must walk `signingCertificateHistory` before we reject [13, 19].
 
-The single biggest user pain across 158 community sources [E1–E158] is **gentle background updates without prompting** (Obtainium #2199, #1550, #1105; SmartTube #4151; r/degoogle 1sds2ph). The single biggest competitive gap: **no personal-GitHub-catalog tool ships native cert pinning baked into the install flow** (Obtainium delegates to AppVerifier, F-Droid does it via index `AllowedAPKSigningKeys`, Accrescent does it for a curated catalog). LocalAndroidStore's positioning is exactly that gap — and v0.2.0 is about defending it with the platform's full hardening surface before competitors close it.
+The single biggest user pain across 158 community sources [E1–E158] is **gentle background updates without prompting** (Obtainium #2199, #1550, #1105; SmartTube #4151; r/degoogle 1sds2ph). The single biggest competitive gap remaining as of v0.2.3: **no personal-GitHub-catalog tool ships native cert pinning baked into the install flow** with a *permission diff* and *ignore list* like ours (Obtainium delegates pinning to AppVerifier, F-Droid does it via index `AllowedAPKSigningKeys`, Accrescent does it for a curated catalog). LAS now closes that gap; v0.3 has to defend the next axis (multi-source plugin contract + F-Droid emit) before competitors copy.
 
 **Out of scope, permanently.** Anything that requires us to be a device-owner / Work Profile admin (silent install of arbitrary publishers' apps), anything that pushes binary code from a Telegram channel as a primary source, anything monetized, anything that sends device telemetry to a server we run, anything that scrapes the user's installed-app list to show ads.
 
@@ -64,66 +80,32 @@ Every Now/Next/Later item maps to one or more of these. Items that don't map get
 
 ---
 
-## Now — v0.2.0 "Hardening + the rest of v0.1's installer"
+## Now — v0.2.4 "Cleanup tier"
 
-Theme distribution: **T-COMPLIANCE × 6, T-INSTALL × 5, T-SEC × 4, T-UPDATE × 3, T-CATALOG × 2, T-A11Y × 1, T-OBS × 1, T-MIGRATE × 1, T-DOCS × 1.**
+Theme distribution: **T-UPDATE × 2, T-SEC × 1.** Tiny on purpose — every Now item from v2.3 either shipped or is blocked on the same prerequisite (WorkManager). v0.2.4 ships when the WorkManager scaffold lands and items 6 / 9 / 18 close behind it.
 
-**Frame:** v0.2.0 closes every Android 14/15/16 platform-compliance gap, completes the install-flow primitives that v0.1.0 stubbed, and lands the smallest set of UX features that make the catalog usable for more than one GitHub user. No new big surface (Wear OS, ADB-pair, F-Droid emit) lands in v0.2; those are v0.3+. The Now tier is mandate-driven.
+6. **`InstallConstraints` for gentle background install** [I 4 / E 2] — when an update is queued in the background, build `InstallConstraints.Builder().setAppNotForegroundRequired().setDeviceIdleRequired().setNotInCallRequired().build()` and pass to `commitSessionAfterInstallConstraintsAreMet()`. Lets the system defer the install instead of forcing us to detect "is the target app foregrounded" via `UsageStats` / Accessibility. **Carry-forward from v0.2.2.** Blocked on a WorkManager-driven background path that does not yet exist in the codebase. First-mover gap — Ackpine library exposes it, few stores ship it. Sources: [Agent A §3, 7, 215].
+9. **UIDT for the actual download** [I 4 / E 2] — Android 15's 6-hour FGS aggregate cap means `dataSync` workers will hit the wall. Use `setUserInitiated(true)` (User-Initiated Data Transfer) on the download `OneTimeWorkRequest`. UIDT exempts from the 6-hour cap. **Carry-forward from v0.2.2.** Sources: [25].
+18b. **Drop `androidx.security:security-crypto` after migration window** [I 2 / E 1] — `app/build.gradle.kts` line 98 keeps it as a one-release migration bridge for legacy EncryptedSharedPreferences PATs and pins. Migration shipped in v0.2.1; v0.2.4 should remove the dependency, delete the legacy code path in `SecretStore`, and verify the on-disk Tink store covers every previously-stored field. Sources: [31, 32, 33].
 
-### Theme: Install mechanics + signature pinning correctness
+**v0.2.4 ships when items 6, 9, 18b are merged, the WorkManager scaffold is in place, and the build is green on the API 26 / 31 / 33 / 34 / 35 / 36 CI matrix. No new big surface in v0.2.4 — those land in v0.3.0.**
 
-1. **Claim update ownership on first install** [I 5 / E 2] — `SessionParams.setRequestUpdateOwnership(true)` on first-install sessions only (no-op on update). Declare `&lt;uses-permission android:name="android.permission.ENFORCE_UPDATE_OWNERSHIP" /&gt;` (normal protection, auto-granted). Surfaces an "Owned by LAS" badge on app rows via `InstallSourceInfo.getUpdateOwnerPackageName()`. **This is the missing half of the signature-pin guarantee.** Without it, Play Store / another installer can silently overwrite a pinned app. Sources: [1, 6, 23].
-2. **Declare `PACKAGE_SOURCE_STORE`** [I 4 / E 1] — `SessionParams.setPackageSource(PACKAGE_SOURCE_STORE)` on every session. Directly improves downstream apps' Accessibility unlock UX on Android 13+. Sources: [4, 22, 53].
-3. **Set installer name + originating UID + referrer URI** [I 2 / E 1] — `setInstallerPackageName(BuildConfig.APPLICATION_ID)`, `setOriginatingUid(Process.myUid())`, `setReferrerUri(Uri.parse(asset.browserDownloadUrl))`. Populates the system "App info → Installed from" UI correctly. Sources: [5, 11].
-4. **Lineage-aware signature verification** [I 5 / E 3] — when the pinned cert SHA-256 doesn't match the new APK's `apkContentsSigners`, walk `SigningInfo.getSigningCertificateHistory()` AND run `apksig.ApkVerifier.Result.getSigningCertificateLineage()`; accept if our pinned cert appears in the lineage and the new cert is signed by it (legitimate v3 / v3.1 rotation). Otherwise hard-reject with the existing "publisher key changed" warning. Without this we'll false-positive every legitimate Google-Play-style key rotation. Sources: [16, 17, 18, 19, 20, SO Q75112572, SO Q73787102, SO Q77159385].
-5. **`requestUserPreapproval()` for updates** [I 3 / E 3] — ✅ **Done in v0.2.2.** On Android 14+, surfaces the user-confirm sheet *before* downloading the APK for known updates (applicationId in `AppIdCache`). `PackageInstallerService` now exposes: `createSessionAndRequestPreapproval()` (creates session, calls `Session.requestUserPreapproval(PreapprovalDetails, IntentSender)`, suspends on broadcast receiver), `commitSession()` (streams APK into existing session + commits without re-prompting), `abandonSession()`. `buildSessionParams()` extracted as a shared helper. `CatalogViewModel.install()` requests pre-approval before download starts; uses `commitSession` if approved, falls back silently to `installApk` if declined. `PreapprovalSessionResult` sealed interface: `Approved(sessionId)` / `Declined`. Sources: [Agent A §3, 1].
-6. **`InstallConstraints` for gentle background install** [I 4 / E 2] — when an update is queued in the background, build `InstallConstraints.Builder().setAppNotForegroundRequired().setDeviceIdleRequired().setNotInCallRequired().build()` and pass to `commitSessionAfterInstallConstraintsAreMet()`. The system defers the install instead of forcing us to detect "is the target app foregrounded" via `UsageStats` / Accessibility. **First-mover gap** — Ackpine library exposes it but few stores ship it. Sources: [Agent A §3, 7].
-7. **Honest failure messages** [I 3 / E 2] — decode `EXTRA_STATUS` codes and replace generic "App not installed" with: `STATUS_FAILURE_CONFLICT` → "A different version is already installed" + offer uninstall; `STATUS_FAILURE_INCOMPATIBLE` → "Needs Android X+" or "Needs `arm64-v8a`, your device is `armeabi-v7a`"; `STATUS_FAILURE_INVALID` → "Signature mismatch — refusing to overwrite installed app"; `STATUS_FAILURE_STORAGE` → "Need ~Z MB free, X currently free". Sources: [Agent B §2.13, F-Droid #1968].
+### Shipped through v0.2.3 — reference list (do not re-do)
 
-### Theme: Platform compliance (Android 14 / 15 / 16)
+Every numbered item from this list shipped in some v0.2.x. Cross-references are kept intact so later tiers can still reference them.
 
-8. **`FOREGROUND_SERVICE_DATA_SYNC` + WorkManager FGS-type override** [I 5 / E 2] — declare `&lt;uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" /&gt;`, override `androidx.work.impl.foreground.SystemForegroundService` in our manifest with `android:foregroundServiceType="dataSync"`. Without this, any scheduled-update Worker crashes with `SecurityException` on Android 14+. Sources: [3, 24].
-9. **UIDT for the actual download** [I 4 / E 2] — Android 15's 6-hour FGS aggregate cap means `dataSync` workers will hit the wall. Use `setUserInitiated(true)` (User-Initiated Data Transfer) on the download `OneTimeWorkRequest`. UIDT exempts from the 6-hour cap. Sources: [25].
-10. **Edge-to-edge audit** [I 4 / E 2] — **Done in v0.2.1 pass.** `AppRoot` now uses `WindowInsets.safeDrawing` with consumed scaffold insets, Settings uses `imePadding()`, and the nav/content layout compiles under target API 35 edge-to-edge. Device screenshot verification is still pending because no adb device/emulator was attached in this pass. Sources: [26, 56].
-11. **`PredictiveBackHandler`** [I 3 / E 2] — set `android:enableOnBackInvokedCallback="true"` on `&lt;application&gt;`; default-on for apps targeting API 36. Replace any current `BackHandler` on detail surfaces with `PredictiveBackHandler { progress -> … }` for the animated preview pop. Sources: [27].
-12. **Adaptive icon `<monochrome>` layer** [I 2 / E 1] — confirm `mipmap-anydpi-v26/ic_launcher.xml` ships a clean monochrome glyph; verify on Android 13+ "Themed icons" toggle. *We currently reuse `ic_launcher_foreground` as the monochrome — replace with a single-color glyph that reads cleanly under the system tint.* Sources: [28].
-13. **`POST_NOTIFICATIONS` runtime permission flow** [I 3 / E 2] — required on API 33+ for the silent self-update path; `ActivityResultContracts.RequestPermission`. Graceful fallback: if denied, `setRequireUserAction(USER_ACTION_REQUIRED)`. Sources: [1].
-14. **`enableEdgeToEdge()` + status / nav bar contrast tokens** [I 2 / E 1] — **Done in v0.2.1 pass.** `MainActivity` now passes explicit dark transparent `SystemBarStyle` tokens to `enableEdgeToEdge()`, and API-27-only navigation-bar contrast attributes live in `values-v27` so `lintDebug` stays clean on minSdk 26.
-15. **Developer Verification preflight + warning UX** [I 5 / E 3] — **Done in v0.2.1 pass.** After APK metadata inspection and before `PackageInstaller.Session.commit()`, LAS detects Android Developer Verifier (`com.google.android.verifier`) or Google verification services and surfaces a non-blocking card advisory when the APK's `applicationId + signing cert` registration status is unknown. Android does not expose a public registration-query API to third-party stores yet, so the app logs the warning locally and lets the platform make the final install decision. Sources: [21, 51, 65, A21, A126].
-
-### Theme: Security / secrets / network
-
-16. **Network Security Config + OkHttp TLS 1.3** [I 3 / E 2] — ship `res/xml/network_security_config.xml` pinning `api.github.com` and `objects.githubusercontent.com` at the **root CA** (DigiCert Global Root G2 + ISRG Root X1 backup) with a 6-month `expiration`. OkHttp `connectionSpecs(listOf(ConnectionSpec.RESTRICTED_TLS))`. Pin **SPKI**, never the leaf — GitHub rotates leaves frequently. Sources: [29].
-17. **OkHttp ≥ 4.12.0 pin** [I 3 / E 1] — already on 4.12.0 in v0.1.0; lock with a build-fail comparator to prevent transitive downgrade. CVE-2023-0833 ban for older. Sources: [Agent D §15, 30].
-18. **Stop using `androidx.security:security-crypto`** [I 4 / E 3] — **Done in v0.2.1 pass.** Active secret storage now uses Tink AEAD over an app-private encrypted snapshot file for GitHub PATs, per-source PATs, and signing pins. Existing EncryptedSharedPreferences entries and any prior plaintext fallback entries migrate on first launch and are then cleared. The `security-crypto` dependency remains only as a one-release migration bridge; remove it after the migration window. Sources: [31, 32, 33].
-19. **`dataExtractionRules` audit** [I 2 / E 1] — already present in v0.1.0; explicitly exclude downloaded-APK cache, install-state-per-device, and signing pins from cloud backup; allow device-transfer of catalog config + PAT only if a local-only setting "Migrate secrets on device transfer" is on. Sources: [Agent D §12.1].
-
-### Theme: Catalog UX (smallest viable set)
-
-20. **Multi-org / multi-source UI** [I 5 / E 3] — **Done in v0.2.1 pass.** Settings now lists configured GitHub users / orgs with per-source enablement, PAT, topic filter, and pre-release controls. Catalog discovery aggregates enabled sources, uses source-specific credentials for private repo listing and APK downloads, labels cards by source when needed, and searches by source name. Default remains `SysAdminDoc`. Sources: [E26, E120, E134].
-21. **Search + fuzzy filter on catalog** [I 4 / E 2] — **Done in v0.2.1 pass.** Catalog has a top search field that matches app name, repo owner/handle, description, tag, version, and package id; ranking prefers exact and prefix hits, supports compact-name subsequence matches, and shows count + no-match recovery. Covered by focused JVM unit tests. Sources: [E5, F-Droid #336, F-Droid #2008, Droid-ify #87].
-
-### Theme: Observability
-
-22. **Install audit log on disk** [I 2 / E 1] — append a structured line per install/uninstall/pin-mismatch event to `<files>/logs/install.log` (JSON Lines): `{ts, applicationId, versionCode, certSha256, source, result}`. Cheap forensic surface; useful for "what installed this and when?"
-
-### Theme: Migration
-
-23. **DataStore migration framework** [I 2 / E 1] — **Done in v0.2.1 pass.** `SettingsStore` now wires a no-op `DataMigration<Preferences>` into the DataStore builder, preserving current data while giving v0.3+ a stable migration insertion point.
-
-### Theme: Docs
-
-24. **README + threat-model section** [I 3 / E 1] — add a top-level "Threat model" block to README explicitly stating: signature-pin scope, what the user trusts (GitHub repo owner, GitHub TLS, OkHttp pin), what the user does not trust (LAS itself can be compromised; mitigation = update ownership + open source). The TrollStore-pattern transparency that builds user-confidence faster than feature lists. Sources: [Agent C §3.12].
-
-**v0.2.0 ships when items 1–24 are merged, the build is green on a 5.0/8.0/13/14/15 device matrix in CI, the signed APK is uploaded to GH Release v0.2.0 with a sha256 sidecar, README is re-shot, and the same on-device golden flow that DoD'd v0.1.0 still passes (sideload, install Astra-Deck, see "Update available", install update, see signature-pin warning when re-installed with a forged APK).**
+- **v0.2.0 (2026-04-25)** — items **1** (update-ownership claim), **2** (`PACKAGE_SOURCE_STORE`), **3** (installer attribution), **4** (lineage-aware signature verification via apksig), **7** (decoded `STATUS_FAILURE_*` messages), **8** (`FOREGROUND_SERVICE_DATA_SYNC` + WorkManager FGS-type override), **12** (monochrome adaptive icon), **13** (`POST_NOTIFICATIONS` permission declared), **16** (Network Security Config root-CA SPKI pinning), **22** (install audit log on disk).
+- **v0.2.1 (2026-05-01)** — items **10** (edge-to-edge audit), **11** (predictive back enabled), **14** (system-bar contrast tokens + `values-v27` split), **15** (Developer Verification preflight + warning UX), **17** (OkHttp ≥ 4.12.0 build-fail comparator), **18** (active secret storage migrated to Tink AEAD; `security-crypto` retained as migration bridge only), **19** (`dataExtractionRules` audit), **20** (multi-org / multi-source UI), **21** (search + fuzzy filter), **23** (DataStore migration framework hook), `AppIdCache` for cold-start update detection, channel labels, stale-release indicator, release-notes section, log clear button, `CancellationException` correctness fix.
+- **v0.2.2 (2026-05-01)** — item **5** (`requestUserPreapproval()` two-phase install flow on API 34+).
+- **v0.2.3 (2026-04-29)** — item **34** (permission diff before update; `CardStatus.PermissionReview` + `PermissionDiffBlock`), item **35** (per-app "ignore updates" via `IgnoreListStore`), item **37** (cancel in-flight download via coroutine cancellation + cancel button on `Working` cards), item **62** (save APK without installing — MediaStore on API 29+, app-scoped Downloads on API 26–28), item **24** (README threat-model section), `IgnoreListStore.kt` + installer/source-claim hardening pass + signature-verification cleanup.
 
 ---
 
 ## Next — v0.3.0 "Multi-source + companion devices"
 
-Theme distribution: **T-SOURCES × 4, T-COMPANION × 3, T-CATALOG × 4, T-INSTALL × 2, T-PLUGIN × 1, T-OFFLINE × 2, T-A11Y × 2.**
+Theme distribution: **T-SOURCES × 4, T-COMPANION × 3, T-CATALOG × 4, T-INSTALL × 2, T-PLUGIN × 1, T-OFFLINE × 2, T-A11Y × 2, T-COMPLIANCE × 1.**
 
-**Frame:** v0.3 turns LAS from a single-GitHub-user catalog into a multi-source store. The plugin contract lands here. The Wear OS surface and the desktop ADB-pair sibling land here. Some "Later" items get pulled forward if the v0.2 release feedback warrants.
+**Frame:** v0.3 turns LAS from a single-GitHub-user catalog into a multi-source store. The plugin contract lands here. The Wear OS surface and the desktop ADB-pair sibling land here. The Android Developer Verification "advanced sideloading flow" walkthrough (item 73) lands here — by August 2026 every unverified APK we surface needs an in-app explainer for the new system flow, or our Catalog cards become tombstones the user can't act on. Some "Later" items get pulled forward if the v0.2 release feedback warrants.
 
 ### Theme: Sources & plugin architecture
 
@@ -142,18 +124,22 @@ Theme distribution: **T-SOURCES × 4, T-COMPANION × 3, T-CATALOG × 4, T-INSTAL
 
 32. **Channel labels (stable / beta / alpha / nightly)** [I 4 / E 2] — derive from `prerelease=true` plus tag substring (`/(alpha|beta|rc|nightly|dev)/i`); per-app channel pin in app detail. Borrowed from Snap (track / risk) and APKMirror's vocabulary. Sources: [Agent B §2.5, Agent C §2 channels].
 33. **Anti-features taxonomy display** [I 3 / E 2] — when consuming F-Droid index v2 (item 26), surface F-Droid's 10 anti-features (`Ads`, `Tracking`, `NonFreeNet`, `NonFreeAdd`, `NonFreeDep`, `NonFreeAssets`, `UpstreamNonFree`, `NoSourceSince`, `KnownVuln`, `DisabledAlgorithm`, plus the 2024 `TetheredNet`) as filter chips on Catalog and as red/yellow badges on app rows. Sources: [44].
-34. **Permission diff before update** [I 4 / E 2] — when a queued update requests *new* dangerous permissions vs the installed version, hold the install behind a "review changes" sheet. Neo Store and Droid-ify just shipped this; adopting on day one keeps us from looking dated. Sources: [Agent A §4 Neo Store CHANGELOG 1.2.5, Droid-ify v0.7.1].
-35. **Per-app "ignore updates" / hide from view** [I 2 / E 1] — Settings → Hidden apps. Common F-Droid #1908, Neo-Store #262 ask. Sources: [F-Droid #1908, Neo-Store #262].
+34. **Permission diff before update** [I 4 / E 2] — ✅ **Done in v0.2.3.** When a queued update requests *new* dangerous permissions vs the installed version, the install is held behind a `CardStatus.PermissionReview` state with the `PermissionDiffBlock` composable rendering the diff inline; user must tap "Install anyway" to proceed. `developerVerificationNotice` and `newDangerousPermissions` are cleared on success. Sources: [Agent A §4 Neo Store CHANGELOG 1.2.5, Droid-ify v0.7.1].
+35. **Per-app "ignore updates" / hide from view** [I 2 / E 1] — ✅ **Done in v0.2.3.** `IgnoreListStore` (DataStore) tracks `applicationId`s the user has marked "ignore updates"; `buildCardState()` keeps those apps in `Installed` rather than flipping to `UpdateAvailable`. Toggle exposed on each app card. Sources: [F-Droid #1908, Neo-Store #262].
 
 ### Theme: Offline & resilience
 
 36. **Resume-interrupted-download** [I 4 / E 2] — OkHttp `Range: bytes=N-`; persist partial on `cacheDir/apks/.partial/`; surface "Resume download" on the card. Accrescent #10. Sources: [Accrescent #10, Obtainium implicit].
-37. **Cancel in-flight download** [I 3 / E 1] — Coroutine-cancellation through the OkHttp call; X button on the progress UI. Top-of-list ask: Obtainium #950. Sources: [E124, Obtainium #950].
+37. **Cancel in-flight download** [I 3 / E 1] — ✅ **Done in v0.2.1.** Coroutine-cancellation through the OkHttp call; X button on `Working` cards. `CancellationException` re-thrown so cancellation propagates correctly. Sources: [E124, Obtainium #950].
 
 ### Theme: Accessibility & i18n
 
 38. **Per-app language preferences** [I 3 / E 2] — `LocaleManager.setApplicationLocales(LocaleList.forLanguageTags(...))` per-row. Auto-generate `LocaleConfig` via `androidResources { generateLocaleConfig = true }`. Future-proofs future translation work. Sources: [45].
 39. **Large-screen / fold layout** [I 3 / E 3] — `WindowSizeClass` driven layout: list + detail two-pane on `Expanded`. Catalog adapts to fold hinge using `androidx.window:1.3+`. Accrescent #328 / Neo Store #297. Sources: [Accrescent #328].
+
+### Theme: Compliance (forward-dated)
+
+73. **Advanced sideloading flow explainer + per-source verification badge** [I 5 / E 3] — Android's "advanced sideloading flow" launches August 2026; on certified devices, every install of an APK whose `(applicationId, signing cert)` is not registered with Google triggers a multi-step authentication + 24-hour wait period before the user can install. v0.2.1's Developer Verification preflight (item 15) detects the verifier; v0.3 adds the *user-facing* explainer: per-source "Verification status" badge (Verified / Unverified / Unknown), an in-app explainer when the user taps the badge, a one-tap deep-link into the system advanced flow, and a Settings toggle "Hide unverified sources" for users who prefer the cliff to the warning. Without this, every Catalog card from a hobbyist publisher becomes a tombstone the user can't act on. Sources: [21, 51, 65, 213, 214].
 
 ---
 
@@ -203,7 +189,7 @@ Items here are intentionally NOT scoped to a single version yet. They get assign
 
 ### Theme: Power-user paths (continued)
 
-62. **Save APK without installing** [I 2 / E 1] — Obtainium #29. Long-press → "Save APK to /Downloads". Sources: [Obtainium #29].
+62. **Save APK without installing** [I 2 / E 1] — ✅ **Done in v0.2.3.** `CatalogViewModel.saveApk()` + `saveToDownloads()` writes via MediaStore `Downloads` on API 29+, app-scoped `Downloads/` on API 26–28. Long-press → "Save APK". Obtainium #29. Sources: [Obtainium #29].
 63. **GitHub fine-grained PAT support + OAuth** [I 3 / E 3] — Obtainium discussion #2722, #2644. Move from classic PAT to fine-grained; document required scopes. Sources: [Obtainium #2722, #2644].
 64. **SOCKS5 / Orbot proxy support** [I 2 / E 2] — OkHttp `Proxy(SOCKS, ...)` configurable in Settings. Obtainium #121. Sources: [Obtainium #121].
 
@@ -253,7 +239,7 @@ These came up in research and will not ship. Stated up-front to prevent silent r
 - **R1. AAB direct install in the app.** Android cannot install AAB directly. Pre-extract via bundletool in CI before catalog publication; install the resulting split APKs. *(Item 55 covers the split-APK install path; AAB-as-a-format is rejected.)*
 - **R2. Telemetry / analytics SDK (any kind).** Violates the Universal Rule "No telemetry beyond direct connection to GitHub." Crash logs are local-only; we never ship them off-device.
 - **R3. In-app monetization / ad-supported tier.** Violates project philosophy. The Amazon Appstore evidence ([Agent B §1.5]) shows the trust-erosion path.
-- **R4. SafetyNet attestation.** Removed in 2024. Use Play Integrity (item 62 Under Consideration) only if it solves a real problem we don't have today.
+- **R4. SafetyNet attestation.** Removed in 2024. Play Integrity is its replacement and is not adopted here — it requires Play Services on the device and would gatekeep the very GrapheneOS / de-Googled audience the project serves. Sources: [162, 163].
 - **R5. Self-update via in-app `dex`-loading.** Stock Android forbids it; Google Play Protect explicitly flags it as a malware indicator. Self-update only via the same `PackageInstaller.Session` flow our publishers use.
 - **R6. APK runtime fetch (one APK loads a second APK from the network).** Same reason as R5 — the staging-loader pattern is exactly the malware vector banking trojans use. Our threat model bans it.
 - **R7. Cydia Substrate / Frida / Xposed style runtime hooks.** Out of scope. MMRL covers this category — point users there. Source: [A91].
@@ -295,7 +281,7 @@ These came up in research and will not ship. Stated up-front to prevent silent r
 ## Self-audit summary (Phase 5)
 
 - **Coverage check** — every category from the brief is represented:
-  - **Security:** items 1, 4, 16–19, 43–45, 50, 51, 53, 70–72, R5, R6.
+  - **Security:** items 1, 4, 16–19, 18b, 43–45, 50, 51, 53, 70–72, R5, R6.
   - **Accessibility:** items 38, 67–69; T-A11Y theme.
   - **i18n / l10n:** items 38, 47.
   - **Observability / telemetry:** items 22, 48 (no off-device telemetry — see R2).
@@ -306,12 +292,14 @@ These came up in research and will not ship. Stated up-front to prevent silent r
   - **Mobile (Wear / TV / Auto):** items 29, 30, 65, 66, U14.
   - **Offline / resilience:** items 36, 37, 49, U-resilience implicit.
   - **Multi-user / collab:** intentionally light — single-user catalog by design — but sharing surfaces in items 27, 60, 61.
-  - **Migration paths:** item 23 (DataStore migrations), item 60 (lockfile), item 18 (security-crypto migration).
+  - **Migration paths:** item 23 (DataStore migrations), item 60 (lockfile), item 18 / 18b (security-crypto migration + drop).
   - **Upgrade strategy:** versioning policy above + item 23.
+  - **Compliance (Developer Verification):** items 15 (shipped v0.2.1), 73 (v0.3).
 - **Source traceability** — every numbered item links to at least one Appendix entry.
 - **Tier placement justification** — each item has effort × impact + reason in tier text.
-- **Internal consistency** — no item appears in two tiers; rejects (R1–R15) explicitly state their reason; Under Consideration items each carry the open question.
-- **Adversarial review pass** — ran a hostile-reviewer scan and addressed: (a) "you didn't talk about reproducible builds" → items 43, 70, 71. (b) "you skipped the looming Developer Verification existential risk" → items 15, 21, 51 plus the strategic frame. (c) "your background-update story was a one-liner" → items 8, 9, 25, 36, 46–49. (d) "you didn't address Material 3 Expressive / edge-to-edge / predictive back" → items 10–12, 41. (e) "you didn't address split APK / XAPK" → items 54, 55. (f) "no plugin model" → items 25, 28, 61.
+- **Internal consistency** — items shipped through v0.2.3 are annotated in place with ✅ markers and never appear in two tiers; rejects (R1–R16) explicitly state their reason; Under Consideration items each carry the open question.
+- **Reconciliation against shipped state (v2.4 pass)** — every item from the v2.3 "Now" tier is either ✅ (1, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24) or carry-forward (6, 9, 18b). Cross-tier items now annotated ✅: **34** (v0.2.3), **35** (v0.2.3), **37** (v0.2.1), **62** (v0.2.3).
+- **Adversarial review pass** — ran a hostile-reviewer scan and addressed: (a) "you didn't talk about reproducible builds" → items 43, 70, 71. (b) "you skipped the looming Developer Verification existential risk" → items 15 (shipped) + new **item 73** (advanced-sideloading-flow user explainer for the August 2026 launch) + updated strategic frame. (c) "your background-update story was a one-liner" → items 8, 9, 25, 36, 46–49. (d) "you didn't address Material 3 Expressive / edge-to-edge / predictive back" → items 10–12, 41. (e) "you didn't address split APK / XAPK" → items 54, 55. (f) "no plugin model" → items 25, 28, 61. (g) "you marked items shipped without verifying the code" → reconciliation pass walked `app/src/main/kotlin/com/sysadmin/lasstore/` directly (`IgnoreListStore.kt`, `AppIdCache.kt`, `InstallAuditLog.kt`, `CatalogViewModel.saveApk` + `saveToDownloads`, `CardStatus.PermissionReview`, `PermissionDiffBlock`, `setRequestUpdateOwnership` + `setPackageSource(PACKAGE_SOURCE_STORE)` in `PackageInstallerService`, `apksig` 8.7.3 in `build.gradle.kts`, Network Security Config XML).
 
 ---
 
@@ -547,10 +535,13 @@ URLs grouped by source class. Numbered references are used inline above as `[N]`
 209. https://www.androidpolice.com/android-15-sideloading-restrictions-dont-apply-to-third-party-app-stores/
 210. https://github.com/Droid-ify/client/issues/1088 — Material You by default (Droid-ify)
 
-### G. LocalAndroidStore + sibling (211–212)
+### G. LocalAndroidStore + sibling (211–215)
 
 211. https://github.com/SysAdminDoc/LocalAndroidStore — this repo
 212. https://github.com/SysAdminDoc/LocalChromeStore — sibling project
+213. https://www.androidauthority.com/android-developer-verification-rollout-sideloading-flow-3653395/ — Advanced sideloading flow + 24-hour wait period (April 2026)
+214. https://thehackernews.com/2026/03/android-developer-verification-rollout.html — Verification rollout timeline (April 2026 verifier app, August 2026 advanced flow, Sept 30 2026 BR/ID/SG/TH enforcement)
+215. https://github.com/solrudev/Ackpine — InstallConstraints helper (referenced by item 6)
 
 ---
 
