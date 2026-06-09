@@ -27,3 +27,7 @@ keystore.properties
 # Misc
 *.log
 hs_err_pid*
+
+# Markdown files local-only (except README)
+*.md
+!README.md
