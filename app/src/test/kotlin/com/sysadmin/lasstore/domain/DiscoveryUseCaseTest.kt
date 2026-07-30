@@ -198,6 +198,80 @@ class DiscoveryUseCaseTest {
         assertEquals(9_000L, rateLimit.retryAtEpochMillis)
     }
 
+    @Test
+    fun assetClassifierPrefersUniversalOverLargerAbiVariant() {
+        val selected = ApkAssetClassifier.select(
+            assets = listOf(
+                asset("app-arm64-v8a.apk", size = 200),
+                asset("app-universal.apk", size = 100),
+            ),
+            supportedAbis = listOf("arm64-v8a"),
+        )
+
+        assertEquals("app-universal.apk", selected?.name)
+    }
+
+    @Test
+    fun assetClassifierFollowsDeviceAbiOrderAndRejectsIncompatibleOnlyRelease() {
+        val variants = listOf(
+            asset("app-armeabi-v7a.apk", size = 300),
+            asset("app-arm64_v8a.apk", size = 200),
+            asset("app-x86_64.apk", size = 500),
+        )
+
+        assertEquals(
+            "app-arm64_v8a.apk",
+            ApkAssetClassifier.select(
+                variants,
+                supportedAbis = listOf("arm64-v8a", "armeabi-v7a"),
+            )?.name,
+        )
+        assertEquals(
+            null,
+            ApkAssetClassifier.select(
+                variants,
+                supportedAbis = listOf("x86"),
+            ),
+        )
+    }
+
+    @Test
+    fun assetClassifierDoesNotTreatSplitSetOrSidecarAsStandaloneApk() {
+        assertEquals(
+            null,
+            ApkAssetClassifier.select(
+                assets = listOf(
+                    asset("base.apk", size = 100),
+                    asset("split_config.arm64_v8a.apk", size = 20),
+                    asset("split_config.en.apk", size = 10),
+                ),
+                supportedAbis = listOf("arm64-v8a"),
+            ),
+        )
+        assertEquals(
+            null,
+            ApkAssetClassifier.select(
+                assets = listOf(
+                    asset("app.apk.idsig", size = 10),
+                    asset("app.aab", size = 100),
+                    asset("app.apkm", size = 100),
+                ),
+                supportedAbis = listOf("arm64-v8a"),
+            ),
+        )
+    }
+
+    @Test
+    fun assetClassifierKeepsSingleUnlabeledApkConvention() {
+        assertEquals(
+            "app-release.apk",
+            ApkAssetClassifier.select(
+                assets = listOf(asset("app-release.apk", size = 100)),
+                supportedAbis = listOf("arm64-v8a"),
+            )?.name,
+        )
+    }
+
     private class MemorySnapshots : CatalogSnapshotRepository {
         private val values = mutableMapOf<String, CatalogSnapshot>()
         override fun read(sourceKey: String): CatalogSnapshot? = values[sourceKey]
@@ -223,6 +297,12 @@ class DiscoveryUseCaseTest {
                     browserDownloadUrl = "https://example.invalid/$repo.apk",
                 )
             ),
+        )
+
+        fun asset(name: String, size: Long) = GhAsset(
+            name = name,
+            browserDownloadUrl = "https://example.invalid/$name",
+            size = size,
         )
 
         fun app(owner: String, repo: String) = AppInfo(

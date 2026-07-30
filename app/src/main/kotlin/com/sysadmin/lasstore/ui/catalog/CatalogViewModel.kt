@@ -99,6 +99,7 @@ class CatalogViewModel : ViewModel() {
         logger = sl.logger,
         snapshots = sl.catalogSnapshots,
         patForSource = { sourceKey -> sl.settings.getPat(sourceKey) },
+        supportedAbis = Build.SUPPORTED_ABIS.toList(),
     )
 
     private val _state = MutableStateFlow(CatalogUiState())

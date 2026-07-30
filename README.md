@@ -92,7 +92,7 @@ For each enabled GitHub source, LocalAndroidStore:
 1. Lists owned, non-archived, non-fork public repos via the GitHub REST API (`/users/{user}/repos`).
 2. If the source has a PAT, also lists authenticated repos via `/user/repos`, filters them back to the source owner, and dedupes them with the public list so private user / org repos can appear.
 3. For each repo, fetches the latest release (`/repos/{owner}/{repo}/releases/latest`, or the first non-draft from `/releases?per_page=10` when pre-releases are enabled), with a global maximum of four concurrent release requests.
-4. Picks one APK asset per release: skips `*.apk.idsig` sidecars and `*.aab` files, prefers an asset whose name contains `universal`, otherwise picks the largest `.apk`.
+4. Picks one installable APK asset per release: skips signature sidecars, app bundles, and split/config APK sets; prefers an explicit universal/no-arch build, then an unlabeled standalone APK, then the device's highest-priority compatible ABI.
 5. Drops repos with no APK asset on their latest release. Archived repos and forks are dropped at step 1.
 6. Persists ETag-tagged GitHub responses and a per-source catalog snapshot. A `304 Not Modified` reuses the saved response; partial, offline, and rate-limited refreshes keep usable releases and show snapshot age.
 
@@ -188,6 +188,14 @@ See [ROADMAP.md](ROADMAP.md). Highlights:
 - JDK 17 (CI) or JDK 21 (Android Studio jbr)
 - minSdk 26 (Android 8.0), targetSdk / compileSdk 35 (Android 15)
 - Debug APK assembly, lint, unit tests, and connected-device tests are the supported automated verification path.
+
+Run the complete trust-boundary matrix from PowerShell:
+
+```powershell
+pwsh -NoProfile -File .\scripts\verify-trust-matrix.ps1
+```
+
+The command runs unit tests (including Robolectric API 32/33 contracts), lint, debug APK assembly, and the full instrumented suite on the local `LAS_API_26`, `Aura_API_35`, and `OpenTasker_API_37` AVDs. It reserves its own emulator serial and never selects a connected physical device. Override the AVD names or emulator port with the script parameters when local names differ.
 
 ---
 

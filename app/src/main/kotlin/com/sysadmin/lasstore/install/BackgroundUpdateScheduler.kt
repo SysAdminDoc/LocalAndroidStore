@@ -19,6 +19,20 @@ import com.sysadmin.lasstore.data.Logger
 import com.sysadmin.lasstore.domain.AppInfo
 import java.util.concurrent.TimeUnit
 
+internal enum class BackgroundUpdateTransport {
+    WorkManager,
+    UserInitiatedJob,
+}
+
+internal fun backgroundUpdateTransportForApi(
+    sdkInt: Int = Build.VERSION.SDK_INT,
+): BackgroundUpdateTransport =
+    if (sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        BackgroundUpdateTransport.UserInitiatedJob
+    } else {
+        BackgroundUpdateTransport.WorkManager
+    }
+
 class BackgroundUpdateScheduler(
     private val context: Context,
     private val logger: Logger,
@@ -26,7 +40,10 @@ class BackgroundUpdateScheduler(
     fun enqueue(info: AppInfo): Boolean {
         val payload = QueuedUpdatePayload.from(info)
         com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus.markQueued(payload)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            backgroundUpdateTransportForApi() == BackgroundUpdateTransport.UserInitiatedJob
+        ) {
             val scheduled = runCatching { scheduleUidt(payload) }
                 .onFailure {
                     logger.warn(
@@ -48,7 +65,7 @@ class BackgroundUpdateScheduler(
             .get(payload)
             ?.packageInstallerSessionId
             ?.let(com.sysadmin.lasstore.data.ServiceLocator.installer::abandonSession)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        if (backgroundUpdateTransportForApi() == BackgroundUpdateTransport.UserInitiatedJob) {
             context.getSystemService(JobScheduler::class.java).cancel(jobIdFor(payload))
         }
         WorkManager.getInstance(context).cancelUniqueWork(payload.workName)

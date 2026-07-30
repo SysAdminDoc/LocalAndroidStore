@@ -96,6 +96,7 @@ class DiscoveryUseCase(
     private val snapshots: CatalogSnapshotRepository,
     private val patForSource: (String) -> String = { "" },
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
+    private val supportedAbis: List<String> = emptyList(),
 ) {
     suspend fun discover(sources: List<GitHubSource>): CatalogDiscoveryResult = coroutineScope {
         val requestBudget = Semaphore(MAX_CONCURRENT_RELEASE_LOOKUPS)
@@ -166,7 +167,10 @@ class DiscoveryUseCase(
                             sourceKey = source.key,
                         )
                     } ?: return@async ReleaseLookup.Missing
-                    val asset = pickPrimaryApk(release) ?: return@async ReleaseLookup.Missing
+                    val asset = ApkAssetClassifier.select(
+                        release.assets,
+                        supportedAbis,
+                    ) ?: return@async ReleaseLookup.Missing
                     ReleaseLookup.Found(
                         AppInfo(
                             owner = repo.owner.login,
@@ -279,24 +283,6 @@ class DiscoveryUseCase(
         CatalogFailureKind.Unknown -> 7
     }
 
-    /**
-     * Choose the primary APK asset:
-     *   1. Skip .apk.idsig sidecars and .aab.
-     *   2. Prefer one whose name contains "universal".
-     *   3. Otherwise pick the largest .apk.
-     */
-    private fun pickPrimaryApk(release: GhRelease): GhAsset? {
-        val apks = release.assets.filter {
-            val name = it.name.lowercase(Locale.US)
-            name.endsWith(".apk") && !name.endsWith(".apk.idsig")
-        }
-        if (apks.isEmpty()) return null
-        apks.firstOrNull {
-            it.name.lowercase(Locale.US).contains("universal")
-        }?.let { return it }
-        return apks.maxByOrNull { it.size }
-    }
-
     private data class SourceDiscovery(
         val apps: List<AppInfo>,
         val issue: CatalogSourceIssue? = null,
@@ -312,4 +298,77 @@ class DiscoveryUseCase(
     private companion object {
         const val MAX_CONCURRENT_RELEASE_LOOKUPS = 4
     }
+}
+
+/**
+ * Conservative single-APK selection until the variant/bundle UI ships.
+ *
+ * Explicit universal/noarch artifacts win. A lone unlabeled APK remains compatible with the
+ * existing GitHub-release convention. For ABI-only releases, the device ABI order is honored;
+ * an incompatible variant or a split-config set is never handed to PackageInstaller as if it
+ * were a standalone APK.
+ */
+internal object ApkAssetClassifier {
+    fun select(
+        assets: List<GhAsset>,
+        supportedAbis: List<String>,
+    ): GhAsset? {
+        val splitSetPresent = assets.any { isSplitConfig(it.name) }
+        val apks = assets.filter { asset ->
+            val name = asset.name.lowercase(Locale.US)
+            name.endsWith(".apk") &&
+                !name.endsWith(".apk.idsig") &&
+                !isSplitConfig(name)
+        }
+        if (apks.isEmpty()) return null
+        if (splitSetPresent && apks.any { it.name.equals("base.apk", ignoreCase = true) }) {
+            return null
+        }
+
+        apks.filter { isUniversal(it.name) }
+            .maxByOrNull { it.size }
+            ?.let { return it }
+
+        val unlabeled = apks.filter { abiForName(it.name) == null }
+        if (unlabeled.isNotEmpty()) return unlabeled.maxByOrNull { it.size }
+
+        supportedAbis.forEach { supported ->
+            apks.filter { abiForName(it.name) == normalizeAbi(supported) }
+                .maxByOrNull { it.size }
+                ?.let { return it }
+        }
+        return null
+    }
+
+    internal fun abiForName(name: String): String? {
+        val normalized = name.lowercase(Locale.US)
+        return when {
+            ARM64.containsMatchIn(normalized) -> "arm64-v8a"
+            ARM_V7.containsMatchIn(normalized) -> "armeabi-v7a"
+            X86_64.containsMatchIn(normalized) -> "x86_64"
+            X86.containsMatchIn(normalized) -> "x86"
+            else -> null
+        }
+    }
+
+    private fun isUniversal(name: String): Boolean =
+        UNIVERSAL.containsMatchIn(name.lowercase(Locale.US))
+
+    private fun isSplitConfig(name: String): Boolean =
+        SPLIT_CONFIG.containsMatchIn(name.lowercase(Locale.US))
+
+    private fun normalizeAbi(abi: String): String? = when (abi.lowercase(Locale.US)) {
+        "arm64-v8a", "arm64_v8a", "aarch64" -> "arm64-v8a"
+        "armeabi-v7a", "armeabi_v7a", "armv7", "armv7a" -> "armeabi-v7a"
+        "x86_64", "x86-64", "amd64" -> "x86_64"
+        "x86", "i686" -> "x86"
+        else -> null
+    }
+
+    private val ARM64 = Regex("(^|[^a-z0-9])(?:arm64[-_]?v8a|aarch64)([^a-z0-9]|$)")
+    private val ARM_V7 = Regex("(^|[^a-z0-9])(?:armeabi[-_]?v7a|armv7a?)([^a-z0-9]|$)")
+    private val X86_64 = Regex("(^|[^a-z0-9])(?:x86[-_]?64|amd64)([^a-z0-9]|$)")
+    private val X86 = Regex("(^|[^a-z0-9])(?:x86|i686)([^a-z0-9]|$)")
+    private val UNIVERSAL = Regex("(^|[^a-z0-9])(?:universal|noarch|all)([^a-z0-9]|$)")
+    private val SPLIT_CONFIG = Regex("(^|[._-])(?:split[._-])?config[._-]")
 }

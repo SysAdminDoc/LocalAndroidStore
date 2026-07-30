@@ -9,6 +9,7 @@
 - Added durable foreground install coordination across download, preapproval, permission review, and commit, including startup `PackageInstaller` reconciliation and cleanup of orphaned APK/MediaStore state.
 - Added a verified-APK trust contract: `apksig` must report a supported scheme, one current signer, and a valid rotation lineage; Android's archive signer must agree before permission review or first-pin enrollment.
 - Added an audited two-stage publisher-key recovery flow showing source, live installed signer, stored pin, downloaded signer, verified schemes, and lineage. It requires exact package-id entry plus independent fingerprint acknowledgement, changes only the pin, and never resumes installation automatically.
+- Added a one-command trust-boundary regression matrix covering GitHub failure/retry behavior, APK asset and identity rules, installer recovery, package visibility, background-work platform branches, accessibility, 200% font scale, RTL, pseudolocales, and real API 26/35/37 emulators plus Robolectric API 32/33 contracts.
 
 ### Fixed
 - Restored GitHub API and release-download connectivity by removing the stale static root-CA pinset and relying on Android's maintained system trust store. Cleartext traffic remains disabled, and a regression test prevents static pins from returning.

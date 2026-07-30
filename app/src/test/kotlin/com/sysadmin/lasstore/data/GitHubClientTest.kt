@@ -58,6 +58,50 @@ class GitHubClientTest {
     }
 
     @Test
+    fun repositoryListingPaginatesUntilShortPage() = runBlocking {
+        val firstPage = (1..100).joinToString(prefix = "[", postfix = "]") { index ->
+            repositoryJson("app-$index")
+        }
+        server.enqueue(MockResponse().setResponseCode(200).setBody(firstPage))
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("[${repositoryJson("app-101")}]"),
+        )
+
+        val repos = client().listUserRepos("alice", sourceKey = "source-a")
+
+        assertEquals(101, repos.size)
+        assertTrue(server.takeRequest().path.orEmpty().endsWith("page=1"))
+        assertTrue(server.takeRequest().path.orEmpty().endsWith("page=2"))
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun authenticationAndAuthorizationFailuresAreDistinctAndNeverRetried() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(401))
+        val authentication = runCatching {
+            client().listUserRepos("alice", sourceKey = "source-a")
+        }.exceptionOrNull()
+        assertTrue(authentication is GitHubRequestException)
+        assertEquals(
+            GitHubFailureKind.Authentication,
+            (authentication as GitHubRequestException).kind,
+        )
+
+        server.enqueue(MockResponse().setResponseCode(403).setHeader("X-RateLimit-Remaining", "12"))
+        val authorization = runCatching {
+            client().listUserRepos("alice", sourceKey = "source-a")
+        }.exceptionOrNull()
+        assertTrue(authorization is GitHubRequestException)
+        assertEquals(
+            GitHubFailureKind.Authorization,
+            (authorization as GitHubRequestException).kind,
+        )
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
     fun transientServerFailuresUseThreeAttemptBoundedRetry() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(503))
         server.enqueue(MockResponse().setResponseCode(502))
@@ -76,6 +120,31 @@ class GitHubClientTest {
         )
 
         assertEquals("v1.2.3", release?.tagName)
+        assertEquals(listOf(200L, 400L), delays)
+        assertEquals(3, server.requestCount)
+    }
+
+    @Test
+    fun exhaustedServerFailureStopsAfterThreeAttempts() = runBlocking {
+        repeat(3) {
+            server.enqueue(MockResponse().setResponseCode(503))
+        }
+        val delays = CopyOnWriteArrayList<Long>()
+
+        val failure = runCatching {
+            client(
+                retryDelay = { delays += it },
+                retryJitterMillis = { 0L },
+            ).latestRelease(
+                owner = "alice",
+                repo = "app",
+                includePrereleases = false,
+                sourceKey = "source-a",
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is GitHubRequestException)
+        assertEquals(GitHubFailureKind.Server, (failure as GitHubRequestException).kind)
         assertEquals(listOf(200L, 400L), delays)
         assertEquals(3, server.requestCount)
     }
@@ -200,6 +269,15 @@ class GitHubClientTest {
     }
 
     private companion object {
+        fun repositoryJson(name: String) = """
+            {
+              "name":"$name",
+              "full_name":"alice/$name",
+              "html_url":"https://github.com/alice/$name",
+              "owner":{"login":"alice"}
+            }
+        """.trimIndent()
+
         const val REPOSITORY_LIST = """
             [{
               "name":"app",
