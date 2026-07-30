@@ -168,6 +168,13 @@ fun CatalogExperience(viewModel: CatalogViewModel = viewModel()) {
                                 onCancelPermissions = { viewModel.cancelPermissionReview(card) },
                                 onIgnore = { viewModel.toggleIgnore(card) },
                                 onSaveApk = { viewModel.saveApk(card) },
+                                onReplacePublisherPin = { typedApplicationId, independentlyVerified ->
+                                    viewModel.replacePublisherPin(
+                                        card = card,
+                                        typedApplicationId = typedApplicationId,
+                                        independentlyVerified = independentlyVerified,
+                                    )
+                                },
                             )
                         }
                     }

@@ -83,6 +83,7 @@ fun ReleaseCard(
     onCancelPermissions: () -> Unit,
     onIgnore: () -> Unit,
     onSaveApk: () -> Unit,
+    onReplacePublisherPin: (typedApplicationId: String, independentlyVerified: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isStale = remember(state.info.publishedAt) {
@@ -92,7 +93,26 @@ fun ReleaseCard(
         published < System.currentTimeMillis() - 365L * 24 * 60 * 60 * 1000
     }
     var notesExpanded by rememberSaveable(state.info.handle) { mutableStateOf(false) }
+    var trustRecoveryVisible by rememberSaveable(
+        state.info.handle,
+        state.publisherTrustDetails?.downloadedMetadata?.signingSha256,
+    ) {
+        mutableStateOf(false)
+    }
     val cardShape = RoundedCornerShape(24.dp)
+
+    if (trustRecoveryVisible) {
+        state.publisherTrustDetails?.let { details ->
+            PublisherTrustRecoveryDialog(
+                details = details,
+                onDismiss = { trustRecoveryVisible = false },
+                onConfirm = { typedApplicationId, independentlyVerified ->
+                    trustRecoveryVisible = false
+                    onReplacePublisherPin(typedApplicationId, independentlyVerified)
+                },
+            )
+        }
+    }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -351,6 +371,9 @@ fun ReleaseCard(
                         onOpen = onOpen,
                         onCancel = onCancel,
                         onProceedPermissions = onProceedPermissions,
+                        onReviewTrust = state.publisherTrustDetails?.let {
+                            { trustRecoveryVisible = true }
+                        },
                     )
                 }
             }
@@ -420,6 +443,7 @@ private fun PrimaryReleaseAction(
     onOpen: () -> Unit,
     onCancel: () -> Unit,
     onProceedPermissions: () -> Unit,
+    onReviewTrust: (() -> Unit)?,
 ) {
     val modifier = Modifier
         .widthIn(min = 122.dp)
@@ -506,22 +530,32 @@ private fun PrimaryReleaseAction(
             )
         }
         CardStatus.SignatureMismatch -> {
-            Button(
-                onClick = {},
-                enabled = false,
-                modifier = modifier,
-                colors = ButtonDefaults.buttonColors(
-                    disabledContainerColor = Catppuccin.Red.copy(alpha = 0.12f),
-                    disabledContentColor = Catppuccin.Red,
-                ),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = null,
-                    modifier = Modifier.size(17.dp),
+            if (onReviewTrust != null) {
+                AccentButton(
+                    text = "Review trust",
+                    icon = Icons.Default.Lock,
+                    accent = Catppuccin.Red,
+                    onClick = onReviewTrust,
+                    modifier = modifier,
                 )
-                Spacer(Modifier.width(7.dp))
-                Text("Blocked")
+            } else {
+                Button(
+                    onClick = {},
+                    enabled = false,
+                    modifier = modifier,
+                    colors = ButtonDefaults.buttonColors(
+                        disabledContainerColor = Catppuccin.Red.copy(alpha = 0.12f),
+                        disabledContentColor = Catppuccin.Red,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = null,
+                        modifier = Modifier.size(17.dp),
+                    )
+                    Spacer(Modifier.width(7.dp))
+                    Text("Blocked")
+                }
             }
         }
         CardStatus.PermissionReview -> {

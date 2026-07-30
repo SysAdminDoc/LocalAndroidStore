@@ -54,7 +54,33 @@ data class CardState(
     /** True when the user has silenced update notifications for this app (Item 35). */
     val isIgnored: Boolean = false,
     val queuedUpdateStatus: QueuedUpdateStatus? = null,
+    val publisherTrustDetails: PublisherTrustDetails? = null,
 )
+
+data class PublisherTrustDetails(
+    val source: String,
+    val installedSignerSha256: String?,
+    val storedPinSha256: String,
+    val downloadedMetadata: ApkMetadata,
+)
+
+internal fun canAdvancePublisherPinRecovery(
+    expectedApplicationId: String,
+    typedApplicationId: String,
+): Boolean = typedApplicationId.trim() == expectedApplicationId
+
+internal fun canReplacePublisherPin(
+    details: PublisherTrustDetails,
+    typedApplicationId: String,
+    independentlyVerified: Boolean,
+): Boolean =
+    independentlyVerified &&
+        canAdvancePublisherPinRecovery(
+            details.downloadedMetadata.applicationId,
+            typedApplicationId,
+        ) &&
+        details.downloadedMetadata.isEligibleForPinEnrollment &&
+        details.storedPinSha256 != details.downloadedMetadata.signingSha256
 
 data class CatalogUiState(
     val refreshing: Boolean = false,
@@ -454,6 +480,8 @@ class CatalogViewModel : ViewModel() {
                     else -> false
                 }
                 if (!pinAccepted) {
+                    val installedSigner = sl.installState.info(meta.applicationId)
+                        ?.currentSignerSha256
                     preapprovalSessionId?.let { sl.installer.abandonSession(it) }
                     sl.foregroundInstalls.remove(key)
                     sl.logger.error(
@@ -466,7 +494,17 @@ class CatalogViewModel : ViewModel() {
                         it.copy(
                             status = CardStatus.SignatureMismatch,
                             message = "Publisher key changed — install blocked. " +
-                                "Possible MITM or repo takeover. Install manually if you trust this update.",
+                                "Possible compromise or legitimate key loss. Review trust details.",
+                            publisherTrustDetails = PublisherTrustDetails(
+                                source = if (card.info.sourceLabel == card.info.owner) {
+                                    card.info.handle
+                                } else {
+                                    "${card.info.sourceLabel} · ${card.info.handle}"
+                                },
+                                installedSignerSha256 = installedSigner,
+                                storedPinSha256 = requireNotNull(pinned),
+                                downloadedMetadata = meta,
+                            ),
                         )
                     }
                     return@launch
@@ -563,6 +601,107 @@ class CatalogViewModel : ViewModel() {
         activeJobs.remove(key)?.cancel()
         cancelPersistedForegroundOperation(key)
         resetCard(card)
+    }
+
+    /**
+     * Deliberate recovery from an unrelated publisher key. This only replaces the local trust
+     * pin; it never resumes or starts an install. The release must be downloaded and reviewed
+     * again through the normal pipeline.
+     */
+    fun replacePublisherPin(
+        card: CardState,
+        typedApplicationId: String,
+        independentlyVerified: Boolean,
+    ) {
+        val currentCard = _state.value.cards.firstOrNull {
+            cardKey(it.info) == cardKey(card.info)
+        }
+        val details = currentCard?.publisherTrustDetails
+        if (currentCard?.status != CardStatus.SignatureMismatch ||
+            details == null ||
+            !canReplacePublisherPin(details, typedApplicationId, independentlyVerified)
+        ) {
+            _state.update {
+                it.copy(warning = "Publisher trust replacement was not authorized.")
+            }
+            return
+        }
+
+        val meta = details.downloadedMetadata
+        val livePin = sl.secrets.getPin(meta.applicationId)
+        val liveInstalledSigner = sl.installState.info(meta.applicationId)?.currentSignerSha256
+        if (livePin != details.storedPinSha256 ||
+            liveInstalledSigner != details.installedSignerSha256
+        ) {
+            _state.update {
+                it.copy(warning = "Publisher trust changed while it was being reviewed. Inspect the release again.")
+            }
+            return
+        }
+        if (!sl.audit.publisherPinRecoveryAuthorized(
+                info = currentCard.info,
+                meta = meta,
+                previousPinSha256 = details.storedPinSha256,
+                installedSignerSha256 = details.installedSignerSha256,
+            )
+        ) {
+            _state.update {
+                it.copy(warning = "Could not write the trust-recovery audit record. The pin was not changed.")
+            }
+            return
+        }
+
+        val replacement = runCatching {
+            sl.secrets.setPin(meta.applicationId, meta.signingSha256)
+            check(sl.secrets.getPin(meta.applicationId) == meta.signingSha256) {
+                "Pin replacement did not persist"
+            }
+        }
+        if (replacement.isFailure) {
+            sl.logger.error("Trust", "Publisher pin replacement failed", replacement.exceptionOrNull())
+            _state.update {
+                it.copy(warning = "Publisher pin replacement failed. The release remains blocked.")
+            }
+            return
+        }
+
+        sl.audit.publisherPinReplaced(
+            info = currentCard.info,
+            meta = meta,
+            previousPinSha256 = details.storedPinSha256,
+            installedSignerSha256 = details.installedSignerSha256,
+        )
+        sl.logger.warn(
+            "Trust",
+            "Publisher pin replaced for ${meta.applicationId} after two-step confirmation: " +
+                "${details.storedPinSha256} -> ${meta.signingSha256}",
+        )
+        val installed = sl.installState.info(meta.applicationId)
+        if (installed != null) {
+            sl.appIdCache.recordInspected(currentCard.info, meta)
+        }
+        val nextStatus = when {
+            installed == null -> CardStatus.NotInstalled
+            meta.versionCode > installed.versionCode -> CardStatus.UpdateAvailable
+            meta.versionCode == installed.versionCode -> CardStatus.ReinstallAvailable
+            else -> CardStatus.DowngradeAvailable
+        }
+        updateCard(currentCard.info) {
+            it.copy(
+                info = it.info.copy(
+                    applicationId = meta.applicationId,
+                    versionCode = meta.versionCode,
+                    versionName = meta.versionName ?: it.info.versionName,
+                ),
+                status = nextStatus,
+                installedVersion = installed?.versionName,
+                installedVersionCode = installed?.versionCode,
+                progress = 0f,
+                message = "Publisher pin replaced after explicit confirmation. " +
+                    "Review the release, then choose the install action again.",
+                publisherTrustDetails = null,
+            )
+        }
     }
 
     /** Queue an installed update through UIDT/WorkManager and gentle PackageInstaller constraints. */

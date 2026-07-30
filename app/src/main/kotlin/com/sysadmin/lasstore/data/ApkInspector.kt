@@ -254,7 +254,7 @@ class ApkInspector(private val context: Context) {
 internal fun normalizeSigningCertificateSha256(value: String): String? =
     value.trim().lowercase().takeIf { SIGNING_SHA256.matches(it) }
 
-private fun sha256Hex(bytes: ByteArray): String {
+internal fun sha256Hex(bytes: ByteArray): String {
     val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
     return digest.joinToString("") { "%02x".format(it) }
 }

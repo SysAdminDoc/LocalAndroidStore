@@ -36,6 +36,10 @@ class ApkInspectorInstrumentedTest {
         assertEquals(64, metadata.signingSha256.length)
         assertTrue(metadata.verifiedSignatureSchemes.isNotEmpty())
         assertTrue(metadata.isEligibleForPinEnrollment)
+        assertEquals(
+            metadata.signingSha256,
+            InstallStateRepo(context).info(context.packageName)?.currentSignerSha256,
+        )
     }
 
     @Test

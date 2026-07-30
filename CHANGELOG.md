@@ -8,6 +8,7 @@
 - Added source-scoped installed-app records with package, manifest version, signer, and GitHub asset identity. Tag-only changes now require APK inspection; higher version codes become updates, equal codes become explicit reinstalls, and lower codes become explicit downgrades.
 - Added durable foreground install coordination across download, preapproval, permission review, and commit, including startup `PackageInstaller` reconciliation and cleanup of orphaned APK/MediaStore state.
 - Added a verified-APK trust contract: `apksig` must report a supported scheme, one current signer, and a valid rotation lineage; Android's archive signer must agree before permission review or first-pin enrollment.
+- Added an audited two-stage publisher-key recovery flow showing source, live installed signer, stored pin, downloaded signer, verified schemes, and lineage. It requires exact package-id entry plus independent fingerprint acknowledgement, changes only the pin, and never resumes installation automatically.
 
 ### Fixed
 - Restored GitHub API and release-download connectivity by removing the stale static root-CA pinset and relying on Android's maintained system trust store. Cleartext traffic remains disabled, and a regression test prevents static pins from returning.

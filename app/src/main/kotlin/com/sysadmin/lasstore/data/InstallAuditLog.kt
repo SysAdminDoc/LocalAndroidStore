@@ -30,6 +30,10 @@ class InstallAuditLog(context: Context) {
         val versionName: String? = null,
         val versionCode: Long? = null,
         val certSha256: String = "",
+        val previousCertSha256: String = "",
+        val installedCertSha256: String = "",
+        val verifiedLineageSha256: List<String> = emptyList(),
+        val verifiedSignatureSchemes: List<String> = emptyList(),
         val reason: String = "",
         val message: String = "",
     )
@@ -75,15 +79,60 @@ class InstallAuditLog(context: Context) {
             applicationId = applicationId, source = source, tagName = "",
         ))
 
-    private fun append(entry: Entry) {
+    fun publisherPinRecoveryAuthorized(
+        info: AppInfo,
+        meta: ApkMetadata,
+        previousPinSha256: String,
+        installedSignerSha256: String?,
+    ): Boolean = append(
+        Entry(
+            ts = System.currentTimeMillis(),
+            event = "publisher_pin_recovery_authorized",
+            applicationId = meta.applicationId,
+            source = info.handle,
+            tagName = info.tagName,
+            versionName = meta.versionName,
+            versionCode = meta.versionCode,
+            certSha256 = meta.signingSha256,
+            previousCertSha256 = previousPinSha256,
+            installedCertSha256 = installedSignerSha256.orEmpty(),
+            verifiedLineageSha256 = meta.lineageSha256,
+            verifiedSignatureSchemes = meta.verifiedSignatureSchemes.map { it.name }.sorted(),
+            reason = "typed_package_plus_second_acknowledgement",
+        ),
+    )
+
+    fun publisherPinReplaced(
+        info: AppInfo,
+        meta: ApkMetadata,
+        previousPinSha256: String,
+        installedSignerSha256: String?,
+    ): Boolean = append(
+        Entry(
+            ts = System.currentTimeMillis(),
+            event = "publisher_pin_replaced",
+            applicationId = meta.applicationId,
+            source = info.handle,
+            tagName = info.tagName,
+            versionName = meta.versionName,
+            versionCode = meta.versionCode,
+            certSha256 = meta.signingSha256,
+            previousCertSha256 = previousPinSha256,
+            installedCertSha256 = installedSignerSha256.orEmpty(),
+            verifiedLineageSha256 = meta.lineageSha256,
+            verifiedSignatureSchemes = meta.verifiedSignatureSchemes.map { it.name }.sorted(),
+            reason = "manual_trust_recovery",
+        ),
+    )
+
+    private fun append(entry: Entry): Boolean =
         runCatching {
             file.appendText(json.encodeToString(entry) + "\n")
             if (file.length() > MAX_BYTES) {
                 rotated.delete()
                 file.renameTo(rotated)
             }
-        }
-    }
+        }.isSuccess
 
     private companion object { const val MAX_BYTES = 256L * 1024L }
 }
