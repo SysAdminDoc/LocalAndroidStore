@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.content.pm.PackageInstaller
+import com.sysadmin.lasstore.data.ApkInspectionResult
 import com.sysadmin.lasstore.data.GitHubFailureKind
 import com.sysadmin.lasstore.data.GitHubRequestException
 import com.sysadmin.lasstore.data.ServiceLocator
@@ -120,13 +121,25 @@ object QueuedUpdateRunner {
                 onProgress = onProgress,
             )
 
-            val meta = sl.apkInspector.inspect(target)
-                ?: return fail(
-                    payload,
-                    null,
-                    "APK metadata read failed",
-                    QueuedUpdateFailureKind.InvalidArtifact,
-                )
+            val meta = when (val inspection = sl.apkInspector.inspectResult(target)) {
+                is ApkInspectionResult.Verified -> inspection.metadata
+                is ApkInspectionResult.Rejected -> {
+                    val message = inspection.reason.userMessage
+                    sl.logger.warn(
+                        "QueuedUpdate",
+                        "Rejected ${payload.owner}/${payload.repo} APK: " +
+                            "${inspection.reason.name} (${inspection.diagnostics})",
+                    )
+                    return QueuedUpdateResult.Failed(
+                        message,
+                        if (inspection.reason.isSignatureFailure) {
+                            QueuedUpdateFailureKind.Signature
+                        } else {
+                            QueuedUpdateFailureKind.InvalidArtifact
+                        },
+                    )
+                }
+            }
             val hydratedInfo = info.copy(applicationId = meta.applicationId)
             if (meta.applicationId != applicationId) {
                 sl.audit.installBlocked(hydratedInfo, meta, "application_id_changed")
@@ -243,7 +256,12 @@ object QueuedUpdateRunner {
         lineageRotationAccepted: Boolean,
     ) {
         val sl = ServiceLocator
-        if (pinned.isNullOrEmpty()) {
+        if (!meta.isEligibleForPinEnrollment) {
+            sl.logger.error(
+                "QueuedUpdate",
+                "Installed ${meta.applicationId}, but refused unverified signer-pin enrollment",
+            )
+        } else if (pinned.isNullOrEmpty()) {
             sl.secrets.setPin(meta.applicationId, meta.signingSha256)
         } else if (pinned != meta.signingSha256 && lineageRotationAccepted) {
             sl.secrets.setPin(meta.applicationId, meta.signingSha256)

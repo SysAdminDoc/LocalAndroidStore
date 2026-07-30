@@ -263,7 +263,12 @@ internal object ForegroundInstallFinalizer {
         val systemMessage = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE).orEmpty()
         if (status == PackageInstaller.STATUS_SUCCESS) {
             val previousPin = operation.pinnedSignerSha256
-            if (previousPin.isNullOrBlank()) {
+            if (!metadata.isEligibleForPinEnrollment) {
+                logger.error(
+                    "Install",
+                    "Installed ${metadata.applicationId}, but refused unverified signer-pin enrollment",
+                )
+            } else if (previousPin.isNullOrBlank()) {
                 sl.secrets.setPin(metadata.applicationId, metadata.signingSha256)
             } else if (
                 previousPin != metadata.signingSha256 &&

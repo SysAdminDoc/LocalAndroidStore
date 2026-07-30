@@ -7,6 +7,7 @@ import android.provider.MediaStore
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sysadmin.lasstore.data.AppIdEntry
+import com.sysadmin.lasstore.data.ApkInspectionResult
 import com.sysadmin.lasstore.data.ApkMetadata
 import com.sysadmin.lasstore.data.DeveloperVerificationNotice
 import com.sysadmin.lasstore.data.ServiceLocator
@@ -389,13 +390,28 @@ class CatalogViewModel : ViewModel() {
                     updateCard(card.info) { it.copy(progress = frac, message = "Downloading… ${(frac * 100).toInt()}%") }
                 }
 
-                val meta = sl.apkInspector.inspect(target)
-                if (meta == null) {
-                    preapprovalSessionId?.let { sl.installer.abandonSession(it) }
-                    sl.foregroundInstalls.remove(key)
-                    sl.logger.error("Install", "ApkInspector returned null for ${target.absolutePath}")
-                    updateCard(card.info) { it.copy(status = CardStatus.Error, message = "APK metadata read failed") }
-                    return@launch
+                val meta = when (val inspection = sl.apkInspector.inspectResult(target)) {
+                    is ApkInspectionResult.Verified -> inspection.metadata
+                    is ApkInspectionResult.Rejected -> {
+                        preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                        sl.foregroundInstalls.remove(key)
+                        sl.logger.error(
+                            "Install",
+                            "Rejected ${card.info.owner}/${card.info.repo} APK: " +
+                                "${inspection.reason.name} (${inspection.diagnostics})",
+                        )
+                        updateCard(card.info) {
+                            it.copy(
+                                status = if (inspection.reason.isSignatureFailure) {
+                                    CardStatus.SignatureMismatch
+                                } else {
+                                    CardStatus.Error
+                                },
+                                message = inspection.reason.userMessage,
+                            )
+                        }
+                        return@launch
+                    }
                 }
 
                 val expectedInstalled = cached?.applicationId

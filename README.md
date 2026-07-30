@@ -41,7 +41,7 @@ That's what this is.
 - **One-tap uninstall** — fires `Intent.ACTION_DELETE`, lands on the system uninstall confirmation. Catalog refreshes after.
 - **One-tap open** — launches the installed app's main activity.
 - **Gentle queued updates** — installed updates can run through Android 14+ user-initiated data-transfer jobs (WorkManager fallback on older versions), then wait for the target app to leave the foreground, device idle, and calls to end before commit. Attempts are capped and terminal reasons persist on the card.
-- **APK signature pinning** — first successful install captures the signing-cert SHA-256 fingerprint. Future updates that don't match the pin are **blocked** with a clear "publisher key changed — possible MITM or repo takeover" warning. We never auto-accept a key swap.
+- **Verified APK signature pinning** — `apksig` must cryptographically verify the exact downloaded bytes, expose exactly one current signer, and agree with Android's archive parser before the first SHA-256 pin can be enrolled. Invalid, tampered, unsigned, malformed, or unexpectedly multi-signed APKs are blocked before permission review. Future updates must match the pin or carry a verified v3/v3.1 proof-of-rotation lineage.
 - **Developer Verification preflight** — installs separately report whether a Google verification surface is present, that package registration is **Unknown** (Android exposes no status capability to this app), and that LocalAndroidStore's direct sideload route is outside the initial participating-store enforcement beginning 2026-09-30. The advisory links to Google's official guidance.
 - **Version-aware installed state** — source-scoped records retain package, manifest version, signer, and GitHub asset identity. A tag or asset change is shown as a new release until its APK is inspected; only a higher manifest `versionCode` becomes an update, while equal-code reinstalls and lower-code downgrades require explicit actions.
 - **GitHub PATs (optional)** — source-specific tokens bump API rate limits from 60 → 5,000/hr and unlock private repos for that source. Stored in a Tink AEAD-encrypted app-private file, with the keyset protected by the Android Keystore.
@@ -125,7 +125,7 @@ Single-Activity Compose app, ~2,100 lines of Kotlin. No DI framework, no Retrofi
 app/src/main/kotlin/com/sysadmin/lasstore/
 ├── data/
 │   ├── GitHubClient.kt        OkHttp + kotlinx.serialization, paginated repo + release listing
-│   ├── ApkInspector.kt        PackageManager.getPackageArchiveInfo → applicationId, versionCode, signing SHA-256
+│   ├── ApkInspector.kt        apksig verification → PackageManager metadata/signer cross-check
 │   ├── InstallStateRepo.kt    PackageManager wrapper for "is X installed at version Y?"
 │   ├── DeveloperVerificationPreflight.kt  Android Developer Verification advisory detector
 │   ├── SecretStore.kt         Tink AEAD secret file for PAT + per-package signing pins
@@ -148,7 +148,7 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 └── App.kt + MainActivity.kt
 ```
 
-The signature-pin store is keyed by `applicationId`. On a successful install we read the signing cert from the *exact APK we just installed* (not from PackageManager, which would also work but loses provenance), SHA-256 it, and store it. On every subsequent install for the same `applicationId`, we re-read the SHA-256 from the new APK's signing cert and refuse to install if it doesn't match the pin.
+The signature-pin store is keyed by `applicationId`. Before the installer or permission-review step, `ApkInspector` asks `apksig` to verify the exact downloaded bytes across the app's API 26+ support window. Verification must report a supported v1/v2/v3/v3.1 scheme, exactly one current certificate, no errors, and—when present—a valid proof-of-rotation lineage ending at that certificate. Android's archive parser must independently return the same current signer and a valid package id. Only metadata carrying that verified evidence can enroll or roll forward a pin after a successful install; the secret store also rejects incomplete fingerprints.
 
 Developer Verification preflight runs after APK metadata inspection and before `PackageInstaller.Session.commit()`. It models verification-surface presence, registration status, and rollout applicability as separate facts. Registration remains `Unknown` because Android exposes no status capability to LocalAndroidStore. Google's [official FAQ](https://developer.android.com/developer-verification/guides/faq) says direct sideloads and stores outside its initial participating list are not subject to the 2026-09-30 regional phase; global rollout begins in 2027, with the exact date and future independent-store behavior still unpublished. The advisory is informational and never blocks installation.
 
@@ -204,7 +204,7 @@ LocalAndroidStore is in your trust boundary — once you grant it "Install unkno
 **What you don't trust:**
 
 - A *new* publisher key on a previously-installed app. v0.2 hard-rejects an unannounced key swap. Legitimate Android Signature Scheme v3 / v3.1 rotations (pin in the new APK's signing-cert lineage) are accepted automatically and the pin rolls forward.
-- A re-signed APK delivered via a hostile network. HTTPS authenticates GitHub through Android's system trust store; even if a hostile source delivered different bytes, the per-application publisher-signature pin rejects an unexpected signing key.
+- A tampered or re-signed APK delivered via a hostile network. HTTPS authenticates GitHub through Android's system trust store; independently, `apksig` rejects invalid bytes and the per-application publisher-signature pin rejects an unexpected signing key.
 - A competing installer trying to silently update an LAS-installed app. v0.2 claims update ownership on first install (Android 14+), so other installers must show the user a system dialog before overwriting.
 - Anything LAS-installed targeting Accessibility / Notification Listener / Device Admin without your conscious consent. v0.2 declares `PACKAGE_SOURCE_STORE` so downstream apps don't get a free pass on Restricted Settings — *you still have to flip those toggles per-app*.
 - An unknown Android Developer Verification registration status. Presence of a Google verification package is reported only as capability-surface presence and never treated as proof of registration or enforcement; the platform owns the final install decision.

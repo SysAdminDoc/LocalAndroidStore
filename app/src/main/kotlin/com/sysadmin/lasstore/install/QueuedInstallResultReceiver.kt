@@ -60,13 +60,19 @@ internal object QueuedInstallResultHandler {
     private fun recordSuccess(payload: QueuedUpdatePayload, metadata: QueuedInstallMetadata) {
         val sl = ServiceLocator
         val previousPin = metadata.previousPinnedSha256
-        if (previousPin.isNullOrBlank()) {
+        val apkMetadata = metadata.toApkMetadata()
+        if (!apkMetadata.isEligibleForPinEnrollment) {
+            sl.logger.error(
+                "QueuedUpdate",
+                "Installed ${metadata.applicationId}, but refused unverified signer-pin enrollment",
+            )
+        } else if (previousPin.isNullOrBlank()) {
             sl.secrets.setPin(metadata.applicationId, metadata.signingSha256)
         } else if (previousPin != metadata.signingSha256 && metadata.lineageRotationAccepted) {
             sl.secrets.setPin(metadata.applicationId, metadata.signingSha256)
             sl.logger.info("QueuedUpdate", "Rolled pin forward for ${metadata.applicationId}: $previousPin -> ${metadata.signingSha256}")
         }
-        sl.appIdCache.recordInstalled(payload.toAppInfo(), metadata.toApkMetadata())
+        sl.appIdCache.recordInstalled(payload.toAppInfo(), apkMetadata)
     }
 
     fun resultData(payload: QueuedUpdatePayload, metadata: QueuedInstallMetadata): Intent =

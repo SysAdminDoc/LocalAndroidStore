@@ -5,6 +5,7 @@ import android.os.PersistableBundle
 import androidx.work.Data
 import androidx.work.workDataOf
 import com.sysadmin.lasstore.data.ApkMetadata
+import com.sysadmin.lasstore.data.ApkSignatureScheme
 import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.domain.AppInfo
 
@@ -250,6 +251,7 @@ data class QueuedInstallMetadata(
     val signingSha256: String,
     val previousPinnedSha256: String?,
     val lineageRotationAccepted: Boolean,
+    val verifiedSignatureSchemes: Set<ApkSignatureScheme>,
 ) {
     fun toApkMetadata(): ApkMetadata = ApkMetadata(
         applicationId = applicationId,
@@ -257,6 +259,7 @@ data class QueuedInstallMetadata(
         versionCode = versionCode,
         label = label,
         signingSha256 = signingSha256,
+        verifiedSignatureSchemes = verifiedSignatureSchemes,
     )
 
     fun putInto(intent: Intent): Intent = intent.apply {
@@ -267,6 +270,10 @@ data class QueuedInstallMetadata(
         putExtra(KEY_META_SIGNING_SHA256, signingSha256)
         putExtra(KEY_META_PREVIOUS_PIN, previousPinnedSha256.orEmpty())
         putExtra(KEY_META_LINEAGE_ACCEPTED, lineageRotationAccepted)
+        putExtra(
+            KEY_META_VERIFIED_SCHEMES,
+            verifiedSignatureSchemes.map(ApkSignatureScheme::name).toTypedArray(),
+        )
     }
 
     companion object {
@@ -279,6 +286,7 @@ data class QueuedInstallMetadata(
                 signingSha256 = meta.signingSha256,
                 previousPinnedSha256 = previousPinnedSha256,
                 lineageRotationAccepted = lineageRotationAccepted,
+                verifiedSignatureSchemes = meta.verifiedSignatureSchemes,
             )
 
         fun from(intent: Intent): QueuedInstallMetadata? {
@@ -292,6 +300,12 @@ data class QueuedInstallMetadata(
                 signingSha256 = signingSha256,
                 previousPinnedSha256 = intent.getStringExtra(KEY_META_PREVIOUS_PIN).blankToNull(),
                 lineageRotationAccepted = intent.getBooleanExtra(KEY_META_LINEAGE_ACCEPTED, false),
+                verifiedSignatureSchemes = intent.getStringArrayExtra(KEY_META_VERIFIED_SCHEMES)
+                    .orEmpty()
+                    .mapNotNull { name ->
+                        runCatching { ApkSignatureScheme.valueOf(name) }.getOrNull()
+                    }
+                    .toSet(),
             )
         }
     }
@@ -325,3 +339,4 @@ private const val KEY_META_LABEL = "meta_label"
 private const val KEY_META_SIGNING_SHA256 = "meta_signing_sha256"
 private const val KEY_META_PREVIOUS_PIN = "meta_previous_pin"
 private const val KEY_META_LINEAGE_ACCEPTED = "meta_lineage_accepted"
+private const val KEY_META_VERIFIED_SCHEMES = "meta_verified_schemes"

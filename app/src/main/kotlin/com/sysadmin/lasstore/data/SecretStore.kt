@@ -46,8 +46,13 @@ class SecretStore(context: Context) {
         backend.update { it.withSourcePat(sourceKey, pat) }
 
     fun getPin(packageName: String): String? = backend.read().pins[packageName]
-    fun setPin(packageName: String, sha256Hex: String) =
-        backend.update { it.withPin(packageName, sha256Hex) }
+    fun setPin(packageName: String, sha256Hex: String) {
+        require(packageName.isNotBlank()) { "A package name is required for signer pin enrollment" }
+        val normalized = requireNotNull(normalizeSigningCertificateSha256(sha256Hex)) {
+            "Signer pin must be a complete SHA-256 certificate fingerprint"
+        }
+        backend.update { it.withPin(packageName, normalized) }
+    }
 
     fun clearPin(packageName: String) =
         backend.update { it.withoutPin(packageName) }
