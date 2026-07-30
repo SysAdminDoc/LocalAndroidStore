@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.sysadmin.lasstore.install.BackgroundUpdateScheduler
+import com.sysadmin.lasstore.install.ForegroundInstallStore
 import com.sysadmin.lasstore.install.PackageInstallerService
 import com.sysadmin.lasstore.install.QueuedUpdateStatusStore
 
@@ -42,6 +43,8 @@ object ServiceLocator {
         private set
     lateinit var catalogSnapshots: CatalogSnapshotStore
         private set
+    lateinit var foregroundInstalls: ForegroundInstallStore
+        private set
 
     fun init(context: Context) {
         if (initialized) return
@@ -75,6 +78,7 @@ object ServiceLocator {
             ignoreList = IgnoreListStore(appContext)
             queuedUpdateStatus = QueuedUpdateStatusStore(appContext)
             backgroundUpdates = BackgroundUpdateScheduler(appContext, logger)
+            foregroundInstalls = ForegroundInstallStore(appContext)
             initialized = true
         }
     }

@@ -1,11 +1,18 @@
 package com.sysadmin.lasstore.data
 
+import java.io.File
+import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -142,6 +149,30 @@ class GitHubClientTest {
         assertTrue(failure is NetworkUnavailableException)
         assertEquals(0, server.requestCount)
         assertTrue(delays.isEmpty())
+    }
+
+    @Test
+    fun cancellingDownloadCancelsTransportAndRemovesPartialFiles() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("x".repeat(256 * 1024))
+                .throttleBody(1_024, 100, TimeUnit.MILLISECONDS),
+        )
+        val directory = Files.createTempDirectory("las-download-cancel").toFile()
+        val target = File(directory, "release.apk")
+        val job = launch {
+            client().download(server.url("/release.apk").toString(), target) { _, _ -> }
+        }
+        yield()
+        assertNotNull(server.takeRequest(5, TimeUnit.SECONDS))
+
+        job.cancelAndJoin()
+
+        assertFalse(target.exists())
+        assertFalse(File("${target.absolutePath}.part").exists())
+        directory.deleteRecursively()
+        Unit
     }
 
     private fun client(

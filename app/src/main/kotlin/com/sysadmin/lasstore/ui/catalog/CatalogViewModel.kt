@@ -19,6 +19,8 @@ import com.sysadmin.lasstore.domain.DiscoveryUseCase
 import com.sysadmin.lasstore.domain.ReleaseVersionRelation
 import com.sysadmin.lasstore.domain.classifyReleaseVersion
 import com.sysadmin.lasstore.install.InstallResult
+import com.sysadmin.lasstore.install.ForegroundInstallFinalizer
+import com.sysadmin.lasstore.install.ForegroundInstallPhase
 import com.sysadmin.lasstore.install.PermissionDiff
 import com.sysadmin.lasstore.install.PreapprovalSessionResult
 import com.sysadmin.lasstore.install.QueuedUpdateStatus
@@ -91,6 +93,9 @@ class CatalogViewModel : ViewModel() {
 
     init {
         refreshInstallPermission()
+        recoverForegroundOperations()?.let { recoveryMessage ->
+            _state.update { it.copy(warning = recoveryMessage) }
+        }
         viewModelScope.launch {
             sl.queuedUpdateStatus.statuses.collectLatest {
                 _state.update { ui ->
@@ -98,7 +103,91 @@ class CatalogViewModel : ViewModel() {
                 }
             }
         }
+        viewModelScope.launch {
+            sl.foregroundInstalls.operations.collectLatest {
+                _state.update { ui ->
+                    ui.copy(
+                        cards = ui.cards.map { card ->
+                            val key = cardKey(card.info)
+                            when {
+                                sl.foregroundInstalls.get(key) != null ->
+                                    withForegroundInstallState(card)
+                                card.status == CardStatus.Working &&
+                                    activeJobs[key] == null -> {
+                                    val cached = sl.appIdCache.get(
+                                        card.info.sourceKey,
+                                        card.info.owner,
+                                        card.info.repo,
+                                    )
+                                    buildCardState(card.info, cached)
+                                }
+                                else -> card
+                            }
+                        },
+                    )
+                }
+            }
+        }
         refresh()
+    }
+
+    private fun recoverForegroundOperations(): String? {
+        var safelyTerminated = sl.foregroundInstalls.cleanupPendingMediaStoreRows()
+        safelyTerminated += sl.foregroundInstalls.cleanupOrphanedApkFiles()
+        sl.foregroundInstalls.operations.value.toList().forEach { operation ->
+            when (operation.phase) {
+                ForegroundInstallPhase.PermissionReview -> {
+                    val apk = sl.foregroundInstalls.apkFile(operation)
+                    val metadata = operation.metadata
+                    if (apk != null && apk.isFile && metadata != null) {
+                        pendingInstalls[operation.key] = PendingInstallData(
+                            apkFile = apk,
+                            meta = metadata,
+                            pinned = operation.pinnedSignerSha256,
+                            installedAlready = operation.installedAlready,
+                            preapprovalSessionId = operation.preapprovalSessionId,
+                            referrerUri = android.net.Uri.parse(operation.referrerUrl),
+                        )
+                    } else {
+                        operation.preapprovalSessionId?.let(sl.installer::abandonSession)
+                        sl.foregroundInstalls.remove(operation.key)
+                        safelyTerminated += 1
+                    }
+                }
+                ForegroundInstallPhase.Committing -> {
+                    val sessionId = operation.installerSessionId
+                    when {
+                        sessionId != null && sl.installer.hasOpenSession(sessionId) -> Unit
+                        ForegroundInstallFinalizer.reconcileCompletedOperation(
+                            operation,
+                            sl.logger,
+                        ) -> Unit
+                        else -> {
+                            operation.metadata?.let { metadata ->
+                                sl.audit.installFailed(
+                                    operation.info,
+                                    metadata,
+                                    "Interrupted installer session no longer exists",
+                                )
+                            }
+                            sl.foregroundInstalls.remove(operation.key)
+                            safelyTerminated += 1
+                        }
+                    }
+                }
+                ForegroundInstallPhase.Preapproving,
+                ForegroundInstallPhase.Downloading -> {
+                    operation.preapprovalSessionId?.let(sl.installer::abandonSession)
+                    operation.installerSessionId?.let(sl.installer::abandonSession)
+                    sl.foregroundInstalls.remove(operation.key)
+                    safelyTerminated += 1
+                }
+            }
+        }
+        return safelyTerminated.takeIf { it > 0 }?.let { count ->
+            "Recovered startup state and safely cleaned $count interrupted " +
+                "operation${if (count == 1) "" else "s"}."
+        }
     }
 
     fun refreshInstallPermission() {
@@ -205,7 +294,7 @@ class CatalogViewModel : ViewModel() {
                 )
             }
         }
-        return withQueuedUpdateStatus(baseState)
+        return withForegroundInstallState(withQueuedUpdateStatus(baseState))
     }
 
     fun install(card: CardState) {
@@ -223,40 +312,74 @@ class CatalogViewModel : ViewModel() {
                 card.info.owner,
                 card.info.repo,
             )
-
-            // Item 5: Request pre-approval on API 34+ for known updates.
-            // Pre-approval prompts the user *before* the download, reducing perceived latency.
-            // Falls back silently to the normal flow on older APIs or if the user declines.
+            val cacheDir = File(sl.appContext.cacheDir, "apks").apply { mkdirs() }
+            val safeName = "${card.info.sourceKey}_${card.info.owner}_${card.info.repo}_" +
+                "${card.info.tagName}.apk"
+            val target = File(
+                cacheDir,
+                safeName.replace(Regex("[^a-zA-Z0-9._-]"), "_"),
+            )
+            val referrerUri = android.net.Uri.parse(card.info.asset.browserDownloadUrl)
             var preapprovalSessionId: Int? = null
-            val knownApplicationId = cached?.applicationId
-            if (
-                card.status == CardStatus.UpdateAvailable &&
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
-                knownApplicationId != null &&
-                sl.installState.info(knownApplicationId) != null
-            ) {
-                updateCard(card.info) { it.copy(status = CardStatus.Working, progress = 0f, message = "Requesting pre-approval…") }
-                val referrer = android.net.Uri.parse(card.info.asset.browserDownloadUrl)
-                val preapprovalResult = sl.installer.createSessionAndRequestPreapproval(
-                    applicationId = knownApplicationId,
-                    label = card.info.displayName,
-                    referrerUri = referrer,
+
+            try {
+                sl.foregroundInstalls.start(
+                    info = card.info,
+                    apk = target,
+                    referrerUrl = referrerUri.toString(),
                 )
-                when (preapprovalResult) {
-                    is PreapprovalSessionResult.Approved -> {
-                        sl.logger.info("Install", "Pre-approval granted for $knownApplicationId (sessionId=${preapprovalResult.sessionId})")
-                        preapprovalSessionId = preapprovalResult.sessionId
+
+                // Item 5: Request pre-approval on API 34+ for known updates.
+                // Pre-approval prompts the user *before* the download.
+                val knownApplicationId = cached?.applicationId
+                if (
+                    card.status == CardStatus.UpdateAvailable &&
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                    knownApplicationId != null &&
+                    sl.installState.info(knownApplicationId) != null
+                ) {
+                    updateCard(card.info) {
+                        it.copy(
+                            status = CardStatus.Working,
+                            progress = 0f,
+                            message = "Requesting pre-approval…",
+                        )
                     }
-                    is PreapprovalSessionResult.Declined -> {
-                        sl.logger.info("Install", "Pre-approval declined for $knownApplicationId — falling back to standard install")
+                    val preapprovalResult = sl.installer.createSessionAndRequestPreapproval(
+                        applicationId = knownApplicationId,
+                        label = card.info.displayName,
+                        referrerUri = referrerUri,
+                        onSessionCreated = { sessionId ->
+                            sl.foregroundInstalls.markPreapproving(key, sessionId)
+                        },
+                    )
+                    when (preapprovalResult) {
+                        is PreapprovalSessionResult.Approved -> {
+                            sl.logger.info(
+                                "Install",
+                                "Pre-approval granted for $knownApplicationId " +
+                                    "(sessionId=${preapprovalResult.sessionId})",
+                            )
+                            preapprovalSessionId = preapprovalResult.sessionId
+                        }
+                        is PreapprovalSessionResult.Declined -> {
+                            sl.logger.info(
+                                "Install",
+                                "Pre-approval declined for $knownApplicationId — " +
+                                    "falling back to standard install",
+                            )
+                        }
                     }
                 }
-            }
+                sl.foregroundInstalls.markDownloading(key, preapprovalSessionId)
 
-            updateCard(card.info) { it.copy(status = CardStatus.Working, progress = 0.01f, message = "Downloading…") }
-            try {
-                val cacheDir = File(sl.appContext.cacheDir, "apks").apply { mkdirs() }
-                val target = File(cacheDir, "${card.info.owner}_${card.info.repo}_${card.info.tagName}.apk")
+                updateCard(card.info) {
+                    it.copy(
+                        status = CardStatus.Working,
+                        progress = 0.01f,
+                        message = "Downloading…",
+                    )
+                }
                 sl.github.download(
                     url = card.info.asset.browserDownloadUrl,
                     target = target,
@@ -269,6 +392,7 @@ class CatalogViewModel : ViewModel() {
                 val meta = sl.apkInspector.inspect(target)
                 if (meta == null) {
                     preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                    sl.foregroundInstalls.remove(key)
                     sl.logger.error("Install", "ApkInspector returned null for ${target.absolutePath}")
                     updateCard(card.info) { it.copy(status = CardStatus.Error, message = "APK metadata read failed") }
                     return@launch
@@ -281,6 +405,7 @@ class CatalogViewModel : ViewModel() {
                     meta.applicationId != expectedInstalled.applicationId
                 ) {
                     preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                    sl.foregroundInstalls.remove(key)
                     sl.audit.installBlocked(
                         card.info.copy(applicationId = meta.applicationId),
                         meta,
@@ -314,6 +439,7 @@ class CatalogViewModel : ViewModel() {
                 }
                 if (!pinAccepted) {
                     preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                    sl.foregroundInstalls.remove(key)
                     sl.logger.error(
                         "Install",
                         "Signature pin mismatch for ${meta.applicationId}: pinned=$pinned " +
@@ -342,6 +468,7 @@ class CatalogViewModel : ViewModel() {
                     }
                     if (card.status != classifiedStatus) {
                         preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                        sl.foregroundInstalls.remove(key)
                         val actionMessage = when (classifiedStatus) {
                             CardStatus.UpdateAvailable ->
                                 "Inspected version code ${meta.versionCode} is newer than " +
@@ -373,11 +500,18 @@ class CatalogViewModel : ViewModel() {
                 }
 
                 // Item 34: Pause for permission review when an update requests new dangerous perms.
-                val referrerUri = android.net.Uri.parse(card.info.asset.browserDownloadUrl)
                 if (installedAlready) {
                     val newDangerousPerms = computeNewDangerousPermissions(meta)
                     if (newDangerousPerms.isNotEmpty()) {
                         pendingInstalls[key] = PendingInstallData(target, meta, pinned, installedAlready, preapprovalSessionId, referrerUri)
+                        sl.foregroundInstalls.markPermissionReview(
+                            key = key,
+                            metadata = meta,
+                            pinnedSignerSha256 = pinned,
+                            installedAlready = installedAlready,
+                            preapprovalSessionId = preapprovalSessionId,
+                            permissions = newDangerousPerms,
+                        )
                         preapprovalSessionId = null // Transfer ownership to pendingInstalls
                         updateCard(card.info) {
                             it.copy(
@@ -394,9 +528,11 @@ class CatalogViewModel : ViewModel() {
                 performInstall(card, target, meta, pinned, installedAlready, preapprovalSessionId, referrerUri)
             } catch (t: CancellationException) {
                 preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                sl.foregroundInstalls.remove(key)
                 throw t // Always rethrow so coroutine machinery works correctly.
             } catch (t: Throwable) {
                 preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                sl.foregroundInstalls.remove(key)
                 sl.logger.error("Install", "Install pipeline crashed", t)
                 updateCard(card.info) { it.copy(status = CardStatus.Error, message = t.message ?: "install failed") }
             }
@@ -409,6 +545,7 @@ class CatalogViewModel : ViewModel() {
     fun cancelInstall(card: CardState) {
         val key = cardKey(card.info)
         activeJobs.remove(key)?.cancel()
+        cancelPersistedForegroundOperation(key)
         resetCard(card)
     }
 
@@ -473,9 +610,11 @@ class CatalogViewModel : ViewModel() {
                 performInstall(card, pending.apkFile, pending.meta, pending.pinned, pending.installedAlready, pending.preapprovalSessionId, pending.referrerUri)
             } catch (t: CancellationException) {
                 pending.preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                sl.foregroundInstalls.remove(key)
                 throw t
             } catch (t: Throwable) {
                 pending.preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                sl.foregroundInstalls.remove(key)
                 sl.logger.error("Install", "Install (post-permission-review) crashed", t)
                 updateCard(card.info) { it.copy(status = CardStatus.Error, message = t.message ?: "install failed") }
             }
@@ -488,6 +627,7 @@ class CatalogViewModel : ViewModel() {
     fun cancelPermissionReview(card: CardState) {
         val key = cardKey(card.info)
         pendingInstalls.remove(key)?.preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+        cancelPersistedForegroundOperation(key)
         resetCard(card)
     }
 
@@ -517,12 +657,12 @@ class CatalogViewModel : ViewModel() {
         activeJobs[key]?.cancel()
         val job = viewModelScope.launch(Dispatchers.IO) {
             updateCard(card.info) { it.copy(status = CardStatus.Working, progress = 0.01f, message = "Downloading…") }
+            val safeTag = card.info.tagName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val filename = "${card.info.displayName}_${safeTag}.apk"
+                .replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val cacheDir = File(sl.appContext.cacheDir, "apks").apply { mkdirs() }
+            val target = File(cacheDir, "save_${key.hashCode()}_$filename")
             try {
-                val safeTag = card.info.tagName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
-                val filename = "${card.info.displayName}_${safeTag}.apk"
-                    .replace(Regex("[^a-zA-Z0-9._-]"), "_")
-                val cacheDir = File(sl.appContext.cacheDir, "apks").apply { mkdirs() }
-                val target = File(cacheDir, filename)
                 sl.github.download(
                     url = card.info.asset.browserDownloadUrl,
                     target = target,
@@ -532,7 +672,6 @@ class CatalogViewModel : ViewModel() {
                     updateCard(card.info) { it.copy(progress = frac, message = "Downloading… ${(frac * 100).toInt()}%") }
                 }
                 saveToDownloads(filename, target)
-                target.delete()
                 val cached = sl.appIdCache.get(
                     card.info.sourceKey,
                     card.info.owner,
@@ -555,6 +694,9 @@ class CatalogViewModel : ViewModel() {
             } catch (t: Throwable) {
                 sl.logger.error("SaveApk", "Save failed", t)
                 updateCard(card.info) { it.copy(status = CardStatus.Error, message = t.message ?: "Save failed") }
+            } finally {
+                target.delete()
+                File("${target.absolutePath}.part").delete()
             }
         }
         activeJobs[key] = job
@@ -586,6 +728,14 @@ class CatalogViewModel : ViewModel() {
     // region Private helpers
 
     private fun cardKey(info: AppInfo) = "${info.sourceKey}/${info.owner}/${info.repo}"
+
+    private fun cancelPersistedForegroundOperation(key: String) {
+        sl.foregroundInstalls.get(key)?.let { operation ->
+            operation.preapprovalSessionId?.let(sl.installer::abandonSession)
+            operation.installerSessionId?.let(sl.installer::abandonSession)
+            sl.foregroundInstalls.remove(key)
+        }
+    }
 
     private fun resetCard(card: CardState) {
         val cached = sl.appIdCache.get(
@@ -630,6 +780,33 @@ class CatalogViewModel : ViewModel() {
             queuedUpdateStatus = queued,
             message = queued.message,
         )
+    }
+
+    private fun withForegroundInstallState(card: CardState): CardState {
+        val operation = sl.foregroundInstalls.get(cardKey(card.info)) ?: return card
+        return when (operation.phase) {
+            ForegroundInstallPhase.PermissionReview -> card.copy(
+                status = CardStatus.PermissionReview,
+                progress = 0f,
+                message = null,
+                newDangerousPermissions = operation.newDangerousPermissions,
+            )
+            ForegroundInstallPhase.Committing -> card.copy(
+                status = CardStatus.Working,
+                progress = 1f,
+                message = "Waiting for Android to finish installation…",
+            )
+            ForegroundInstallPhase.Preapproving -> card.copy(
+                status = CardStatus.Working,
+                progress = 0f,
+                message = "Waiting for update pre-approval…",
+            )
+            ForegroundInstallPhase.Downloading -> card.copy(
+                status = CardStatus.Working,
+                progress = 0f,
+                message = "Recovering download state…",
+            )
+        }
     }
 
     private fun catalogNotice(result: CatalogDiscoveryResult): String? {
@@ -681,6 +858,7 @@ class CatalogViewModel : ViewModel() {
         preapprovalSessionId: Int?,
         referrerUri: android.net.Uri,
     ) {
+        val key = cardKey(card.info)
         val developerVerificationNotice = sl.developerVerification.evaluate(meta)
         sl.logger.warn(
             "DeveloperVerification",
@@ -691,6 +869,15 @@ class CatalogViewModel : ViewModel() {
 
         updateCard(card.info) { it.copy(message = "Installing…") }
         val result = if (preapprovalSessionId != null) {
+            checkNotNull(
+                sl.foregroundInstalls.markCommitting(
+                    key = key,
+                    metadata = meta,
+                    pinnedSignerSha256 = pinned,
+                    installedAlready = installedAlready,
+                    installerSessionId = preapprovalSessionId,
+                ),
+            ) { "Could not persist preapproved install session" }
             sl.installer.commitSession(
                 sessionId = preapprovalSessionId,
                 applicationId = meta.applicationId,
@@ -702,19 +889,27 @@ class CatalogViewModel : ViewModel() {
                 applicationId = meta.applicationId,
                 firstInstall = !installedAlready,
                 referrerUri = referrerUri,
+                onSessionCreated = { sessionId ->
+                    checkNotNull(
+                        sl.foregroundInstalls.markCommitting(
+                            key = key,
+                            metadata = meta,
+                            pinnedSignerSha256 = pinned,
+                            installedAlready = installedAlready,
+                            installerSessionId = sessionId,
+                        ),
+                    ) { "Could not persist installer session" }
+                },
             )
         }
         when (result) {
             is InstallResult.Success -> {
-                if (pinned.isNullOrEmpty()) {
-                    sl.secrets.setPin(meta.applicationId, meta.signingSha256)
-                } else if (pinned != meta.signingSha256 && pinned in meta.lineageSha256) {
-                    sl.secrets.setPin(meta.applicationId, meta.signingSha256)
-                    sl.logger.info("Install", "Rolled pin forward for ${meta.applicationId}: $pinned -> ${meta.signingSha256}")
+                sl.foregroundInstalls.get(key)?.let { operation ->
+                    ForegroundInstallFinalizer.reconcileCompletedOperation(
+                        operation,
+                        sl.logger,
+                    )
                 }
-                sl.appIdCache.recordInstalled(card.info, meta)
-                sl.audit.installSucceeded(card.info, meta)
-                sl.logger.info("Install", "Installed ${meta.applicationId} ${meta.versionName}")
                 val installedInfo = sl.installState.info(meta.applicationId)
                 updateCard(card.info) { state ->
                     state.copy(
@@ -734,13 +929,20 @@ class CatalogViewModel : ViewModel() {
                 }
             }
             is InstallResult.Queued -> {
+                sl.foregroundInstalls.remove(key)
                 updateCard(card.info) {
                     it.copy(status = CardStatus.UpdateAvailable, progress = 0f, message = "Queued for gentle background update")
                 }
             }
             is InstallResult.Failure -> {
-                sl.audit.installFailed(card.info, meta, result.message)
-                sl.logger.warn("Install", "Install failed for ${meta.applicationId}: ${result.message}")
+                if (sl.foregroundInstalls.get(key) != null) {
+                    sl.audit.installFailed(card.info, meta, result.message)
+                    sl.logger.warn(
+                        "Install",
+                        "Install failed for ${meta.applicationId}: ${result.message}",
+                    )
+                    sl.foregroundInstalls.remove(key)
+                }
                 updateCard(card.info) { it.copy(status = CardStatus.Error, message = result.message) }
             }
         }
@@ -784,10 +986,22 @@ class CatalogViewModel : ViewModel() {
             val resolver = sl.appContext.contentResolver
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: throw java.io.IOException("MediaStore insert failed for $filename")
-            resolver.openOutputStream(uri)!!.use { out -> source.inputStream().use { it.copyTo(out) } }
-            values.clear()
-            values.put(MediaStore.Downloads.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
+            sl.foregroundInstalls.addPendingMediaStoreUri(uri)
+            try {
+                resolver.openOutputStream(uri)?.use { output ->
+                    source.inputStream().use { input -> input.copyTo(output) }
+                } ?: throw java.io.IOException("MediaStore output unavailable for $filename")
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                if (resolver.update(uri, values, null, null) != 1) {
+                    throw java.io.IOException("Could not publish $filename")
+                }
+                sl.foregroundInstalls.completePendingMediaStoreUri(uri)
+            } catch (throwable: Throwable) {
+                runCatching { resolver.delete(uri, null, null) }
+                sl.foregroundInstalls.completePendingMediaStoreUri(uri)
+                throw throwable
+            }
         } else {
             // App-scoped external storage — visible in Files app, no permission needed.
             @Suppress("DEPRECATION")

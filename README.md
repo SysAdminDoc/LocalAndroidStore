@@ -37,6 +37,7 @@ That's what this is.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black. Repo handle, star count, version tag, status badge, two-line description.
 - **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
 - **One-tap install** — APK is downloaded to app cache, then driven through `PackageInstaller.Session`. The system shows its install dialog, the user confirms once, done.
+- **Recoverable foreground installs** — download, preapproval, permission review, and installer-session ownership are persisted. Restart restores review/commit work when safe and abandons interrupted transfers otherwise; cancellation reaches the OkHttp call and terminal paths remove transient files.
 - **One-tap uninstall** — fires `Intent.ACTION_DELETE`, lands on the system uninstall confirmation. Catalog refreshes after.
 - **One-tap open** — launches the installed app's main activity.
 - **Gentle queued updates** — installed updates can run through Android 14+ user-initiated data-transfer jobs (WorkManager fallback on older versions), then wait for the target app to leave the foreground, device idle, and calls to end before commit. Attempts are capped and terminal reasons persist on the card.
@@ -109,6 +110,7 @@ There is no opinionated topic filter unless you turn one on — your own user / 
 | `<files-dir>/secrets/secrets.v1.tinkaead` | Tink AEAD-encrypted GitHub PATs and signing-cert pins per `applicationId` |
 | DataStore `settings` | GitHub sources, topic filters, pre-release toggles |
 | SharedPreferences `las_appid_cache` | Source/repository-scoped installed package, version, signer, and release-asset identity |
+| SharedPreferences `foreground_install_state` | Recoverable foreground install phase, installer session, APK metadata, and pending MediaStore cleanup |
 | SharedPreferences `queued_update_status` | Attempt count and durable queued-update terminal state |
 
 The app declares `android:allowBackup="false"` and excludes everything from cloud / device-transfer backups — secrets stay on the device.
@@ -135,7 +137,9 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 │   ├── AppInfo.kt             Discovered model + CardStatus enum
 │   └── DiscoveryUseCase.kt    Listing → release → APK-asset picker
 ├── install/
-│   └── PackageInstallerService.kt   Session-backed install, intent-based uninstall, launch
+│   ├── PackageInstallerService.kt   Session-backed install, intent-based uninstall, launch
+│   ├── ForegroundInstallStore.kt    Process-safe download/review/commit ownership + cleanup
+│   └── QueuedUpdate*.kt             UIDT/WorkManager scheduling, constraints, durable outcomes
 ├── ui/
 │   ├── theme/                 Catppuccin Mocha + AMOLED black dark theme
 │   ├── catalog/               LazyVerticalGrid + search/filter + AppCard + StatusBadge + ViewModel

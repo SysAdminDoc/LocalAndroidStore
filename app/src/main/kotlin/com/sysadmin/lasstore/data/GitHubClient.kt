@@ -2,10 +2,13 @@ package com.sysadmin.lasstore.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.ResponseBody
@@ -22,6 +25,8 @@ import java.util.Locale
 import kotlin.math.min
 import kotlin.random.Random
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 enum class GitHubFailureKind {
     Authentication,
@@ -185,38 +190,77 @@ class GitHubClient(
         target: File,
         patOverride: String? = null,
         onProgress: (downloaded: Long, total: Long) -> Unit,
-    ): File =
-        withContext(Dispatchers.IO) {
-            ensureNetworkAvailable()
-            val req = Request.Builder().url(url).apply {
-                authHeaders(patOverride).forEach { (k, v) -> header(k, v) }
-            }.build()
-            client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) throw responseFailure(resp, "downloading release asset")
-                val body: ResponseBody = resp.body ?: throw IOException("Empty body for $url")
-                val total = body.contentLength()
-                target.parentFile?.mkdirs()
-                target.sink().buffer().use { sink: BufferedSink ->
-                    body.source().use { source ->
-                        val buf = okio.Buffer()
-                        var downloaded = 0L
-                        var lastReport = 0L
-                        while (true) {
-                            val n = source.read(buf, 64 * 1024L)
-                            if (n == -1L) break
-                            sink.write(buf, n)
-                            downloaded += n
-                            if (downloaded - lastReport > 64 * 1024L) {
-                                onProgress(downloaded, total)
-                                lastReport = downloaded
+    ): File {
+        ensureNetworkAvailable()
+        target.parentFile?.mkdirs()
+        val partial = File("${target.absolutePath}.part")
+        partial.delete()
+        val request = Request.Builder().url(url).apply {
+            authHeaders(patOverride).forEach { (key, value) -> header(key, value) }
+        }.build()
+        return suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(request)
+            continuation.invokeOnCancellation {
+                call.cancel()
+                partial.delete()
+                target.delete()
+            }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, exception: IOException) {
+                    partial.delete()
+                    if (continuation.isActive) continuation.resumeWithException(exception)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        response.use { current ->
+                            if (!current.isSuccessful) {
+                                throw responseFailure(current, "downloading release asset")
+                            }
+                            val body: ResponseBody = current.body
+                                ?: throw IOException("Empty body for $url")
+                            val total = body.contentLength()
+                            partial.sink().buffer().use { sink: BufferedSink ->
+                                body.source().use { source ->
+                                    val buffer = okio.Buffer()
+                                    var downloaded = 0L
+                                    var lastReport = 0L
+                                    while (true) {
+                                        val count = source.read(buffer, 64 * 1024L)
+                                        if (count == -1L) break
+                                        sink.write(buffer, count)
+                                        downloaded += count
+                                        if (downloaded - lastReport > 64 * 1024L) {
+                                            onProgress(downloaded, total)
+                                            lastReport = downloaded
+                                        }
+                                    }
+                                    onProgress(downloaded, total)
+                                }
                             }
                         }
-                        onProgress(downloaded, total)
+                        if (target.exists() && !target.delete()) {
+                            throw IOException("Could not replace ${target.name}")
+                        }
+                        if (!partial.renameTo(target)) {
+                            throw IOException("Could not finalize ${target.name}")
+                        }
+                        if (continuation.isActive) {
+                            continuation.resume(target)
+                        } else {
+                            target.delete()
+                        }
+                    } catch (throwable: Throwable) {
+                        partial.delete()
+                        target.delete()
+                        if (continuation.isActive) {
+                            continuation.resumeWithException(throwable)
+                        }
                     }
                 }
-            }
-            target
+            })
         }
+    }
 
     private suspend fun getJson(
         url: String,

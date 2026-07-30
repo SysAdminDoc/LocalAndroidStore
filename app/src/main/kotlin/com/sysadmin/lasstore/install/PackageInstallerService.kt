@@ -72,6 +72,7 @@ class PackageInstallerService(
         applicationId: String,
         firstInstall: Boolean = true,
         referrerUri: Uri? = null,
+        onSessionCreated: (Int) -> Unit = {},
     ): InstallResult = suspendCancellableCoroutine { cont ->
         val pi = context.packageManager.packageInstaller
         val params = buildSessionParams(
@@ -85,6 +86,13 @@ class PackageInstallerService(
         } catch (t: Throwable) {
             logger.error("Installer", "createSession failed", t)
             cont.resume(InstallResult.Failure(t.message ?: "createSession failed"))
+            return@suspendCancellableCoroutine
+        }
+        try {
+            onSessionCreated(sessionId)
+        } catch (t: Throwable) {
+            runCatching { pi.abandonSession(sessionId) }
+            cont.resume(InstallResult.Failure(t.message ?: "install state persistence failed"))
             return@suspendCancellableCoroutine
         }
 
@@ -129,6 +137,7 @@ class PackageInstallerService(
         applicationId: String,
         label: String,
         referrerUri: Uri? = null,
+        onSessionCreated: (Int) -> Unit = {},
     ): PreapprovalSessionResult = suspendCancellableCoroutine { cont ->
         val pi = context.packageManager.packageInstaller
         // Pre-approval requires knowing the package name in advance.
@@ -141,6 +150,13 @@ class PackageInstallerService(
             pi.createSession(params)
         } catch (t: Throwable) {
             logger.error("Installer", "createSession for preapproval failed", t)
+            if (cont.isActive) cont.resume(PreapprovalSessionResult.Declined)
+            return@suspendCancellableCoroutine
+        }
+        try {
+            onSessionCreated(sessionId)
+        } catch (t: Throwable) {
+            runCatching { pi.abandonSession(sessionId) }
             if (cont.isActive) cont.resume(PreapprovalSessionResult.Declined)
             return@suspendCancellableCoroutine
         }
@@ -236,6 +252,9 @@ class PackageInstallerService(
         resultRegistry.cancelSession(sessionId)
         runCatching { context.packageManager.packageInstaller.abandonSession(sessionId) }
     }
+
+    fun hasOpenSession(sessionId: Int): Boolean =
+        context.packageManager.packageInstaller.mySessions.any { it.sessionId == sessionId }
 
     /**
      * Android 14+: stage [apk], then ask PackageInstaller to commit only after gentle

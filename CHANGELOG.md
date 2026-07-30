@@ -6,11 +6,13 @@
 - Added a four-request release-lookup budget, ETag/304 response reuse, bounded jittered transient retries, typed per-source failures, partial-source preservation, and dated offline catalog snapshots.
 - Added gentle queued updates with Android 14+ user-initiated jobs, WorkManager fallback, `InstallConstraints`, three-attempt retry caps, durable terminal reasons, and cancellation from the release card.
 - Added source-scoped installed-app records with package, manifest version, signer, and GitHub asset identity. Tag-only changes now require APK inspection; higher version codes become updates, equal codes become explicit reinstalls, and lower codes become explicit downgrades.
+- Added durable foreground install coordination across download, preapproval, permission review, and commit, including startup `PackageInstaller` reconciliation and cleanup of orphaned APK/MediaStore state.
 
 ### Fixed
 - Restored GitHub API and release-download connectivity by removing the stale static root-CA pinset and relying on Android's maintained system trust store. Cleartext traffic remains disabled, and a regression test prevents static pins from returning.
 - Corrected Developer Verification guidance: package presence, registration (`Unknown`), and rollout applicability are now separate facts, and the app no longer claims its independent sideload route is covered by the initial 2026-09-30 participating-store enforcement.
 - Routed every mutable `PackageInstaller` result through an explicit non-exported receiver with a persisted random session capability, package/session validation, and single-use terminal delivery.
+- Cancelling a release download now cancels the underlying OkHttp call and removes both partial and final cache files.
 - Upgraded WorkManager from 2.11.0 to 2.11.2 and removed the completed `androidx.security:security-crypto` migration bridge.
 
 ## v0.2.2 — 2026-05-01 — Pre-approval install flow (API 34+)

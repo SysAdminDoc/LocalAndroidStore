@@ -6,7 +6,9 @@ import android.os.Build
 import com.android.apksig.ApkVerifier
 import java.io.File
 import java.security.MessageDigest
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class ApkMetadata(
     val applicationId: String,
     val versionName: String?,

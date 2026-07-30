@@ -233,6 +233,22 @@ internal class InstallResultReceiver : android.content.BroadcastReceiver() {
             return
         }
 
+        if (
+            validation.terminal &&
+            validation.registration.route == InstallResultRoute.Foreground
+        ) {
+            runCatching {
+                ForegroundInstallFinalizer.handleTerminal(
+                    appContext,
+                    intent,
+                    validation.registration,
+                    logger,
+                )
+            }.onFailure { throwable ->
+                logger.error("Installer", "Could not finalize durable install result", throwable)
+            }
+        }
+
         when (validation.registration.route) {
             InstallResultRoute.Foreground,
             InstallResultRoute.Preapproval -> {
@@ -242,10 +258,43 @@ internal class InstallResultReceiver : android.content.BroadcastReceiver() {
                     validation.registration.capability,
                 )
                 if (!delivered) {
-                    logger.warn(
-                        "Installer",
-                        "No active callback for session ${validation.registration.sessionId}",
-                    )
+                    val pendingAction = intent.getIntExtra(
+                        PackageInstaller.EXTRA_STATUS,
+                        STATUS_MISSING,
+                    ) == PackageInstaller.STATUS_PENDING_USER_ACTION
+                    if (
+                        validation.registration.route == InstallResultRoute.Foreground &&
+                        pendingAction
+                    ) {
+                        intent.pendingUserActionIntent()?.let { confirmation ->
+                            confirmation.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            runCatching { appContext.startActivity(confirmation) }
+                                .onFailure { throwable ->
+                                    logger.error(
+                                        "Installer",
+                                        "Could not restore install confirmation",
+                                        throwable,
+                                    )
+                                }
+                        }
+                    } else {
+                        logger.warn(
+                            "Installer",
+                            "No active callback for session " +
+                                "${validation.registration.sessionId}",
+                        )
+                        if (validation.registration.route == InstallResultRoute.Preapproval) {
+                            com.sysadmin.lasstore.data.ServiceLocator.installer.abandonSession(
+                                validation.registration.sessionId,
+                            )
+                            com.sysadmin.lasstore.data.ServiceLocator.foregroundInstalls
+                                .findBySession(validation.registration.sessionId)
+                                ?.let { operation ->
+                                    com.sysadmin.lasstore.data.ServiceLocator.foregroundInstalls
+                                        .remove(operation.key)
+                                }
+                        }
+                    }
                 }
             }
             InstallResultRoute.Queued ->
