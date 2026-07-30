@@ -185,7 +185,7 @@ LocalAndroidStore is in your trust boundary — once you grant it "Install unkno
 **What you trust:**
 
 - **The GitHub repo owner** of every catalog source you add. If they ship malware, LAS will install it. Signature pinning catches a *change* in publisher key, not a publisher who was malicious from the start.
-- **GitHub's TLS chain** to `api.github.com` and `objects.githubusercontent.com`. v0.2 pins these at the root CA SPKI (DigiCert + ISRG backup); a leaf-cert MITM cannot forge an APK download as long as the root CA isn't compromised.
+- **Android's maintained system CA store** for HTTPS connections to GitHub. Static CA pins were removed on 2026-07-29 after GitHub's live certificate chain no longer matched them and catalog access failed closed. Cleartext traffic remains disabled.
 - **OkHttp 4.12+** — known-CVE-clean as of 2026-04-25.
 - **The Android Keystore-backed Tink keyset** that protects local PATs and signing pins.
 - **The Android platform's `PackageInstaller.Session` + `apksig`** for verifying signatures. Both are first-party Google code.
@@ -194,7 +194,7 @@ LocalAndroidStore is in your trust boundary — once you grant it "Install unkno
 **What you don't trust:**
 
 - A *new* publisher key on a previously-installed app. v0.2 hard-rejects an unannounced key swap. Legitimate Android Signature Scheme v3 / v3.1 rotations (pin in the new APK's signing-cert lineage) are accepted automatically and the pin rolls forward.
-- A re-signed APK delivered via a hostile network. Even if a CA-issued leaf is compromised, the SPKI pinset means the APK download itself fails. Even if it succeeded, the signature pin rejects it.
+- A re-signed APK delivered via a hostile network. HTTPS authenticates GitHub through Android's system trust store; even if a hostile source delivered different bytes, the per-application publisher-signature pin rejects an unexpected signing key.
 - A competing installer trying to silently update an LAS-installed app. v0.2 claims update ownership on first install (Android 14+), so other installers must show the user a system dialog before overwriting.
 - Anything LAS-installed targeting Accessibility / Notification Listener / Device Admin without your conscious consent. v0.2 declares `PACKAGE_SOURCE_STORE` so downstream apps don't get a free pass on Restricted Settings — *you still have to flip those toggles per-app*.
 - An unknown Android Developer Verification registration status. If Google verification services are present, LAS warns before commit, but the platform currently owns the final install decision.

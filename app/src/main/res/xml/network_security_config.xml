@@ -2,14 +2,10 @@
 <!--
   Network Security Config for LocalAndroidStore.
 
-  Pin the GitHub root CAs (DigiCert Global Root G2 + ISRG Root X1 backup) on the
-  hosts we actually talk to. Pin the SubjectPublicKeyInfo (SPKI), not the leaf —
-  GitHub rotates leaf certs frequently. Expiration is 6 months out; if a forgotten
-  pinset would brick the app, this auto-disables instead.
-
-  Pin SHA-256 references (RFC 7469 base64 SubjectPublicKeyInfo digest):
-    DigiCert Global Root G2 — i7WTqTvh0OioIruIfFR4kMPnBqrS2rdiVPl/s2uC/CY=
-    ISRG Root X1            — C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=
+  GitHub uses a rotating CDN and certificate chain. Trust Android's maintained
+  system CA store instead of shipping a static pinset that can strand every
+  catalog and release download when GitHub changes its chain. Cleartext remains
+  forbidden for every destination.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
@@ -17,15 +13,4 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-
-    <domain-config>
-        <domain includeSubdomains="true">api.github.com</domain>
-        <domain includeSubdomains="true">objects.githubusercontent.com</domain>
-        <domain includeSubdomains="true">codeload.github.com</domain>
-        <domain includeSubdomains="true">raw.githubusercontent.com</domain>
-        <pin-set expiration="2026-10-25">
-            <pin digest="SHA-256">i7WTqTvh0OioIruIfFR4kMPnBqrS2rdiVPl/s2uC/CY=</pin>
-            <pin digest="SHA-256">C5+lpZ7tcVwmwQIMcRtPbsQtWLABXhQzejna0wHFr8M=</pin>
-        </pin-set>
-    </domain-config>
 </network-security-config>
