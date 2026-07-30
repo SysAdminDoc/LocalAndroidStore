@@ -12,9 +12,13 @@ class DeveloperVerificationCopyTest {
             countryCode = "br",
         )
 
-        assertTrue(notice.body.contains("this region"))
-        assertTrue(notice.body.contains("September 2026"))
+        assertTrue(notice.body.contains("one of the four initial regions"))
+        assertTrue(notice.body.contains("2026-09-30"))
         assertTrue(notice.body.contains("com.example.app"))
+        assertTrue(notice.body.contains("not in scope"))
+        assertTrue(notice.body.contains("Registration status"))
+        assertTrue(notice.body.contains("Unknown"))
+        assertTrue(notice.guidanceUrl.startsWith("https://developer.android.com/"))
     }
 
     @Test
@@ -25,7 +29,27 @@ class DeveloperVerificationCopyTest {
             countryCode = "US",
         )
 
-        assertTrue(notice.body.contains("rolls out globally in 2027"))
-        assertTrue(notice.body.contains("advanced flow or ADB"))
+        assertTrue(notice.body.contains("outside the four initial regions"))
+        assertTrue(notice.body.contains("Global rollout begins in 2027"))
+        assertTrue(notice.body.contains("direct independent sideloading"))
+        assertTrue(notice.body.contains("not in scope"))
+        assertTrue(notice.registrationStatus == DeveloperRegistrationStatus.Unknown)
+        assertTrue(
+            notice.initialEnforcementScope ==
+                InitialEnforcementScope.NotApplicableToIndependentSideload
+        )
+    }
+
+    @Test
+    fun missingSurfaceDoesNotBecomeARegistrationClaim() {
+        val notice = DeveloperVerificationCopy.unknownRegistrationNotice(
+            applicationId = "com.example.app",
+            surface = DeveloperVerificationSurface.NotDetected,
+            countryCode = "US",
+        )
+
+        assertTrue(notice.body.contains("surface was not detected"))
+        assertTrue(notice.body.contains("Registration status"))
+        assertTrue(notice.body.contains("Unknown"))
     }
 }

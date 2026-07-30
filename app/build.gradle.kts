@@ -18,6 +18,7 @@ android {
         targetSdk = 35
         versionCode = 5
         versionName = "0.2.3"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -94,8 +95,7 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.5")
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
-    // Retained as a one-release migration bridge for existing EncryptedSharedPreferences secrets.
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
 
     implementation("com.google.crypto.tink:tink-android:1.21.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -107,6 +107,10 @@ dependencies {
     implementation("com.android.tools.build:apksig:8.7.3")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:core-ktx:1.6.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }
 
 // Item 17: Prevent transitive downgrade of OkHttp below the pinned safe version.

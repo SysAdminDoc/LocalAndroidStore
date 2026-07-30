@@ -119,10 +119,15 @@ fun CatalogScreen(viewModel: CatalogViewModel = viewModel()) {
                             state = card,
                             onInstall = { viewModel.install(card) },
                             onUpdate = { viewModel.install(card) },
+                            onQueueUpdate = { viewModel.queueBackgroundUpdate(card) },
                             onUninstall = { viewModel.uninstall(card) },
                             onOpen = { viewModel.open(card) },
                             onRepo = { viewModel.openRepo(card) },
                             onCancel = { viewModel.cancelInstall(card) },
+                            onProceedPermissions = { viewModel.proceedFromPermissionReview(card) },
+                            onCancelPermissions = { viewModel.cancelPermissionReview(card) },
+                            onIgnore = { viewModel.toggleIgnore(card) },
+                            onSaveApk = { viewModel.saveApk(card) },
                         )
                     }
                 }

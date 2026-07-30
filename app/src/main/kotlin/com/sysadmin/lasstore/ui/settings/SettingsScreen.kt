@@ -1,27 +1,41 @@
 package com.sysadmin.lasstore.ui.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,8 +46,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -51,7 +65,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         mutableStateOf(
             state.settings.sources.map { source ->
                 SourceDraft.from(source, state.sourcePats[source.key].orEmpty())
-            }
+            },
         )
     }
 
@@ -69,17 +83,44 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             .background(Catppuccin.Crust)
             .imePadding()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
+            .padding(start = 20.dp, top = 14.dp, end = 20.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(
-            text = "Settings",
-            style = MaterialTheme.typography.titleLarge,
-            color = Catppuccin.Mauve,
-            fontWeight = FontWeight.SemiBold,
-        )
+        SettingsHeader()
 
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SecurityPosture(encryptedAtRest = state.encryptedAtRest)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "SOURCE REGISTRY",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Catppuccin.MauveStrong,
+                )
+                Text(
+                    text = "GitHub owners and organizations",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.Subtext,
+                )
+            }
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = Catppuccin.Surface1,
+                border = BorderStroke(1.dp, Catppuccin.Stroke),
+            ) {
+                Text(
+                    text = normalizedSources.size.toString(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Catppuccin.MauveStrong,
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
+                )
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
             drafts.forEachIndexed { index, source ->
                 SourceEditor(
                     index = index,
@@ -100,17 +141,17 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         OutlinedButton(
             onClick = { drafts = drafts + SourceDraft(user = "") },
             modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, Catppuccin.StrokeBright),
+            contentPadding = PaddingValues(vertical = 13.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Catppuccin.MauveStrong),
         ) {
-            Icon(Icons.Default.Add, contentDescription = null)
-            Text("Add GitHub source", modifier = Modifier.padding(start = 8.dp))
-        }
-
-        if (!state.encryptedAtRest) {
-            Text(
-                text = "Warning: secure keystore unavailable on this device. PAT and signature pins fall back to plaintext SharedPreferences.",
-                color = Catppuccin.Red,
-                style = MaterialTheme.typography.bodyMedium,
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null,
+                modifier = Modifier.size(19.dp),
             )
+            Spacer(Modifier.width(8.dp))
+            Text("Add GitHub source")
         }
 
         Button(
@@ -121,14 +162,120 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 )
             },
             modifier = Modifier.fillMaxWidth(),
-        ) { Text("Save settings") }
+            contentPadding = PaddingValues(vertical = 14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Catppuccin.MauveStrong,
+                contentColor = Catppuccin.Crust,
+            ),
+        ) {
+            Icon(
+                imageVector = Icons.Default.CloudSync,
+                contentDescription = null,
+                modifier = Modifier.size(19.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("Save source registry")
+        }
 
         if (state.savedAt > 0L) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = Catppuccin.Mint.copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, Catppuccin.Mint.copy(alpha = 0.28f)),
+            ) {
+                Text(
+                    text = "Registry saved · ${normalizedSources.size} source${if (normalizedSources.size == 1) "" else "s"} ready to sync.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.Mint,
+                    modifier = Modifier.padding(13.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsHeader() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
             Text(
-                text = "Saved ${normalizedSources.size} source${if (normalizedSources.size == 1) "" else "s"}.",
-                color = Catppuccin.Green,
-                style = MaterialTheme.typography.bodyMedium,
+                text = "CONTROL CENTER",
+                style = MaterialTheme.typography.labelSmall,
+                color = Catppuccin.MauveStrong,
             )
+            Icon(
+                imageVector = Icons.Default.Hub,
+                contentDescription = null,
+                tint = Catppuccin.MauveStrong,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        Text(
+            text = "Sources & access",
+            style = MaterialTheme.typography.headlineMedium,
+            color = Catppuccin.TextStrong,
+        )
+        Text(
+            text = "Choose which release shelves this device can see.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Catppuccin.Subtext,
+        )
+    }
+}
+
+@Composable
+private fun SecurityPosture(encryptedAtRest: Boolean) {
+    val accent = if (encryptedAtRest) Catppuccin.Mint else Catppuccin.Red
+    val title = if (encryptedAtRest) "Secrets protected on device" else "Secure keystore unavailable"
+    val body = if (encryptedAtRest) {
+        "Personal access tokens and publisher pins are encrypted with Android Keystore."
+    } else {
+        "Tokens and publisher pins are using a plaintext fallback on this device."
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = accent.copy(alpha = 0.07f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(11.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(accent.copy(alpha = 0.12f), RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Security,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Catppuccin.TextStrong,
+                )
+                Text(
+                    text = body,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.Subtext,
+                )
+            }
         }
     }
 }
@@ -141,87 +288,146 @@ private fun SourceEditor(
     onChange: (SourceDraft) -> Unit,
     onRemove: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Catppuccin.Surface0, RoundedCornerShape(8.dp))
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Catppuccin.TextStrong,
+        unfocusedTextColor = Catppuccin.TextStrong,
+        disabledTextColor = Catppuccin.Overlay,
+        focusedContainerColor = Catppuccin.Crust.copy(alpha = 0.55f),
+        unfocusedContainerColor = Catppuccin.Crust.copy(alpha = 0.55f),
+        disabledContainerColor = Catppuccin.Crust.copy(alpha = 0.28f),
+        focusedBorderColor = Catppuccin.Mauve,
+        unfocusedBorderColor = Catppuccin.StrokeBright,
+        disabledBorderColor = Catppuccin.Stroke,
+        focusedLabelColor = Catppuccin.MauveStrong,
+        unfocusedLabelColor = Catppuccin.Subtext,
+        disabledLabelColor = Catppuccin.Overlay,
+        cursorColor = Catppuccin.MauveStrong,
+        focusedSupportingTextColor = Catppuccin.Subtext,
+        unfocusedSupportingTextColor = Catppuccin.Subtext,
+    )
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = Catppuccin.PanelRaised,
+        border = BorderStroke(1.dp, Catppuccin.Stroke),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "GitHub source ${index + 1}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Catppuccin.Text,
+        Column(
+            modifier = Modifier.padding(15.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(Catppuccin.Mauve.copy(alpha = 0.1f), RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Hub,
+                        contentDescription = null,
+                        tint = Catppuccin.MauveStrong,
+                        modifier = Modifier.size(23.dp),
+                    )
+                }
+                Spacer(Modifier.width(11.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Source ${(index + 1).toString().padStart(2, '0')}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Catppuccin.TextStrong,
+                    )
+                    Text(
+                        text = source.user.ifBlank { "Not configured" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Subtext,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Switch(
+                    checked = source.enabled,
+                    onCheckedChange = { onChange(source.copy(enabled = it)) },
+                    modifier = Modifier.semantics {
+                        contentDescription = "Enable GitHub source ${index + 1}"
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Catppuccin.Crust,
+                        checkedTrackColor = Catppuccin.MauveStrong,
+                        uncheckedThumbColor = Catppuccin.Subtext,
+                        uncheckedTrackColor = Catppuccin.Surface2,
+                        uncheckedBorderColor = Catppuccin.StrokeBright,
+                    ),
                 )
-                Text(
-                    text = source.user.ifBlank { "Not configured" },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Catppuccin.Subtext,
-                )
-            }
-            Switch(
-                checked = source.enabled,
-                onCheckedChange = { onChange(source.copy(enabled = it)) },
-                modifier = Modifier.semantics {
-                    contentDescription = "Enable GitHub source ${index + 1}"
-                },
-            )
-            if (canRemove) {
-                IconButton(onClick = onRemove) {
-                    Icon(Icons.Default.Delete, contentDescription = "Remove source", tint = Catppuccin.Red)
+                if (canRemove) {
+                    IconButton(onClick = onRemove) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = "Remove source",
+                            tint = Catppuccin.Red,
+                        )
+                    }
                 }
             }
+
+            OutlinedTextField(
+                value = source.user,
+                onValueChange = { onChange(source.copy(user = it)) },
+                label = { Text("GitHub user or organization") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = fieldColors,
+            )
+
+            OutlinedTextField(
+                value = source.pat,
+                onValueChange = { onChange(source.copy(pat = it)) },
+                label = { Text("Personal access token") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Key,
+                        contentDescription = null,
+                        modifier = Modifier.size(19.dp),
+                    )
+                },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                supportingText = {
+                    Text("Optional · unlocks private repos and higher API limits.")
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = fieldColors,
+            )
+
+            HorizontalDivider(color = Catppuccin.Stroke)
+
+            SettingRow(
+                title = "Filter by topic",
+                subtitle = "Only show repos tagged with this source’s topic.",
+                value = source.filterByTopic,
+                onChange = { onChange(source.copy(filterByTopic = it)) },
+            )
+
+            OutlinedTextField(
+                value = source.topic,
+                onValueChange = { onChange(source.copy(topic = it)) },
+                label = { Text("Repository topic") },
+                singleLine = true,
+                enabled = source.filterByTopic,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = fieldColors,
+            )
+
+            SettingRow(
+                title = "Show pre-releases",
+                subtitle = "Include releases marked as pre-release by GitHub.",
+                value = source.showPrereleases,
+                onChange = { onChange(source.copy(showPrereleases = it)) },
+            )
         }
-
-        OutlinedTextField(
-            value = source.user,
-            onValueChange = { onChange(source.copy(user = it)) },
-            label = { Text("GitHub user or org") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        OutlinedTextField(
-            value = source.pat,
-            onValueChange = { onChange(source.copy(pat = it)) },
-            label = { Text("Personal access token (optional)") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            supportingText = {
-                Text(
-                    "Stored encrypted on device. Leave blank for public repos or the shared token fallback.",
-                    color = Catppuccin.Subtext,
-                )
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        HorizontalDivider(color = Catppuccin.Surface1)
-
-        SettingRow(
-            title = "Filter by topic",
-            subtitle = "Only show repos tagged with this source's topic.",
-            value = source.filterByTopic,
-            onChange = { onChange(source.copy(filterByTopic = it)) },
-        )
-
-        OutlinedTextField(
-            value = source.topic,
-            onValueChange = { onChange(source.copy(topic = it)) },
-            label = { Text("Topic") },
-            singleLine = true,
-            enabled = source.filterByTopic,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        SettingRow(
-            title = "Show pre-releases",
-            subtitle = "Include GitHub releases marked as pre-release for this source.",
-            value = source.showPrereleases,
-            onChange = { onChange(source.copy(showPrereleases = it)) },
-        )
     }
 }
 
@@ -235,15 +441,31 @@ private fun SettingRow(
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = Catppuccin.Text)
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = Catppuccin.Subtext)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = Catppuccin.TextStrong,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Subtext,
+            )
         }
         Switch(
             checked = value,
             onCheckedChange = onChange,
             modifier = Modifier.semantics { contentDescription = title },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Catppuccin.Crust,
+                checkedTrackColor = Catppuccin.MauveStrong,
+                uncheckedThumbColor = Catppuccin.Subtext,
+                uncheckedTrackColor = Catppuccin.Surface2,
+                uncheckedBorderColor = Catppuccin.StrokeBright,
+            ),
         )
     }
 }

@@ -14,6 +14,8 @@
     <!-- Android 14: foreground-service-type required when scheduled-update Workers ship -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Android 14+: user-initiated data-transfer update downloads -->
+    <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
 
     <queries>
         <intent>
@@ -54,6 +56,15 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <service
+            android:name=".install.QueuedUpdateJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <receiver
+            android:name=".install.InstallResultReceiver"
+            android:exported="false" />
 
     </application>
 </manifest>

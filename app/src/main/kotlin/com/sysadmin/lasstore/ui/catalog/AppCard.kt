@@ -46,6 +46,7 @@ fun AppCard(
     state: CardState,
     onInstall: () -> Unit,
     onUpdate: () -> Unit,
+    onQueueUpdate: () -> Unit = {},
     onUninstall: () -> Unit,
     onOpen: () -> Unit,
     onRepo: () -> Unit,
@@ -235,42 +236,77 @@ fun AppCard(
                 }
             }
 
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 when (state.status) {
                     CardStatus.NotInstalled, CardStatus.Error, CardStatus.SignatureMismatch -> {
-                        FilledTonalButton(
-                            onClick = onInstall,
-                            enabled = state.status != CardStatus.SignatureMismatch,
-                            modifier = Modifier.weight(1f),
-                        ) { Text("Install") }
-                        TextButton(onClick = onSaveApk) { Text("Save") }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            FilledTonalButton(
+                                onClick = onInstall,
+                                enabled = state.status != CardStatus.SignatureMismatch,
+                                modifier = Modifier.weight(1f),
+                            ) { Text("Install") }
+                            TextButton(onClick = onSaveApk) { Text("Save") }
+                            TextButton(onClick = onRepo) { Text("Repo") }
+                        }
                     }
                     CardStatus.UpdateAvailable -> {
-                        FilledTonalButton(onClick = onUpdate, modifier = Modifier.weight(1f)) {
-                            Text("Update")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            FilledTonalButton(onClick = onUpdate, modifier = Modifier.weight(1f)) {
+                                Text("Update")
+                            }
+                            OutlinedButton(onClick = onQueueUpdate, modifier = Modifier.weight(1f)) {
+                                Text("Queue")
+                            }
+                            OutlinedButton(onClick = onOpen, modifier = Modifier.weight(1f)) {
+                                Text("Open")
+                            }
                         }
-                        OutlinedButton(onClick = onOpen, modifier = Modifier.weight(1f)) {
-                            Text("Open")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            TextButton(onClick = onIgnore) { Text("Ignore") }
+                            TextButton(onClick = onSaveApk) { Text("Save") }
+                            TextButton(onClick = onRepo) { Text("Repo") }
                         }
-                        TextButton(onClick = onIgnore) { Text("Ignore") }
-                        TextButton(onClick = onSaveApk) { Text("Save") }
                     }
                     CardStatus.Installed -> {
-                        FilledTonalButton(onClick = onOpen, modifier = Modifier.weight(1f)) {
-                            Text("Open")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            FilledTonalButton(onClick = onOpen, modifier = Modifier.weight(1f)) {
+                                Text("Open")
+                            }
+                            OutlinedButton(onClick = onUninstall, modifier = Modifier.weight(1f)) {
+                                Text("Uninstall")
+                            }
                         }
-                        OutlinedButton(onClick = onUninstall, modifier = Modifier.weight(1f)) {
-                            Text("Uninstall")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            if (state.isIgnored) {
+                                TextButton(onClick = onIgnore) { Text("Unignore") }
+                            }
+                            TextButton(onClick = onSaveApk) { Text("Save") }
+                            TextButton(onClick = onRepo) { Text("Repo") }
                         }
-                        if (state.isIgnored) {
-                            TextButton(onClick = onIgnore) { Text("Unignore") }
-                        }
-                        TextButton(onClick = onSaveApk) { Text("Save") }
                     }
                     CardStatus.Working -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                         FilledTonalButton(onClick = {}, enabled = false, modifier = Modifier.weight(1f)) {
                             Text("Working…")
                         }
@@ -283,20 +319,37 @@ fun AppCard(
                             Spacer(Modifier.width(4.dp))
                             Text("Cancel")
                         }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            TextButton(onClick = onRepo) { Text("Repo") }
+                        }
                     }
                     CardStatus.PermissionReview -> {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
                         FilledTonalButton(onClick = onProceedPermissions, modifier = Modifier.weight(1f)) {
                             Text("Install anyway")
                         }
                         OutlinedButton(onClick = onCancelPermissions, modifier = Modifier.weight(1f)) {
                             Text("Cancel")
                         }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            TextButton(onClick = onRepo) { Text("Repo") }
+                        }
                     }
                 }
                 if (state.status !in listOf(CardStatus.Working, CardStatus.PermissionReview, CardStatus.UpdateAvailable, CardStatus.Installed, CardStatus.NotInstalled, CardStatus.Error, CardStatus.SignatureMismatch)) {
                     // fallback — never reached with current enum
                 }
-                TextButton(onClick = onRepo) { Text("Repo") }
             }
         }
     }

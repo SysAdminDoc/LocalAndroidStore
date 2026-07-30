@@ -5,7 +5,7 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
 
-# Tink / errorprone / google-http-client / joda (transitive via androidx.security:security-crypto)
+# Tink / errorprone / google-http-client / joda
 # These optional dependencies aren't on the Android classpath but Tink references them
 # behind feature gates we don't use.
 -dontwarn com.google.errorprone.annotations.**

@@ -10,11 +10,15 @@ data class DeveloperVerificationNotice(
     val title: String,
     val body: String,
     val reason: String,
+    val surface: DeveloperVerificationSurface,
+    val registrationStatus: DeveloperRegistrationStatus,
+    val initialEnforcementScope: InitialEnforcementScope,
+    val guidanceUrl: String,
 )
 
 class DeveloperVerificationPreflight(private val context: Context) {
-    fun evaluate(meta: ApkMetadata): DeveloperVerificationNotice? {
-        val surface = detectSurface() ?: return null
+    fun evaluate(meta: ApkMetadata): DeveloperVerificationNotice {
+        val surface = detectSurface()
         return DeveloperVerificationCopy.unknownRegistrationNotice(
             applicationId = meta.applicationId,
             surface = surface,
@@ -22,7 +26,7 @@ class DeveloperVerificationPreflight(private val context: Context) {
         )
     }
 
-    private fun detectSurface(): DeveloperVerificationSurface? {
+    private fun detectSurface(): DeveloperVerificationSurface {
         val pm = context.packageManager
         if (pm.isEnabledPackage(DEVELOPER_VERIFIER_PACKAGE)) {
             return DeveloperVerificationSurface.AndroidDeveloperVerifier
@@ -30,7 +34,7 @@ class DeveloperVerificationPreflight(private val context: Context) {
         if (pm.isEnabledPackage(GOOGLE_PLAY_SERVICES_PACKAGE)) {
             return DeveloperVerificationSurface.GooglePlayServices
         }
-        return null
+        return DeveloperVerificationSurface.NotDetected
     }
 
     private fun PackageManager.isEnabledPackage(packageName: String): Boolean =
@@ -57,7 +61,12 @@ class DeveloperVerificationPreflight(private val context: Context) {
 enum class DeveloperVerificationSurface {
     AndroidDeveloperVerifier,
     GooglePlayServices,
+    NotDetected,
 }
+
+enum class DeveloperRegistrationStatus { Unknown }
+
+enum class InitialEnforcementScope { NotApplicableToIndependentSideload }
 
 internal object DeveloperVerificationCopy {
     private val regionalCountries = setOf("BR", "ID", "SG", "TH")
@@ -68,25 +77,36 @@ internal object DeveloperVerificationCopy {
         countryCode: String,
     ): DeveloperVerificationNotice {
         val normalizedCountry = countryCode.trim().uppercase(Locale.US)
-        val rollout = if (normalizedCountry in regionalCountries) {
-            "Developer verification enforcement starts in this region in September 2026."
+        val localeCopy = if (normalizedCountry in regionalCountries) {
+            "The current locale country is one of the four initial regions."
         } else {
-            "Developer verification starts in Brazil, Indonesia, Singapore, and Thailand in " +
-                "September 2026, then rolls out globally in 2027."
+            "The current locale country is outside the four initial regions."
         }
         val surfaceCopy = when (surface) {
             DeveloperVerificationSurface.AndroidDeveloperVerifier ->
                 "Android Developer Verifier is present on this device."
             DeveloperVerificationSurface.GooglePlayServices ->
                 "Google verification services are present on this device."
+            DeveloperVerificationSurface.NotDetected ->
+                "A Google developer-verification surface was not detected on this device."
         }
         return DeveloperVerificationNotice(
-            title = "Developer verification unknown",
-            body = "$surfaceCopy $rollout LocalAndroidStore cannot publicly query whether " +
-                "$applicationId is registered with Google yet. If its package name and " +
-                "signing key are not registered when enforcement applies, installs or " +
-                "updates may require Android's advanced flow or ADB.",
-            reason = surface.name,
+            title = "Verification registration: Unknown",
+            body = "$surfaceCopy Registration status for $applicationId is Unknown because " +
+                "Android exposes no registration-status capability to LocalAndroidStore. " +
+                "$localeCopy LocalAndroidStore uses direct independent sideloading, which " +
+                "Google's FAQ says is not in scope for the initial participating-store " +
+                "enforcement beginning 2026-09-30. Global rollout begins in 2027; its exact " +
+                "date and this route's future behavior are not yet published.",
+            reason = "surface=${surface.name};registration=Unknown;" +
+                "route=IndependentSideload;initialScope=NotApplicable",
+            surface = surface,
+            registrationStatus = DeveloperRegistrationStatus.Unknown,
+            initialEnforcementScope = InitialEnforcementScope.NotApplicableToIndependentSideload,
+            guidanceUrl = OFFICIAL_GUIDANCE_URL,
         )
     }
+
+    const val OFFICIAL_GUIDANCE_URL =
+        "https://developer.android.com/developer-verification/guides/faq"
 }

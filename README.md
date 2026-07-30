@@ -33,13 +33,15 @@ That's what this is.
 ## Features (current)
 
 - **Multi-source GitHub discovery** — every enabled GitHub user / org source with a `.apk` asset on its latest release. Each source has its own enable toggle, optional topic filter, pre-release toggle, and optional PAT.
+- **Rate-aware offline catalog** — release lookups are capped at four concurrent requests, GitHub ETags reuse unchanged responses, partial sources survive other source failures, and a dated on-device snapshot remains usable offline. TLS, token, authorization, rate-limit, network, server, malformed-response, and valid-empty outcomes are shown distinctly.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black. Repo handle, star count, version tag, status badge, two-line description.
 - **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
 - **One-tap install** — APK is downloaded to app cache, then driven through `PackageInstaller.Session`. The system shows its install dialog, the user confirms once, done.
 - **One-tap uninstall** — fires `Intent.ACTION_DELETE`, lands on the system uninstall confirmation. Catalog refreshes after.
 - **One-tap open** — launches the installed app's main activity.
+- **Gentle queued updates** — installed updates can run through Android 14+ user-initiated data-transfer jobs (WorkManager fallback on older versions), then wait for the target app to leave the foreground, device idle, and calls to end before commit. Attempts are capped and terminal reasons persist on the card.
 - **APK signature pinning** — first successful install captures the signing-cert SHA-256 fingerprint. Future updates that don't match the pin are **blocked** with a clear "publisher key changed — possible MITM or repo takeover" warning. We never auto-accept a key swap.
-- **Developer Verification preflight** — when Google verification services are present, installs show a non-blocking advisory before the system install dialog if LocalAndroidStore cannot confirm the APK's package name and signing key are registered for Android Developer Verification.
+- **Developer Verification preflight** — installs separately report whether a Google verification surface is present, that package registration is **Unknown** (Android exposes no status capability to this app), and that LocalAndroidStore's direct sideload route is outside the initial participating-store enforcement beginning 2026-09-30. The advisory links to Google's official guidance.
 - **Installed-state detection** — `PackageManager` tells us what's installed; remote `versionCode > local` flips the badge to "Update available".
 - **GitHub PATs (optional)** — source-specific tokens bump API rate limits from 60 → 5,000/hr and unlock private repos for that source. Stored in a Tink AEAD-encrypted app-private file, with the keyset protected by the Android Keystore.
 - **Activity log + crash log** — every download, install, uninstall, and crash is logged in-app and to disk at `<app files dir>/logs/crash.log`.
@@ -64,7 +66,7 @@ cd LocalAndroidStore
 # then sideload app/build/outputs/apk/debug/app-debug.apk
 ```
 
-For a signed release build, copy `keystore.properties.template` to `keystore.properties`, fill it in, drop your `.jks` next to it, and run `./gradlew assembleRelease`.
+This repository's automated verification produces the debug APK only; it does not sign release artifacts.
 
 ---
 
@@ -87,9 +89,10 @@ For each enabled GitHub source, LocalAndroidStore:
 
 1. Lists owned, non-archived, non-fork public repos via the GitHub REST API (`/users/{user}/repos`).
 2. If the source has a PAT, also lists authenticated repos via `/user/repos`, filters them back to the source owner, and dedupes them with the public list so private user / org repos can appear.
-3. For each repo, fetches the latest release (`/repos/{owner}/{repo}/releases/latest`, or the first non-draft from `/releases?per_page=10` when pre-releases are enabled).
+3. For each repo, fetches the latest release (`/repos/{owner}/{repo}/releases/latest`, or the first non-draft from `/releases?per_page=10` when pre-releases are enabled), with a global maximum of four concurrent release requests.
 4. Picks one APK asset per release: skips `*.apk.idsig` sidecars and `*.aab` files, prefers an asset whose name contains `universal`, otherwise picks the largest `.apk`.
 5. Drops repos with no APK asset on their latest release. Archived repos and forks are dropped at step 1.
+6. Persists ETag-tagged GitHub responses and a per-source catalog snapshot. A `304 Not Modified` reuses the saved response; partial, offline, and rate-limited refreshes keep usable releases and show snapshot age.
 
 There is no opinionated topic filter unless you turn one on — your own user / org listing already keeps the catalog tight.
 
@@ -100,10 +103,12 @@ There is no opinionated topic filter unless you turn one on — your own user / 
 | Path | Purpose |
 | --- | --- |
 | `<files-dir>/logs/crash.log` | On-disk crash log |
+| `<files-dir>/catalog/http/` | ETag-tagged GitHub response cache |
+| `<files-dir>/catalog/snapshots/` | Dated per-source offline catalog snapshots |
 | `<cache-dir>/apks/` | Downloaded APKs (transient, OS-cleanable) |
 | `<files-dir>/secrets/secrets.v1.tinkaead` | Tink AEAD-encrypted GitHub PATs and signing-cert pins per `applicationId` |
-| EncryptedSharedPreferences `secrets` | Legacy one-time migration source for existing PATs and signing-cert pins |
 | DataStore `settings` | GitHub sources, topic filters, pre-release toggles |
+| SharedPreferences `queued_update_status` | Attempt count and durable queued-update terminal state |
 
 The app declares `android:allowBackup="false"` and excludes everything from cloud / device-transfer backups — secrets stay on the device.
 
@@ -140,9 +145,9 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 
 The signature-pin store is keyed by `applicationId`. On a successful install we read the signing cert from the *exact APK we just installed* (not from PackageManager, which would also work but loses provenance), SHA-256 it, and store it. On every subsequent install for the same `applicationId`, we re-read the SHA-256 from the new APK's signing cert and refuse to install if it doesn't match the pin.
 
-Developer Verification preflight runs after APK metadata inspection and before `PackageInstaller.Session.commit()`. On devices with Android Developer Verifier or Google verification services present, LocalAndroidStore shows an advisory that the package/signing-key registration status is unknown. Android does not expose a public registration-query API to third-party stores yet, so this is informational and never blocks the install.
+Developer Verification preflight runs after APK metadata inspection and before `PackageInstaller.Session.commit()`. It models verification-surface presence, registration status, and rollout applicability as separate facts. Registration remains `Unknown` because Android exposes no status capability to LocalAndroidStore. Google's [official FAQ](https://developer.android.com/developer-verification/guides/faq) says direct sideloads and stores outside its initial participating list are not subject to the 2026-09-30 regional phase; global rollout begins in 2027, with the exact date and future independent-store behavior still unpublished. The advisory is informational and never blocks installation.
 
-Existing installs that used the older EncryptedSharedPreferences-backed secret store migrate on first launch: PATs and signing pins are re-encrypted into the Tink store, then the legacy entries are cleared. Any previous plaintext fallback entries are also pulled forward and cleared when Tink is available. The `security-crypto` dependency remains only as a migration bridge for this release line.
+The one-release EncryptedSharedPreferences migration window ended after v0.2.1, so `androidx.security:security-crypto` is no longer shipped. The plaintext emergency fallback is still migrated into Tink and cleared whenever Android Keystore becomes available again.
 
 ---
 
@@ -174,7 +179,7 @@ See [ROADMAP.md](ROADMAP.md). Highlights:
 - Android Studio Ladybug+ / AGP 8.7.3 / Kotlin 2.1.0 / Compose BOM 2024.12.01
 - JDK 17 (CI) or JDK 21 (Android Studio jbr)
 - minSdk 26 (Android 8.0), targetSdk / compileSdk 35 (Android 15)
-- R8 + resource shrink in release; release builds must be signed (`keystore.properties` or CI `KEYSTORE_BASE64` secret).
+- Debug APK assembly, lint, unit tests, and connected-device tests are the supported automated verification path.
 
 ---
 
@@ -197,7 +202,7 @@ LocalAndroidStore is in your trust boundary — once you grant it "Install unkno
 - A re-signed APK delivered via a hostile network. HTTPS authenticates GitHub through Android's system trust store; even if a hostile source delivered different bytes, the per-application publisher-signature pin rejects an unexpected signing key.
 - A competing installer trying to silently update an LAS-installed app. v0.2 claims update ownership on first install (Android 14+), so other installers must show the user a system dialog before overwriting.
 - Anything LAS-installed targeting Accessibility / Notification Listener / Device Admin without your conscious consent. v0.2 declares `PACKAGE_SOURCE_STORE` so downstream apps don't get a free pass on Restricted Settings — *you still have to flip those toggles per-app*.
-- An unknown Android Developer Verification registration status. If Google verification services are present, LAS warns before commit, but the platform currently owns the final install decision.
+- An unknown Android Developer Verification registration status. Presence of a Google verification package is reported only as capability-surface presence and never treated as proof of registration or enforcement; the platform owns the final install decision.
 
 **What we're not in the business of:**
 

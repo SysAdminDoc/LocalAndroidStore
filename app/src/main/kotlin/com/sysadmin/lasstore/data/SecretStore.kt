@@ -2,8 +2,6 @@ package com.sysadmin.lasstore.data
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.google.crypto.tink.Aead
 import com.google.crypto.tink.KeyTemplates
 import com.google.crypto.tink.aead.AeadConfig
@@ -14,9 +12,9 @@ import java.io.File
 /**
  * Tink-backed store for GitHub PATs and per-package APK signing-cert pins.
  *
- * Active storage is an AEAD-encrypted JSON file under app-private storage. A
- * legacy EncryptedSharedPreferences migration bridge is retained so existing
- * installs can carry PATs and signature pins forward without user action.
+ * Active storage is an AEAD-encrypted JSON file under app-private storage.
+ * A plaintext fallback is retained only for devices where Android Keystore
+ * setup fails, and is migrated forward when Tink becomes available again.
  */
 class SecretStore(context: Context) {
     @Volatile var encrypted: Boolean = true
@@ -25,14 +23,11 @@ class SecretStore(context: Context) {
     private val backend: SecretBackend = runCatching {
         TinkFileSecretBackend(context.applicationContext).also { tink ->
             val plain = PlainPreferencesSecretBackend(context.applicationContext)
-            val migrated = LegacyEncryptedPreferences.read(context.applicationContext)
-                .orEmptySecret()
-                .mergedWithFallback(plain.read())
-            if (!migrated.isEmpty) {
+            val fallback = plain.read()
+            if (!fallback.isEmpty) {
                 if (tink.read().isEmpty) {
-                    tink.write(migrated)
+                    tink.write(fallback)
                 }
-                LegacyEncryptedPreferences.clear(context.applicationContext)
                 plain.write(SecretSnapshot())
             }
         }
@@ -141,35 +136,6 @@ private class PlainPreferencesSecretBackend(context: Context) : SynchronizedSecr
     }
 }
 
-private object LegacyEncryptedPreferences {
-    fun read(context: Context): SecretSnapshot? {
-        val prefs = open(context).getOrNull() ?: return null
-        val all = prefs.all
-        return SecretSnapshot(
-            globalPat = prefs.getString(KEY_PAT, "").orEmpty(),
-            sourcePats = all.stringMapWithPrefix(SOURCE_PAT_PREFIX),
-            pins = all.stringMapWithPrefix(PIN_PREFIX),
-        )
-    }
-
-    fun clear(context: Context) {
-        open(context).getOrNull()?.edit()?.clear()?.apply()
-    }
-
-    private fun open(context: Context): Result<SharedPreferences> = runCatching {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context,
-            "secrets",
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
-    }
-}
-
 private fun Map<String, *>.stringMapWithPrefix(prefix: String): Map<String, String> =
     entries.mapNotNull { (key, value) ->
         val secret = value as? String ?: return@mapNotNull null
@@ -181,8 +147,6 @@ private fun secretJson(): Json = Json {
     ignoreUnknownKeys = true
     encodeDefaults = true
 }
-
-private fun SecretSnapshot?.orEmptySecret(): SecretSnapshot = this ?: SecretSnapshot()
 
 private const val KEY_PAT = "github_pat"
 private const val SOURCE_PAT_PREFIX = "github_pat_source_"

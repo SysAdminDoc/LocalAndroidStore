@@ -1,7 +1,9 @@
 package com.sysadmin.lasstore.domain
 
 import com.sysadmin.lasstore.data.GhAsset
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class AppInfo(
     val owner: String,
     val repo: String,

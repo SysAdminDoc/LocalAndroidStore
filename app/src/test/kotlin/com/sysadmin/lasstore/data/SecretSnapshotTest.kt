@@ -29,7 +29,7 @@ class SecretSnapshotTest {
     }
 
     @Test
-    fun migrationMergePreservesFallbackValuesWithoutOverridingNewerSecrets() {
+    fun fallbackMergePreservesValuesWithoutOverridingNewerSecrets() {
         val primary = SecretSnapshot(
             sourcePats = mapOf("sysadmindoc" to "fresh"),
             pins = mapOf("com.example.one" to "fresh-pin"),

@@ -1,0 +1,219 @@
+package com.sysadmin.lasstore.install
+
+import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+
+@Serializable
+enum class QueuedUpdatePhase {
+    Queued,
+    Running,
+    Retrying,
+    Installed,
+    Failed,
+    Cancelled,
+}
+
+@Serializable
+enum class QueuedUpdateFailureKind {
+    Network,
+    Timeout,
+    RateLimited,
+    Server,
+    Authentication,
+    Authorization,
+    Signature,
+    PackageIdentity,
+    PermissionReview,
+    Incompatible,
+    UserCancelled,
+    Policy,
+    Storage,
+    InvalidArtifact,
+    Unknown,
+}
+
+@Serializable
+data class QueuedUpdateStatus(
+    val workName: String,
+    val sourceKey: String,
+    val owner: String,
+    val repo: String,
+    val displayName: String,
+    val phase: QueuedUpdatePhase,
+    val attempt: Int,
+    val maxAttempts: Int,
+    val message: String,
+    val updatedAtEpochMillis: Long,
+    val retryAtEpochMillis: Long? = null,
+    val failureKind: QueuedUpdateFailureKind? = null,
+    val packageInstallerSessionId: Int? = null,
+) {
+    val isPending: Boolean
+        get() = phase == QueuedUpdatePhase.Queued ||
+            phase == QueuedUpdatePhase.Running ||
+            phase == QueuedUpdatePhase.Retrying
+}
+
+class QueuedUpdateStatusStore(context: Context) {
+    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
+    private val _statuses = MutableStateFlow(load())
+    val statuses: StateFlow<List<QueuedUpdateStatus>> = _statuses.asStateFlow()
+
+    fun get(payload: QueuedUpdatePayload): QueuedUpdateStatus? =
+        _statuses.value.firstOrNull { it.workName == payload.workName }
+
+    fun get(sourceKey: String, owner: String, repo: String): QueuedUpdateStatus? =
+        _statuses.value.firstOrNull {
+            it.sourceKey == sourceKey &&
+                it.owner.equals(owner, ignoreCase = true) &&
+                it.repo.equals(repo, ignoreCase = true)
+        }
+
+    fun markQueued(payload: QueuedUpdatePayload) {
+        save(
+            payload,
+            phase = QueuedUpdatePhase.Queued,
+            attempt = 0,
+            message = "Queued for a gentle background update.",
+        )
+    }
+
+    fun beginAttempt(payload: QueuedUpdatePayload): Int {
+        val attempt = ((get(payload)?.attempt ?: 0) + 1).coerceAtMost(MAX_ATTEMPTS + 1)
+        save(
+            payload,
+            phase = QueuedUpdatePhase.Running,
+            attempt = attempt,
+            message = "Background update attempt $attempt of $MAX_ATTEMPTS.",
+        )
+        return attempt
+    }
+
+    fun markRetrying(
+        payload: QueuedUpdatePayload,
+        attempt: Int,
+        failure: QueuedUpdateResult.Failed,
+    ) {
+        save(
+            payload,
+            phase = QueuedUpdatePhase.Retrying,
+            attempt = attempt,
+            message = "${failure.message} Retrying ($attempt of $MAX_ATTEMPTS).",
+            retryAtEpochMillis = failure.retryAtEpochMillis,
+            failureKind = failure.kind,
+        )
+    }
+
+    fun markFailed(
+        payload: QueuedUpdatePayload,
+        attempt: Int,
+        failure: QueuedUpdateResult.Failed,
+    ) {
+        save(
+            payload,
+            phase = if (failure.kind == QueuedUpdateFailureKind.UserCancelled) {
+                QueuedUpdatePhase.Cancelled
+            } else {
+                QueuedUpdatePhase.Failed
+            },
+            attempt = attempt,
+            message = failure.message,
+            failureKind = failure.kind,
+        )
+    }
+
+    fun markInstalled(payload: QueuedUpdatePayload, message: String = "Background update installed.") {
+        save(
+            payload,
+            phase = QueuedUpdatePhase.Installed,
+            attempt = get(payload)?.attempt ?: 1,
+            message = message,
+        )
+    }
+
+    fun markAwaitingInstall(
+        payload: QueuedUpdatePayload,
+        attempt: Int,
+        packageInstallerSessionId: Int,
+    ) {
+        save(
+            payload,
+            phase = QueuedUpdatePhase.Queued,
+            attempt = attempt,
+            message = "Download verified; waiting for Android's gentle install constraints.",
+            packageInstallerSessionId = packageInstallerSessionId,
+        )
+    }
+
+    fun shouldDeferForRateLimit(payload: QueuedUpdatePayload): Boolean =
+        get(payload)?.retryAtEpochMillis?.let { it > System.currentTimeMillis() } == true
+
+    fun markCancelled(payload: QueuedUpdatePayload) {
+        save(
+            payload,
+            phase = QueuedUpdatePhase.Cancelled,
+            attempt = get(payload)?.attempt ?: 0,
+            message = "Background update cancelled.",
+            failureKind = QueuedUpdateFailureKind.UserCancelled,
+        )
+    }
+
+    private fun save(
+        payload: QueuedUpdatePayload,
+        phase: QueuedUpdatePhase,
+        attempt: Int,
+        message: String,
+        retryAtEpochMillis: Long? = null,
+        failureKind: QueuedUpdateFailureKind? = null,
+        packageInstallerSessionId: Int? = null,
+    ) = synchronized(LOCK) {
+        val status = QueuedUpdateStatus(
+            workName = payload.workName,
+            sourceKey = payload.sourceKey,
+            owner = payload.owner,
+            repo = payload.repo,
+            displayName = payload.displayName,
+            phase = phase,
+            attempt = attempt,
+            maxAttempts = MAX_ATTEMPTS,
+            message = message,
+            updatedAtEpochMillis = System.currentTimeMillis(),
+            retryAtEpochMillis = retryAtEpochMillis,
+            failureKind = failureKind,
+            packageInstallerSessionId = packageInstallerSessionId,
+        )
+        check(prefs.edit().putString(key(payload.workName), json.encodeToString(status)).commit()) {
+            "Could not persist queued update status"
+        }
+        _statuses.value = load()
+    }
+
+    private fun load(): List<QueuedUpdateStatus> = prefs.all
+        .filterKeys { it.startsWith(KEY_PREFIX) }
+        .values
+        .mapNotNull { encoded ->
+            (encoded as? String)?.let {
+                runCatching { json.decodeFromString<QueuedUpdateStatus>(it) }.getOrNull()
+            }
+        }
+        .sortedByDescending { it.updatedAtEpochMillis }
+
+    private fun key(workName: String): String = "$KEY_PREFIX$workName"
+
+    companion object {
+        const val MAX_ATTEMPTS = 3
+        private const val PREFS_NAME = "queued_update_status"
+        private const val KEY_PREFIX = "status."
+        private val LOCK = Any()
+    }
+}

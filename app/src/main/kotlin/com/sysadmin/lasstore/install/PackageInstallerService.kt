@@ -1,10 +1,8 @@
 package com.sysadmin.lasstore.install
 
 import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.IntentSender
 import android.content.pm.PackageInstaller
 import android.icu.util.ULocale
@@ -16,12 +14,15 @@ import androidx.annotation.RequiresApi
 import com.sysadmin.lasstore.data.Logger
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
 class PackageInstallerService(
     private val context: Context,
     private val logger: Logger,
 ) {
+    private val resultRegistry = InstallResultRegistry(context)
+
     /**
      * Whether the current app is allowed to drive the system installer dialog.
      * On Android 8.0+ this is the per-app "Install unknown apps" toggle the user must enable.
@@ -68,11 +69,16 @@ class PackageInstallerService(
      */
     suspend fun installApk(
         apk: File,
+        applicationId: String,
         firstInstall: Boolean = true,
         referrerUri: Uri? = null,
     ): InstallResult = suspendCancellableCoroutine { cont ->
         val pi = context.packageManager.packageInstaller
-        val params = buildSessionParams(firstInstall = firstInstall, referrerUri = referrerUri)
+        val params = buildSessionParams(
+            firstInstall = firstInstall,
+            referrerUri = referrerUri,
+            applicationId = applicationId,
+        )
 
         val sessionId = try {
             pi.createSession(params)
@@ -82,20 +88,26 @@ class PackageInstallerService(
             return@suspendCancellableCoroutine
         }
 
-        val token = "lasstore_$sessionId"
-        val receiver = installStatusReceiver(pi, sessionId, token, cont)
-        registerReceiver(receiver, token)
+        val registration = registerForegroundResult(
+            sessionId = sessionId,
+            applicationId = applicationId,
+            route = InstallResultRoute.Foreground,
+            pi = pi,
+            cont = cont,
+        )
 
         cont.invokeOnCancellation {
-            runCatching { context.unregisterReceiver(receiver) }
+            ForegroundInstallResultRouter.detach(registration.capability)
+            resultRegistry.cancel(registration)
             runCatching { pi.abandonSession(sessionId) }
         }
 
         try {
-            streamAndCommit(pi, sessionId, apk, token)
+            streamAndCommit(pi, sessionId, apk, installResultIntent(context, registration))
         } catch (t: Throwable) {
             logger.error("Installer", "session commit failed", t)
-            runCatching { context.unregisterReceiver(receiver) }
+            ForegroundInstallResultRouter.detach(registration.capability)
+            resultRegistry.cancel(registration)
             runCatching { pi.abandonSession(sessionId) }
             if (cont.isActive) cont.resume(InstallResult.Failure(t.message ?: "session commit failed"))
         }
@@ -133,30 +145,36 @@ class PackageInstallerService(
             return@suspendCancellableCoroutine
         }
 
-        val token = "lasstore_preapproval_$sessionId"
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -999)
-                runCatching { ctx.unregisterReceiver(this) }
-                if (cont.isActive) {
-                    if (status == PackageInstaller.STATUS_SUCCESS) {
-                        cont.resume(PreapprovalSessionResult.Approved(sessionId))
-                    } else {
-                        runCatching { pi.abandonSession(sessionId) }
-                        cont.resume(PreapprovalSessionResult.Declined)
-                    }
+        val registration = resultRegistry.register(
+            sessionId = sessionId,
+            applicationId = applicationId,
+            route = InstallResultRoute.Preapproval,
+        )
+        ForegroundInstallResultRouter.attach(registration.capability) { _, resultIntent ->
+            ForegroundInstallResultRouter.detach(registration.capability)
+            val status = resultIntent.getIntExtra(PackageInstaller.EXTRA_STATUS, STATUS_UNKNOWN)
+            if (cont.isActive) {
+                if (status == PackageInstaller.STATUS_SUCCESS) {
+                    cont.resume(PreapprovalSessionResult.Approved(sessionId))
+                } else {
+                    runCatching { pi.abandonSession(sessionId) }
+                    cont.resume(PreapprovalSessionResult.Declined)
                 }
             }
         }
-        registerReceiver(receiver, token)
         cont.invokeOnCancellation {
-            runCatching { context.unregisterReceiver(receiver) }
+            ForegroundInstallResultRouter.detach(registration.capability)
+            resultRegistry.cancel(registration)
             runCatching { pi.abandonSession(sessionId) }
         }
 
-        val statusIntent = Intent(token).setPackage(context.packageName)
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-        val pending = PendingIntent.getBroadcast(context, sessionId, statusIntent, flags)
+        val pending = PendingIntent.getBroadcast(
+            context,
+            sessionId,
+            installResultIntent(context, registration),
+            flags,
+        )
 
         try {
             val details = PackageInstaller.PreapprovalDetails.Builder()
@@ -169,7 +187,8 @@ class PackageInstallerService(
             }
         } catch (t: Throwable) {
             logger.warn("Installer", "requestUserPreapproval unavailable: ${t.message}")
-            runCatching { context.unregisterReceiver(receiver) }
+            ForegroundInstallResultRouter.detach(registration.capability)
+            resultRegistry.cancel(registration)
             runCatching { pi.abandonSession(sessionId) }
             if (cont.isActive) cont.resume(PreapprovalSessionResult.Declined)
         }
@@ -180,23 +199,33 @@ class PackageInstallerService(
      * [createSessionAndRequestPreapproval]) and commit it. The platform will not show a
      * confirmation dialog again since the session was already pre-approved.
      */
-    suspend fun commitSession(sessionId: Int, apk: File): InstallResult =
+    suspend fun commitSession(
+        sessionId: Int,
+        applicationId: String,
+        apk: File,
+    ): InstallResult =
         suspendCancellableCoroutine { cont ->
             val pi = context.packageManager.packageInstaller
-            val token = "lasstore_$sessionId"
-            val receiver = installStatusReceiver(pi, sessionId, token, cont)
-            registerReceiver(receiver, token)
+            val registration = registerForegroundResult(
+                sessionId = sessionId,
+                applicationId = applicationId,
+                route = InstallResultRoute.Foreground,
+                pi = pi,
+                cont = cont,
+            )
 
             cont.invokeOnCancellation {
-                runCatching { context.unregisterReceiver(receiver) }
+                ForegroundInstallResultRouter.detach(registration.capability)
+                resultRegistry.cancel(registration)
                 runCatching { pi.abandonSession(sessionId) }
             }
 
             try {
-                streamAndCommit(pi, sessionId, apk, token)
+                streamAndCommit(pi, sessionId, apk, installResultIntent(context, registration))
             } catch (t: Throwable) {
                 logger.error("Installer", "commitSession failed", t)
-                runCatching { context.unregisterReceiver(receiver) }
+                ForegroundInstallResultRouter.detach(registration.capability)
+                resultRegistry.cancel(registration)
                 runCatching { pi.abandonSession(sessionId) }
                 if (cont.isActive) cont.resume(InstallResult.Failure(t.message ?: "commitSession failed"))
             }
@@ -204,7 +233,61 @@ class PackageInstallerService(
 
     /** Abandon an open session — call on download failure or cancellation. */
     fun abandonSession(sessionId: Int) {
+        resultRegistry.cancelSession(sessionId)
         runCatching { context.packageManager.packageInstaller.abandonSession(sessionId) }
+    }
+
+    /**
+     * Android 14+: stage [apk], then ask PackageInstaller to commit only after gentle
+     * update constraints are met. The supplied [statusIntent] must target a manifest
+     * BroadcastReceiver because the final status can arrive long after this call returns.
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    fun queueInstallAfterConstraints(
+        apk: File,
+        applicationId: String,
+        firstInstall: Boolean,
+        referrerUri: Uri?,
+        resultData: Intent,
+    ): InstallResult {
+        val pi = context.packageManager.packageInstaller
+        val params = buildSessionParams(
+            firstInstall = firstInstall,
+            referrerUri = referrerUri,
+            applicationId = applicationId,
+        )
+        val sessionId = try {
+            pi.createSession(params)
+        } catch (t: Throwable) {
+            logger.error("Installer", "createSession for constrained install failed", t)
+            return InstallResult.Failure(t.message ?: "createSession failed")
+        }
+
+        val registration = try {
+            resultRegistry.register(
+                sessionId = sessionId,
+                applicationId = applicationId,
+                route = InstallResultRoute.Queued,
+            )
+        } catch (t: Throwable) {
+            runCatching { pi.abandonSession(sessionId) }
+            return InstallResult.Failure(t.message ?: "result capability persistence failed")
+        }
+
+        return try {
+            streamAndCommitAfterConstraints(
+                pi,
+                sessionId,
+                apk,
+                installResultIntent(context, registration, resultData),
+            )
+            InstallResult.Queued(sessionId)
+        } catch (t: Throwable) {
+            logger.error("Installer", "constrained install queue failed", t)
+            resultRegistry.cancel(registration)
+            runCatching { pi.abandonSession(sessionId) }
+            InstallResult.Failure(t.message ?: "constrained install queue failed")
+        }
     }
 
     // ── Shared helpers ────────────────────────────────────────────────────────
@@ -233,35 +316,27 @@ class PackageInstallerService(
         return params
     }
 
-    private fun registerReceiver(receiver: BroadcastReceiver, token: String) {
-        val filter = IntentFilter(token)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            context.registerReceiver(receiver, filter)
-        }
-    }
-
-    private fun installStatusReceiver(
-        pi: PackageInstaller,
+    private fun registerForegroundResult(
         sessionId: Int,
-        token: String,
+        applicationId: String,
+        route: InstallResultRoute,
+        pi: PackageInstaller,
         cont: kotlinx.coroutines.CancellableContinuation<InstallResult>,
-    ) = object : BroadcastReceiver() {
-        override fun onReceive(ctx: Context, intent: Intent) {
+    ): InstallResultRegistration {
+        val registration = resultRegistry.register(sessionId, applicationId, route)
+        ForegroundInstallResultRouter.attach(registration.capability) { ctx, intent ->
             val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -999)
             val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
             when (status) {
                 PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                    val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                    val confirm = intent.pendingUserActionIntent()
                     if (confirm != null) {
                         confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         ctx.startActivity(confirm)
                     }
                 }
                 PackageInstaller.STATUS_SUCCESS -> {
-                    runCatching { ctx.unregisterReceiver(this) }
+                    ForegroundInstallResultRouter.detach(registration.capability)
                     if (cont.isActive) cont.resume(InstallResult.Success)
                 }
                 PackageInstaller.STATUS_FAILURE,
@@ -270,21 +345,26 @@ class PackageInstallerService(
                 PackageInstaller.STATUS_FAILURE_CONFLICT,
                 PackageInstaller.STATUS_FAILURE_INCOMPATIBLE,
                 PackageInstaller.STATUS_FAILURE_INVALID,
-                PackageInstaller.STATUS_FAILURE_STORAGE -> {
-                    runCatching { ctx.unregisterReceiver(this) }
+                PackageInstaller.STATUS_FAILURE_STORAGE,
+                PackageInstaller.STATUS_FAILURE_TIMEOUT -> {
+                    ForegroundInstallResultRouter.detach(registration.capability)
                     if (cont.isActive) cont.resume(
-                        InstallResult.Failure(decodeFailure(ctx, status, message))
+                        InstallResult.Failure(
+                            message = decodeFailure(ctx, status, message),
+                            status = status,
+                        )
                     )
                 }
             }
         }
+        return registration
     }
 
     private fun streamAndCommit(
         pi: PackageInstaller,
         sessionId: Int,
         apk: File,
-        token: String,
+        statusIntent: Intent,
     ) {
         pi.openSession(sessionId).use { session ->
             apk.inputStream().use { input ->
@@ -293,7 +373,6 @@ class PackageInstallerService(
                     session.fsync(out)
                 }
             }
-            val statusIntent = Intent(token).setPackage(context.packageName)
             val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
             } else {
@@ -305,11 +384,50 @@ class PackageInstallerService(
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private fun streamAndCommitAfterConstraints(
+        pi: PackageInstaller,
+        sessionId: Int,
+        apk: File,
+        statusIntent: Intent,
+    ) {
+        pi.openSession(sessionId).use { session ->
+            apk.inputStream().use { input ->
+                session.openWrite("base.apk", 0, apk.length()).use { out ->
+                    input.copyTo(out)
+                    session.fsync(out)
+                }
+            }
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        val pending = PendingIntent.getBroadcast(context, sessionId, statusIntent, flags)
+        val constraints = PackageInstaller.InstallConstraints.Builder()
+            .setAppNotForegroundRequired()
+            .setDeviceIdleRequired()
+            .setNotInCallRequired()
+            .build()
+        pi.commitSessionAfterInstallConstraintsAreMet(
+            sessionId,
+            pending.intentSender,
+            constraints,
+            CONSTRAINT_TIMEOUT_MILLIS,
+        )
+    }
+
+    private companion object {
+        val CONSTRAINT_TIMEOUT_MILLIS: Long = TimeUnit.HOURS.toMillis(24)
+        const val STATUS_UNKNOWN = -999
+    }
+
 }
 
 sealed interface InstallResult {
     data object Success : InstallResult
-    data class Failure(val message: String) : InstallResult
+    data class Queued(val sessionId: Int) : InstallResult
+    data class Failure(
+        val message: String,
+        val status: Int? = null,
+    ) : InstallResult
 }
 
 sealed interface PreapprovalSessionResult {
@@ -324,7 +442,7 @@ sealed interface PreapprovalSessionResult {
  * user-facing string. Replaces Android's generic "App not installed" with concrete causes.
  * Includes device ABI and free-storage context for actionable failure messages (Item 7).
  */
-private fun decodeFailure(context: Context, status: Int, systemMessage: String): String {
+internal fun decodeFailure(context: Context, status: Int, systemMessage: String): String {
     val cause = when (status) {
         PackageInstaller.STATUS_FAILURE_ABORTED ->
             "Install cancelled."
@@ -348,6 +466,8 @@ private fun decodeFailure(context: Context, status: Int, systemMessage: String):
                 .availableBytes / (1024 * 1024)
             "Not enough storage to install. Free up space and try again (available: ${freeMb} MB)."
         }
+        PackageInstaller.STATUS_FAILURE_TIMEOUT ->
+            "Install timed out waiting for the device to become idle, not in-call, and for the target app to leave the foreground."
         else ->
             "Install failed."
     }

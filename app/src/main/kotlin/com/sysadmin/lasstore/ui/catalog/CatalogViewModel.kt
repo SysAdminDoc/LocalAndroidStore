@@ -12,9 +12,14 @@ import com.sysadmin.lasstore.data.DeveloperVerificationNotice
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.domain.AppInfo
 import com.sysadmin.lasstore.domain.CardStatus
+import com.sysadmin.lasstore.domain.CatalogDiscoveryResult
+import com.sysadmin.lasstore.domain.CatalogFailureKind
+import com.sysadmin.lasstore.domain.CatalogSourceIssue
 import com.sysadmin.lasstore.domain.DiscoveryUseCase
 import com.sysadmin.lasstore.install.InstallResult
+import com.sysadmin.lasstore.install.PermissionDiff
 import com.sysadmin.lasstore.install.PreapprovalSessionResult
+import com.sysadmin.lasstore.install.QueuedUpdateStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,10 +27,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class CardState(
     val info: AppInfo,
@@ -39,6 +48,7 @@ data class CardState(
     val newDangerousPermissions: List<String> = emptyList(),
     /** True when the user has silenced update notifications for this app (Item 35). */
     val isIgnored: Boolean = false,
+    val queuedUpdateStatus: QueuedUpdateStatus? = null,
 )
 
 data class CatalogUiState(
@@ -47,14 +57,18 @@ data class CatalogUiState(
     val searchQuery: String = "",
     val canRequestInstalls: Boolean = true,
     val errorMessage: String? = null,
+    val catalogNotice: String? = null,
     val warning: String? = null,
 )
 
 class CatalogViewModel : ViewModel() {
     private val sl = ServiceLocator
-    private val discovery = DiscoveryUseCase(sl.github, sl.logger) { sourceKey ->
-        sl.settings.getPat(sourceKey)
-    }
+    private val discovery = DiscoveryUseCase(
+        github = sl.github,
+        logger = sl.logger,
+        snapshots = sl.catalogSnapshots,
+        patForSource = { sourceKey -> sl.settings.getPat(sourceKey) },
+    )
 
     private val _state = MutableStateFlow(CatalogUiState())
     val state: StateFlow<CatalogUiState> = _state.asStateFlow()
@@ -75,6 +89,13 @@ class CatalogViewModel : ViewModel() {
 
     init {
         refreshInstallPermission()
+        viewModelScope.launch {
+            sl.queuedUpdateStatus.statuses.collectLatest {
+                _state.update { ui ->
+                    ui.copy(cards = ui.cards.map(::withQueuedUpdateStatus))
+                }
+            }
+        }
         refresh()
     }
 
@@ -93,9 +114,22 @@ class CatalogViewModel : ViewModel() {
             _state.update { it.copy(refreshing = true, errorMessage = null) }
             val settings = sl.settings.flow.first()
             val enabledSources = settings.sources.filter { it.enabled }
-            val infos = runCatching { discovery.discover(settings.sources) }
+            val discoveryResult = runCatching { discovery.discover(settings.sources) }
                 .onFailure { sl.logger.error("Catalog", "discover failed", it) }
-                .getOrElse { emptyList() }
+                .getOrElse {
+                    CatalogDiscoveryResult(
+                        apps = emptyList(),
+                        issues = listOf(
+                            CatalogSourceIssue(
+                                sourceKey = "catalog",
+                                sourceLabel = "Catalog",
+                                kind = CatalogFailureKind.Unknown,
+                                message = "Catalog refresh failed unexpectedly.",
+                            )
+                        ),
+                    )
+                }
+            val infos = discoveryResult.apps
             sl.logger.info(
                 "Catalog",
                 "Discovered ${infos.size} APK-bearing repos across ${enabledSources.size} enabled sources"
@@ -105,7 +139,17 @@ class CatalogViewModel : ViewModel() {
                 val cached = sl.appIdCache.get(info.owner, info.repo)
                 buildCardState(info, cached)
             }
-            _state.update { it.copy(refreshing = false, cards = cards) }
+            val catalogNotice = catalogNotice(discoveryResult)
+            _state.update {
+                it.copy(
+                    refreshing = false,
+                    cards = cards,
+                    errorMessage = catalogNotice.takeIf {
+                        cards.isEmpty() && discoveryResult.issues.isNotEmpty()
+                    },
+                    catalogNotice = catalogNotice.takeIf { cards.isNotEmpty() },
+                )
+            }
         }
     }
 
@@ -120,7 +164,7 @@ class CatalogViewModel : ViewModel() {
         val applicationId = info.applicationId ?: cached?.applicationId
         val installed = applicationId?.let { sl.installState.info(it) }
         val isIgnored = sl.ignoreList.isIgnored(info.handle)
-        return when {
+        val baseState = when {
             installed == null -> CardState(info = info, status = CardStatus.NotInstalled)
             else -> {
                 // Compare latest release tag against the tag that was installed.
@@ -141,6 +185,7 @@ class CatalogViewModel : ViewModel() {
                 )
             }
         }
+        return withQueuedUpdateStatus(baseState)
     }
 
     fun install(card: CardState) {
@@ -276,6 +321,41 @@ class CatalogViewModel : ViewModel() {
         val key = cardKey(card.info)
         activeJobs.remove(key)?.cancel()
         resetCard(card)
+    }
+
+    /** Queue an installed update through UIDT/WorkManager and gentle PackageInstaller constraints. */
+    fun queueBackgroundUpdate(card: CardState) {
+        if (!sl.installer.canRequestInstalls()) {
+            _state.update { it.copy(warning = "Grant 'Install unknown apps' first.") }
+            sl.installer.openInstallPermissionSettings()
+            return
+        }
+        val cached = sl.appIdCache.get(card.info.owner, card.info.repo)
+        val applicationId = card.info.applicationId ?: cached?.applicationId
+        if (applicationId == null || sl.installState.info(applicationId) == null) {
+            _state.update { it.copy(warning = "Queue is only available for installed apps.") }
+            return
+        }
+        val queuedInfo = card.info.copy(applicationId = applicationId)
+        if (sl.backgroundUpdates.enqueue(queuedInfo)) {
+            updateCard(card.info) {
+                withQueuedUpdateStatus(
+                    it.copy(message = "Queued for gentle background update")
+                )
+            }
+            _state.update { it.copy(warning = "Queued ${card.info.displayName} for background update.") }
+        } else {
+            _state.update { it.copy(warning = "Could not queue ${card.info.displayName}.") }
+        }
+    }
+
+    fun cancelBackgroundUpdate(card: CardState) {
+        val cached = sl.appIdCache.get(card.info.owner, card.info.repo)
+        val applicationId = card.info.applicationId ?: cached?.applicationId
+        val queuedInfo = card.info.copy(applicationId = applicationId)
+        sl.backgroundUpdates.cancel(queuedInfo)
+        updateCard(card.info, ::withQueuedUpdateStatus)
+        _state.update { it.copy(warning = "Cancelled ${card.info.displayName}'s background update.") }
     }
 
     /** Item 34: Proceed with an install that was paused at the permission-review gate. */
@@ -422,6 +502,57 @@ class CatalogViewModel : ViewModel() {
         }
     }
 
+    private fun withQueuedUpdateStatus(card: CardState): CardState {
+        val queued = sl.queuedUpdateStatus.get(
+            sourceKey = card.info.sourceKey,
+            owner = card.info.owner,
+            repo = card.info.repo,
+        )
+        if (queued == null || card.status == CardStatus.Working) {
+            return card.copy(queuedUpdateStatus = queued)
+        }
+        return card.copy(
+            queuedUpdateStatus = queued,
+            message = queued.message,
+        )
+    }
+
+    private fun catalogNotice(result: CatalogDiscoveryResult): String? {
+        val primary = result.issues.firstOrNull() ?: return null
+        val details = when (primary.kind) {
+            CatalogFailureKind.Tls -> "Android could not authenticate GitHub's secure connection."
+            CatalogFailureKind.Authentication -> "Update the personal access token for ${primary.sourceLabel}."
+            CatalogFailureKind.Authorization -> "The token for ${primary.sourceLabel} lacks access."
+            CatalogFailureKind.RateLimited -> primary.retryAtEpochMillis?.let { resetAt ->
+                "GitHub's request limit resets at ${
+                    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(resetAt))
+                }."
+            } ?: "GitHub did not provide a usable reset time."
+            CatalogFailureKind.Network -> "Check the connection and refresh."
+            CatalogFailureKind.Server -> "GitHub reported a temporary server failure."
+            CatalogFailureKind.InvalidResponse -> "GitHub returned unreadable release metadata."
+            CatalogFailureKind.Unknown -> "Check Activity for technical details."
+        }
+        val snapshot = primary.snapshotAgeMillis?.let {
+            " Showing the last saved catalog (${formatSnapshotAge(it)} old)."
+        }.orEmpty()
+        val additional = (result.issues.size - 1)
+            .takeIf { it > 0 }
+            ?.let { " $it additional source${if (it == 1) "" else "s"} failed." }
+            .orEmpty()
+        return "${primary.message} $details$snapshot$additional".trim()
+    }
+
+    private fun formatSnapshotAge(ageMillis: Long): String {
+        val minutes = ageMillis / 60_000L
+        return when {
+            minutes < 1L -> "less than a minute"
+            minutes < 60L -> "$minutes min"
+            minutes < 1_440L -> "${minutes / 60L} h"
+            else -> "${minutes / 1_440L} d"
+        }
+    }
+
     /**
      * Item 34: Handle devVerification notice + actual platform install for both the normal
      * path and the post-permission-review path.
@@ -436,20 +567,27 @@ class CatalogViewModel : ViewModel() {
         referrerUri: android.net.Uri,
     ) {
         val developerVerificationNotice = sl.developerVerification.evaluate(meta)
-        if (developerVerificationNotice != null) {
-            sl.logger.warn(
-                "DeveloperVerification",
-                "Preflight warning for ${meta.applicationId}: ${developerVerificationNotice.reason}"
-            )
-            sl.audit.developerVerificationWarned(info = card.info, meta = meta, reason = developerVerificationNotice.reason)
-            updateCard(card.info) { it.copy(developerVerificationNotice = developerVerificationNotice) }
-        }
+        sl.logger.warn(
+            "DeveloperVerification",
+            "Preflight advisory for ${meta.applicationId}: ${developerVerificationNotice.reason}"
+        )
+        sl.audit.developerVerificationWarned(info = card.info, meta = meta, reason = developerVerificationNotice.reason)
+        updateCard(card.info) { it.copy(developerVerificationNotice = developerVerificationNotice) }
 
         updateCard(card.info) { it.copy(message = "Installing…") }
         val result = if (preapprovalSessionId != null) {
-            sl.installer.commitSession(sessionId = preapprovalSessionId, apk = target)
+            sl.installer.commitSession(
+                sessionId = preapprovalSessionId,
+                applicationId = meta.applicationId,
+                apk = target,
+            )
         } else {
-            sl.installer.installApk(apk = target, firstInstall = !installedAlready, referrerUri = referrerUri)
+            sl.installer.installApk(
+                apk = target,
+                applicationId = meta.applicationId,
+                firstInstall = !installedAlready,
+                referrerUri = referrerUri,
+            )
         }
         when (result) {
             is InstallResult.Success -> {
@@ -480,6 +618,11 @@ class CatalogViewModel : ViewModel() {
                     )
                 }
             }
+            is InstallResult.Queued -> {
+                updateCard(card.info) {
+                    it.copy(status = CardStatus.UpdateAvailable, progress = 0f, message = "Queued for gentle background update")
+                }
+            }
             is InstallResult.Failure -> {
                 sl.audit.installFailed(card.info, meta, result.message)
                 sl.logger.warn("Install", "Install failed for ${meta.applicationId}: ${result.message}")
@@ -507,16 +650,9 @@ class CatalogViewModel : ViewModel() {
             }
         }.getOrNull()?.requestedPermissions?.toSet() ?: return emptyList()
 
-        return meta.requestedPermissions.filter { perm ->
-            perm !in installedPerms && isDangerous(perm)
-        }
+        return PermissionDiff.newDangerousPermissions(sl.appContext, meta)
+            .filter { it !in installedPerms }
     }
-
-    private fun isDangerous(permission: String): Boolean = runCatching {
-        val info = sl.appContext.packageManager.getPermissionInfo(permission, 0)
-        (info.protectionLevel and android.content.pm.PermissionInfo.PROTECTION_MASK_BASE) ==
-            android.content.pm.PermissionInfo.PROTECTION_DANGEROUS
-    }.getOrDefault(false)
 
     /**
      * Item 62: Copy [source] to the public Downloads folder.
