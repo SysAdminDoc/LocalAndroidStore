@@ -20,6 +20,7 @@ data class QueuedUpdatePayload(
     val tagName: String,
     val versionName: String?,
     val applicationId: String?,
+    val assetId: Long,
     val assetName: String,
     val assetUrl: String,
     val assetSize: Long,
@@ -43,6 +44,7 @@ data class QueuedUpdatePayload(
         versionCode = null,
         applicationId = applicationId,
         asset = GhAsset(
+            id = assetId,
             name = assetName,
             browserDownloadUrl = assetUrl,
             size = assetSize,
@@ -69,6 +71,7 @@ data class QueuedUpdatePayload(
         KEY_TAG_NAME to tagName,
         KEY_VERSION_NAME to versionName.orEmpty(),
         KEY_APPLICATION_ID to applicationId.orEmpty(),
+        KEY_ASSET_ID to assetId,
         KEY_ASSET_NAME to assetName,
         KEY_ASSET_URL to assetUrl,
         KEY_ASSET_SIZE to assetSize,
@@ -89,6 +92,7 @@ data class QueuedUpdatePayload(
         putExtra(KEY_TAG_NAME, tagName)
         putExtra(KEY_VERSION_NAME, versionName.orEmpty())
         putExtra(KEY_APPLICATION_ID, applicationId.orEmpty())
+        putExtra(KEY_ASSET_ID, assetId)
         putExtra(KEY_ASSET_NAME, assetName)
         putExtra(KEY_ASSET_URL, assetUrl)
         putExtra(KEY_ASSET_SIZE, assetSize)
@@ -109,6 +113,7 @@ data class QueuedUpdatePayload(
         bundle.putString(KEY_TAG_NAME, tagName)
         bundle.putString(KEY_VERSION_NAME, versionName.orEmpty())
         bundle.putString(KEY_APPLICATION_ID, applicationId.orEmpty())
+        bundle.putLong(KEY_ASSET_ID, assetId)
         bundle.putString(KEY_ASSET_NAME, assetName)
         bundle.putString(KEY_ASSET_URL, assetUrl)
         bundle.putLong(KEY_ASSET_SIZE, assetSize)
@@ -130,6 +135,7 @@ data class QueuedUpdatePayload(
             tagName = info.tagName,
             versionName = info.versionName,
             applicationId = info.applicationId,
+            assetId = info.asset.id,
             assetName = info.asset.name,
             assetUrl = info.asset.browserDownloadUrl,
             assetSize = info.asset.size,
@@ -160,6 +166,7 @@ data class QueuedUpdatePayload(
                 tagName = tagName,
                 versionName = bundle.getString(KEY_VERSION_NAME).blankToNull(),
                 applicationId = bundle.getString(KEY_APPLICATION_ID).blankToNull(),
+                assetId = bundle.getLong(KEY_ASSET_ID),
                 assetName = assetName,
                 assetUrl = assetUrl,
                 assetSize = bundle.getLong(KEY_ASSET_SIZE),
@@ -191,6 +198,7 @@ data class QueuedUpdatePayload(
                 tagName = tagName,
                 versionName = data.getString(KEY_VERSION_NAME).blankToNull(),
                 applicationId = data.getString(KEY_APPLICATION_ID).blankToNull(),
+                assetId = data.getLong(KEY_ASSET_ID, 0L),
                 assetName = assetName,
                 assetUrl = assetUrl,
                 assetSize = data.getLong(KEY_ASSET_SIZE, 0L),
@@ -222,6 +230,7 @@ data class QueuedUpdatePayload(
                 tagName = tagName,
                 versionName = intent.getStringExtra(KEY_VERSION_NAME).blankToNull(),
                 applicationId = intent.getStringExtra(KEY_APPLICATION_ID).blankToNull(),
+                assetId = intent.getLongExtra(KEY_ASSET_ID, 0L),
                 assetName = assetName,
                 assetUrl = assetUrl,
                 assetSize = intent.getLongExtra(KEY_ASSET_SIZE, 0L),
@@ -301,6 +310,7 @@ private const val KEY_HTML_URL = "html_url"
 private const val KEY_TAG_NAME = "tag_name"
 private const val KEY_VERSION_NAME = "version_name"
 private const val KEY_APPLICATION_ID = "application_id"
+private const val KEY_ASSET_ID = "asset_id"
 private const val KEY_ASSET_NAME = "asset_name"
 private const val KEY_ASSET_URL = "asset_url"
 private const val KEY_ASSET_SIZE = "asset_size"

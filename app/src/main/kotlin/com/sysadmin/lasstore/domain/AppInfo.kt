@@ -42,4 +42,15 @@ data class AppInfo(
         }
 }
 
-enum class CardStatus { NotInstalled, Installed, UpdateAvailable, Working, Error, SignatureMismatch, PermissionReview }
+enum class CardStatus {
+    NotInstalled,
+    Installed,
+    ReleaseAvailable,
+    UpdateAvailable,
+    ReinstallAvailable,
+    DowngradeAvailable,
+    Working,
+    Error,
+    SignatureMismatch,
+    PermissionReview,
+}

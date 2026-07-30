@@ -100,9 +100,10 @@ object QueuedUpdateRunner {
             return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.Policy)
         }
 
-        val cached = sl.appIdCache.get(payload.owner, payload.repo)
+        val cached = sl.appIdCache.get(payload.sourceKey, payload.owner, payload.repo)
         val applicationId = payload.applicationId ?: cached?.applicationId
-        if (applicationId == null || sl.installState.info(applicationId) == null) {
+        val installedInfo = applicationId?.let { sl.installState.info(it) }
+        if (applicationId == null || installedInfo == null) {
             val message = "Queued update skipped; ${payload.owner}/${payload.repo} is no longer installed"
             sl.logger.warn("QueuedUpdate", message)
             return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.Policy)
@@ -143,6 +144,21 @@ object QueuedUpdateRunner {
                 val message = "Publisher key changed for ${meta.applicationId}; queued update blocked"
                 sl.logger.warn("QueuedUpdate", message)
                 return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.Signature)
+            }
+
+            sl.appIdCache.recordInspected(info, meta)
+            if (meta.versionCode <= installedInfo.versionCode) {
+                val relation = if (meta.versionCode == installedInfo.versionCode) {
+                    "same-version release"
+                } else {
+                    "downgrade"
+                }
+                val message = "Queued update stopped: inspected APK is a $relation " +
+                    "(${meta.versionCode} vs installed ${installedInfo.versionCode}); " +
+                    "foreground confirmation is required"
+                sl.audit.installBlocked(hydratedInfo, meta, "queued_non_upgrade")
+                sl.logger.warn("QueuedUpdate", message)
+                return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.Policy)
             }
 
             val newDangerousPerms = PermissionDiff.newDangerousPermissions(sl.appContext, meta)
@@ -233,6 +249,6 @@ object QueuedUpdateRunner {
             sl.secrets.setPin(meta.applicationId, meta.signingSha256)
             sl.logger.info("QueuedUpdate", "Rolled pin forward for ${meta.applicationId}: $pinned -> ${meta.signingSha256}")
         }
-        sl.appIdCache.put(payload.owner, payload.repo, meta.applicationId, payload.tagName)
+        sl.appIdCache.recordInstalled(payload.toAppInfo(), meta)
     }
 }

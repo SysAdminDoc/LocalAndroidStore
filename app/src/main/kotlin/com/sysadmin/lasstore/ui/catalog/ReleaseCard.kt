@@ -194,11 +194,26 @@ fun ReleaseCard(
                     overflow = TextOverflow.Ellipsis,
                 )
 
-                if (state.installedVersion != null && state.installedVersion != state.info.versionName) {
+                if (
+                    state.installedVersion != null &&
+                    state.info.versionCode != null &&
+                    state.installedVersion != state.info.versionName
+                ) {
                     Text(
-                        text = "Installed ${state.installedVersion}  →  Latest ${state.info.versionName ?: state.info.tagName}",
+                        text = "Installed ${state.installedVersion}  →  Release " +
+                            "${state.info.versionName ?: state.info.tagName}",
                         style = MaterialTheme.typography.bodySmall,
                         color = Catppuccin.Sapphire,
+                    )
+                } else if (
+                    state.installedVersion != null &&
+                    state.status == CardStatus.ReleaseAvailable
+                ) {
+                    Text(
+                        text = "Installed ${state.installedVersion}  •  " +
+                            "Tag ${state.info.tagName} not inspected",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Subtext,
                     )
                 }
 
@@ -420,11 +435,38 @@ private fun PrimaryReleaseAction(
                 modifier = modifier,
             )
         }
+        CardStatus.ReleaseAvailable -> {
+            AccentButton(
+                text = "Check release",
+                icon = Icons.Default.Refresh,
+                accent = Catppuccin.Sapphire,
+                onClick = onUpdate,
+                modifier = modifier,
+            )
+        }
         CardStatus.UpdateAvailable -> {
             AccentButton(
                 text = "Update",
                 icon = Icons.Default.SystemUpdateAlt,
                 accent = Catppuccin.MauveStrong,
+                onClick = onUpdate,
+                modifier = modifier,
+            )
+        }
+        CardStatus.ReinstallAvailable -> {
+            AccentButton(
+                text = "Reinstall",
+                icon = Icons.Default.Download,
+                accent = Catppuccin.Sapphire,
+                onClick = onUpdate,
+                modifier = modifier,
+            )
+        }
+        CardStatus.DowngradeAvailable -> {
+            AccentButton(
+                text = "Downgrade",
+                icon = Icons.Default.Warning,
+                accent = Catppuccin.Peach,
                 onClick = onUpdate,
                 modifier = modifier,
             )
@@ -548,7 +590,7 @@ private fun ReleaseOverflowMenu(
             containerColor = Catppuccin.PanelRaised,
             border = BorderStroke(1.dp, Catppuccin.Stroke),
         ) {
-            if (state.status in listOf(CardStatus.Installed, CardStatus.UpdateAvailable)) {
+            if (state.status.hasInstalledApp()) {
                 ReleaseMenuItem(
                     text = "Open app",
                     icon = Icons.Default.PlayArrow,
@@ -581,7 +623,7 @@ private fun ReleaseOverflowMenu(
                     tint = Catppuccin.Red,
                 )
             }
-            if (state.status in listOf(CardStatus.Installed, CardStatus.UpdateAvailable)) {
+            if (state.status.hasInstalledApp()) {
                 ReleaseMenuItem(
                     text = if (state.isIgnored) "Unmute update alerts" else "Mute this update",
                     icon = if (state.isIgnored) {
@@ -623,7 +665,7 @@ private fun ReleaseOverflowMenu(
                     onRepo()
                 },
             )
-            if (state.status in listOf(CardStatus.Installed, CardStatus.UpdateAvailable)) {
+            if (state.status.hasInstalledApp()) {
                 ReleaseMenuItem(
                     text = "App details & uninstall",
                     icon = Icons.Default.Info,
@@ -637,6 +679,14 @@ private fun ReleaseOverflowMenu(
         }
     }
 }
+
+private fun CardStatus.hasInstalledApp(): Boolean = this in setOf(
+    CardStatus.Installed,
+    CardStatus.ReleaseAvailable,
+    CardStatus.UpdateAvailable,
+    CardStatus.ReinstallAvailable,
+    CardStatus.DowngradeAvailable,
+)
 
 @Composable
 private fun ReleaseMenuItem(

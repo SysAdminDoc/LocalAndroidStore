@@ -89,6 +89,7 @@ data class GhRelease(
 
 @Serializable
 data class GhAsset(
+    val id: Long = 0,
     val name: String,
     @SerialName("browser_download_url") val browserDownloadUrl: String,
     val size: Long = 0,

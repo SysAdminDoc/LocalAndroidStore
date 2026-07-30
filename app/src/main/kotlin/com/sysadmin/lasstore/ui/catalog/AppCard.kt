@@ -148,9 +148,22 @@ fun AppCard(
                     style = MaterialTheme.typography.labelLarge,
                     color = Catppuccin.Sapphire,
                 )
-                if (state.installedVersion != null && state.installedVersion != state.info.versionName) {
+                if (
+                    state.installedVersion != null &&
+                    state.info.versionCode != null &&
+                    state.installedVersion != state.info.versionName
+                ) {
                     Text(
                         text = "(installed: ${state.installedVersion})",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Catppuccin.Subtext,
+                    )
+                } else if (
+                    state.installedVersion != null &&
+                    state.status == CardStatus.ReleaseAvailable
+                ) {
+                    Text(
+                        text = "(installed: ${state.installedVersion}; tag not inspected)",
                         style = MaterialTheme.typography.labelMedium,
                         color = Catppuccin.Subtext,
                     )
@@ -255,16 +268,31 @@ fun AppCard(
                             TextButton(onClick = onRepo) { Text("Repo") }
                         }
                     }
-                    CardStatus.UpdateAvailable -> {
+                    CardStatus.ReleaseAvailable,
+                    CardStatus.UpdateAvailable,
+                    CardStatus.ReinstallAvailable,
+                    CardStatus.DowngradeAvailable -> {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             FilledTonalButton(onClick = onUpdate, modifier = Modifier.weight(1f)) {
-                                Text("Update")
+                                Text(
+                                    when (state.status) {
+                                        CardStatus.ReleaseAvailable -> "Check"
+                                        CardStatus.ReinstallAvailable -> "Reinstall"
+                                        CardStatus.DowngradeAvailable -> "Downgrade"
+                                        else -> "Update"
+                                    }
+                                )
                             }
-                            OutlinedButton(onClick = onQueueUpdate, modifier = Modifier.weight(1f)) {
-                                Text("Queue")
+                            if (state.status == CardStatus.UpdateAvailable) {
+                                OutlinedButton(
+                                    onClick = onQueueUpdate,
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("Queue")
+                                }
                             }
                             OutlinedButton(onClick = onOpen, modifier = Modifier.weight(1f)) {
                                 Text("Open")
@@ -346,9 +374,6 @@ fun AppCard(
                             TextButton(onClick = onRepo) { Text("Repo") }
                         }
                     }
-                }
-                if (state.status !in listOf(CardStatus.Working, CardStatus.PermissionReview, CardStatus.UpdateAvailable, CardStatus.Installed, CardStatus.NotInstalled, CardStatus.Error, CardStatus.SignatureMismatch)) {
-                    // fallback — never reached with current enum
                 }
             }
         }

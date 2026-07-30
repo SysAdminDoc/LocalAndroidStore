@@ -42,7 +42,7 @@ That's what this is.
 - **Gentle queued updates** — installed updates can run through Android 14+ user-initiated data-transfer jobs (WorkManager fallback on older versions), then wait for the target app to leave the foreground, device idle, and calls to end before commit. Attempts are capped and terminal reasons persist on the card.
 - **APK signature pinning** — first successful install captures the signing-cert SHA-256 fingerprint. Future updates that don't match the pin are **blocked** with a clear "publisher key changed — possible MITM or repo takeover" warning. We never auto-accept a key swap.
 - **Developer Verification preflight** — installs separately report whether a Google verification surface is present, that package registration is **Unknown** (Android exposes no status capability to this app), and that LocalAndroidStore's direct sideload route is outside the initial participating-store enforcement beginning 2026-09-30. The advisory links to Google's official guidance.
-- **Installed-state detection** — `PackageManager` tells us what's installed; remote `versionCode > local` flips the badge to "Update available".
+- **Version-aware installed state** — source-scoped records retain package, manifest version, signer, and GitHub asset identity. A tag or asset change is shown as a new release until its APK is inspected; only a higher manifest `versionCode` becomes an update, while equal-code reinstalls and lower-code downgrades require explicit actions.
 - **GitHub PATs (optional)** — source-specific tokens bump API rate limits from 60 → 5,000/hr and unlock private repos for that source. Stored in a Tink AEAD-encrypted app-private file, with the keyset protected by the Android Keystore.
 - **Activity log + crash log** — every download, install, uninstall, and crash is logged in-app and to disk at `<app files dir>/logs/crash.log`.
 - **Async everywhere** — the UI never blocks on a download or an API call.
@@ -108,6 +108,7 @@ There is no opinionated topic filter unless you turn one on — your own user / 
 | `<cache-dir>/apks/` | Downloaded APKs (transient, OS-cleanable) |
 | `<files-dir>/secrets/secrets.v1.tinkaead` | Tink AEAD-encrypted GitHub PATs and signing-cert pins per `applicationId` |
 | DataStore `settings` | GitHub sources, topic filters, pre-release toggles |
+| SharedPreferences `las_appid_cache` | Source/repository-scoped installed package, version, signer, and release-asset identity |
 | SharedPreferences `queued_update_status` | Attempt count and durable queued-update terminal state |
 
 The app declares `android:allowBackup="false"` and excludes everything from cloud / device-transfer backups — secrets stay on the device.

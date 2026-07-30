@@ -16,6 +16,8 @@ import com.sysadmin.lasstore.domain.CatalogDiscoveryResult
 import com.sysadmin.lasstore.domain.CatalogFailureKind
 import com.sysadmin.lasstore.domain.CatalogSourceIssue
 import com.sysadmin.lasstore.domain.DiscoveryUseCase
+import com.sysadmin.lasstore.domain.ReleaseVersionRelation
+import com.sysadmin.lasstore.domain.classifyReleaseVersion
 import com.sysadmin.lasstore.install.InstallResult
 import com.sysadmin.lasstore.install.PermissionDiff
 import com.sysadmin.lasstore.install.PreapprovalSessionResult
@@ -136,7 +138,7 @@ class CatalogViewModel : ViewModel() {
             )
             // Hydrate applicationId from the persistent cache so UpdateAvailable survives cold starts.
             val cards = infos.map { info ->
-                val cached = sl.appIdCache.get(info.owner, info.repo)
+                val cached = sl.appIdCache.get(info.sourceKey, info.owner, info.repo)
                 buildCardState(info, cached)
             }
             val catalogNotice = catalogNotice(discoveryResult)
@@ -153,13 +155,7 @@ class CatalogViewModel : ViewModel() {
         }
     }
 
-    /**
-     * Derive card display state.
-     *
-     * [cached] supplies the applicationId and the tag that was last installed via LAS.
-     * Without it (cold start before first install), [info.applicationId] is always null
-     * so the card would incorrectly show NotInstalled.
-     */
+    /** Derive card state from package metadata and an inspected release, never from a tag. */
     private fun buildCardState(info: AppInfo, cached: AppIdEntry? = null): CardState {
         val applicationId = info.applicationId ?: cached?.applicationId
         val installed = applicationId?.let { sl.installState.info(it) }
@@ -167,21 +163,45 @@ class CatalogViewModel : ViewModel() {
         val baseState = when {
             installed == null -> CardState(info = info, status = CardStatus.NotInstalled)
             else -> {
-                // Compare latest release tag against the tag that was installed.
-                // We can't compare versionCodes without downloading the new APK, so tagName
-                // is the reliable proxy (GitHub release tags change with every new release).
-                val updateAvailable = cached != null && info.tagName != cached.installedTagName
-                // Ignored repos show as Installed even when an update is available (Item 35).
+                val reconciled = cached?.let {
+                    sl.appIdCache.reconcileInstalled(
+                        entry = it,
+                        installed = installed,
+                        pinnedSignerSha256 = sl.secrets.getPin(installed.applicationId),
+                    )
+                }
+                val inspected = reconciled?.inspectedRelease
+                    ?.takeIf { it.asset == com.sysadmin.lasstore.data.ReleaseAssetIdentity.from(info) }
+                val hydratedInfo = info.copy(
+                    applicationId = applicationId,
+                    versionCode = inspected?.versionCode,
+                    versionName = inspected?.versionName ?: info.versionName,
+                )
+                val relation = reconciled?.let {
+                    classifyReleaseVersion(hydratedInfo, it, installed.versionCode)
+                } ?: ReleaseVersionRelation.UninspectedRelease
                 val status = when {
-                    updateAvailable && !isIgnored -> CardStatus.UpdateAvailable
-                    else -> CardStatus.Installed
+                    relation == ReleaseVersionRelation.InstalledAsset -> CardStatus.Installed
+                    relation == ReleaseVersionRelation.Upgrade && isIgnored -> CardStatus.Installed
+                    relation == ReleaseVersionRelation.Upgrade -> CardStatus.UpdateAvailable
+                    relation == ReleaseVersionRelation.SameVersionRelease ->
+                        CardStatus.ReinstallAvailable
+                    relation == ReleaseVersionRelation.Downgrade ->
+                        CardStatus.DowngradeAvailable
+                    relation == ReleaseVersionRelation.PackageMismatch -> CardStatus.Error
+                    else -> CardStatus.ReleaseAvailable
                 }
                 CardState(
-                    info = info.copy(applicationId = applicationId),
+                    info = hydratedInfo,
                     status = status,
                     installedVersion = installed.versionName,
                     installedVersionCode = installed.versionCode,
                     isIgnored = isIgnored,
+                    message = if (relation == ReleaseVersionRelation.PackageMismatch) {
+                        "Release package ${inspected?.applicationId} does not match $applicationId."
+                    } else {
+                        null
+                    },
                 )
             }
         }
@@ -198,7 +218,11 @@ class CatalogViewModel : ViewModel() {
         activeJobs[key]?.cancel()
 
         val job = viewModelScope.launch(Dispatchers.IO) {
-            val cached = sl.appIdCache.get(card.info.owner, card.info.repo)
+            val cached = sl.appIdCache.get(
+                card.info.sourceKey,
+                card.info.owner,
+                card.info.repo,
+            )
 
             // Item 5: Request pre-approval on API 34+ for known updates.
             // Pre-approval prompts the user *before* the download, reducing perceived latency.
@@ -206,6 +230,7 @@ class CatalogViewModel : ViewModel() {
             var preapprovalSessionId: Int? = null
             val knownApplicationId = cached?.applicationId
             if (
+                card.status == CardStatus.UpdateAvailable &&
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
                 knownApplicationId != null &&
                 sl.installState.info(knownApplicationId) != null
@@ -249,6 +274,28 @@ class CatalogViewModel : ViewModel() {
                     return@launch
                 }
 
+                val expectedInstalled = cached?.applicationId
+                    ?.let { sl.installState.info(it) }
+                if (
+                    expectedInstalled != null &&
+                    meta.applicationId != expectedInstalled.applicationId
+                ) {
+                    preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                    sl.audit.installBlocked(
+                        card.info.copy(applicationId = meta.applicationId),
+                        meta,
+                        reason = "application_id_changed",
+                    )
+                    updateCard(card.info) {
+                        it.copy(
+                            status = CardStatus.Error,
+                            message = "Release package ${meta.applicationId} does not match " +
+                                "${expectedInstalled.applicationId}.",
+                        )
+                    }
+                    return@launch
+                }
+
                 // Signature pinning — block silent publisher swap.
                 val pinned = sl.secrets.getPin(meta.applicationId)
                 val installedAlready = sl.installState.info(meta.applicationId) != null
@@ -281,6 +328,48 @@ class CatalogViewModel : ViewModel() {
                         )
                     }
                     return@launch
+                }
+
+                if (installedAlready) {
+                    sl.appIdCache.recordInspected(card.info, meta)
+                    val installedInfo = requireNotNull(sl.installState.info(meta.applicationId))
+                    val classifiedStatus = when {
+                        meta.versionCode > installedInfo.versionCode ->
+                            CardStatus.UpdateAvailable
+                        meta.versionCode == installedInfo.versionCode ->
+                            CardStatus.ReinstallAvailable
+                        else -> CardStatus.DowngradeAvailable
+                    }
+                    if (card.status != classifiedStatus) {
+                        preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                        val actionMessage = when (classifiedStatus) {
+                            CardStatus.UpdateAvailable ->
+                                "Inspected version code ${meta.versionCode} is newer than " +
+                                    "installed ${installedInfo.versionCode}. Tap Update to continue."
+                            CardStatus.ReinstallAvailable ->
+                                "This release has the installed version code " +
+                                    "${installedInfo.versionCode}. Tap Reinstall to continue."
+                            CardStatus.DowngradeAvailable ->
+                                "Release version code ${meta.versionCode} is below installed " +
+                                    "${installedInfo.versionCode}. Tap Downgrade to explicitly continue."
+                            else -> null
+                        }
+                        updateCard(card.info) {
+                            it.copy(
+                                info = it.info.copy(
+                                    applicationId = meta.applicationId,
+                                    versionCode = meta.versionCode,
+                                    versionName = meta.versionName ?: it.info.versionName,
+                                ),
+                                status = classifiedStatus,
+                                installedVersion = installedInfo.versionName,
+                                installedVersionCode = installedInfo.versionCode,
+                                progress = 0f,
+                                message = actionMessage,
+                            )
+                        }
+                        return@launch
+                    }
                 }
 
                 // Item 34: Pause for permission review when an update requests new dangerous perms.
@@ -325,12 +414,22 @@ class CatalogViewModel : ViewModel() {
 
     /** Queue an installed update through UIDT/WorkManager and gentle PackageInstaller constraints. */
     fun queueBackgroundUpdate(card: CardState) {
+        if (card.status != CardStatus.UpdateAvailable) {
+            _state.update {
+                it.copy(warning = "Inspect the release and confirm it is a higher version first.")
+            }
+            return
+        }
         if (!sl.installer.canRequestInstalls()) {
             _state.update { it.copy(warning = "Grant 'Install unknown apps' first.") }
             sl.installer.openInstallPermissionSettings()
             return
         }
-        val cached = sl.appIdCache.get(card.info.owner, card.info.repo)
+        val cached = sl.appIdCache.get(
+            card.info.sourceKey,
+            card.info.owner,
+            card.info.repo,
+        )
         val applicationId = card.info.applicationId ?: cached?.applicationId
         if (applicationId == null || sl.installState.info(applicationId) == null) {
             _state.update { it.copy(warning = "Queue is only available for installed apps.") }
@@ -350,7 +449,11 @@ class CatalogViewModel : ViewModel() {
     }
 
     fun cancelBackgroundUpdate(card: CardState) {
-        val cached = sl.appIdCache.get(card.info.owner, card.info.repo)
+        val cached = sl.appIdCache.get(
+            card.info.sourceKey,
+            card.info.owner,
+            card.info.repo,
+        )
         val applicationId = card.info.applicationId ?: cached?.applicationId
         val queuedInfo = card.info.copy(applicationId = applicationId)
         sl.backgroundUpdates.cancel(queuedInfo)
@@ -391,7 +494,11 @@ class CatalogViewModel : ViewModel() {
     /** Item 35: Toggle update-ignore for this app. Rebuilds the card to reflect the new state. */
     fun toggleIgnore(card: CardState) {
         sl.ignoreList.toggle(card.info.handle)
-        val cached = sl.appIdCache.get(card.info.owner, card.info.repo)
+        val cached = sl.appIdCache.get(
+            card.info.sourceKey,
+            card.info.owner,
+            card.info.repo,
+        )
         val hydratedInfo = cached?.applicationId?.let { card.info.copy(applicationId = it) } ?: card.info
         val freshState = buildCardState(hydratedInfo, cached)
         _state.update { ui ->
@@ -426,7 +533,11 @@ class CatalogViewModel : ViewModel() {
                 }
                 saveToDownloads(filename, target)
                 target.delete()
-                val cached = sl.appIdCache.get(card.info.owner, card.info.repo)
+                val cached = sl.appIdCache.get(
+                    card.info.sourceKey,
+                    card.info.owner,
+                    card.info.repo,
+                )
                 val freshState = buildCardState(card.info, cached)
                 _state.update { ui ->
                     ui.copy(
@@ -477,7 +588,11 @@ class CatalogViewModel : ViewModel() {
     private fun cardKey(info: AppInfo) = "${info.sourceKey}/${info.owner}/${info.repo}"
 
     private fun resetCard(card: CardState) {
-        val cached = sl.appIdCache.get(card.info.owner, card.info.repo)
+        val cached = sl.appIdCache.get(
+            card.info.sourceKey,
+            card.info.owner,
+            card.info.repo,
+        )
         val hydratedInfo = cached?.applicationId?.let { card.info.copy(applicationId = it) } ?: card.info
         val freshState = buildCardState(hydratedInfo, cached)
         _state.update { ui ->
@@ -597,7 +712,7 @@ class CatalogViewModel : ViewModel() {
                     sl.secrets.setPin(meta.applicationId, meta.signingSha256)
                     sl.logger.info("Install", "Rolled pin forward for ${meta.applicationId}: $pinned -> ${meta.signingSha256}")
                 }
-                sl.appIdCache.put(card.info.owner, card.info.repo, meta.applicationId, card.info.tagName)
+                sl.appIdCache.recordInstalled(card.info, meta)
                 sl.audit.installSucceeded(card.info, meta)
                 sl.logger.info("Install", "Installed ${meta.applicationId} ${meta.versionName}")
                 val installedInfo = sl.installState.info(meta.applicationId)

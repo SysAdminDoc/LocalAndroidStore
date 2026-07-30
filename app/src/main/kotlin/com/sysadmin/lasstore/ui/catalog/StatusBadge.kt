@@ -17,7 +17,10 @@ fun StatusBadge(status: CardStatus, modifier: Modifier = Modifier) {
     val (label, color) = when (status) {
         CardStatus.NotInstalled -> "AVAILABLE" to Catppuccin.Sapphire
         CardStatus.Installed -> "INSTALLED" to Catppuccin.Mint
+        CardStatus.ReleaseAvailable -> "NEW RELEASE" to Catppuccin.Sapphire
         CardStatus.UpdateAvailable -> "UPDATE" to Catppuccin.Peach
+        CardStatus.ReinstallAvailable -> "REINSTALL" to Catppuccin.Sapphire
+        CardStatus.DowngradeAvailable -> "DOWNGRADE" to Catppuccin.Peach
         CardStatus.Working -> "WORKING" to Catppuccin.MauveStrong
         CardStatus.Error -> "ERROR" to Catppuccin.Red
         CardStatus.SignatureMismatch -> "KEY MISMATCH" to Catppuccin.Red

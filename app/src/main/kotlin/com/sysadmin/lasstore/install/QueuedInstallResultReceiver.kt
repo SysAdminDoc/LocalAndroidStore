@@ -66,7 +66,7 @@ internal object QueuedInstallResultHandler {
             sl.secrets.setPin(metadata.applicationId, metadata.signingSha256)
             sl.logger.info("QueuedUpdate", "Rolled pin forward for ${metadata.applicationId}: $previousPin -> ${metadata.signingSha256}")
         }
-        sl.appIdCache.put(payload.owner, payload.repo, metadata.applicationId, payload.tagName)
+        sl.appIdCache.recordInstalled(payload.toAppInfo(), metadata.toApkMetadata())
     }
 
     fun resultData(payload: QueuedUpdatePayload, metadata: QueuedInstallMetadata): Intent =
