@@ -18,11 +18,13 @@ data class CachedGitHubResponse(
     val etag: String,
     val body: String,
     val cachedAtEpochMillis: Long,
+    val credentialScope: String = LEGACY_CREDENTIAL_SCOPE,
 )
 
 interface GitHubResponseCacheStore {
-    fun read(sourceKey: String, url: String): CachedGitHubResponse?
+    fun read(sourceKey: String, url: String, credentialScope: String): CachedGitHubResponse?
     fun write(response: CachedGitHubResponse)
+    fun purgeSource(sourceKey: String)
 }
 
 class FileGitHubResponseCache(context: Context) : GitHubResponseCacheStore {
@@ -32,21 +34,37 @@ class FileGitHubResponseCache(context: Context) : GitHubResponseCacheStore {
         encodeDefaults = true
     }
 
-    override fun read(sourceKey: String, url: String): CachedGitHubResponse? {
-        val file = fileFor(sourceKey, url)
+    override fun read(sourceKey: String, url: String, credentialScope: String): CachedGitHubResponse? {
+        val file = fileFor(sourceKey, url, credentialScope)
         if (!file.isFile) return null
         return runCatching { json.decodeFromString<CachedGitHubResponse>(file.readText()) }
             .getOrNull()
-            ?.takeIf { it.sourceKey == sourceKey && it.url == url }
+            ?.takeIf {
+                it.sourceKey == sourceKey &&
+                    it.url == url &&
+                    it.credentialScope == credentialScope
+            }
     }
 
     override fun write(response: CachedGitHubResponse) {
-        val file = fileFor(response.sourceKey, response.url)
+        val file = fileFor(response.sourceKey, response.url, response.credentialScope)
         writeAtomically(file, json.encodeToString(response))
     }
 
-    private fun fileFor(sourceKey: String, url: String): File =
-        File(directory, "${sha256("$sourceKey\n$url")}.json")
+    override fun purgeSource(sourceKey: String) {
+        directory.listFiles()
+            .orEmpty()
+            .filter { it.isFile && it.extension == "json" }
+            .forEach { file ->
+                val belongsToSource = runCatching {
+                    json.decodeFromString<CachedGitHubResponse>(file.readText()).sourceKey == sourceKey
+                }.getOrDefault(false)
+                if (belongsToSource) file.delete()
+            }
+    }
+
+    private fun fileFor(sourceKey: String, url: String, credentialScope: String): File =
+        File(directory, "${sha256("$sourceKey\n$credentialScope\n$url")}.json")
 }
 
 @Serializable
@@ -61,6 +79,7 @@ data class CatalogSnapshot(
 interface CatalogSnapshotRepository {
     fun read(sourceKey: String): CatalogSnapshot?
     fun write(snapshot: CatalogSnapshot)
+    fun purge(sourceKey: String)
 }
 
 class CatalogSnapshotStore(context: Context) : CatalogSnapshotRepository {
@@ -81,6 +100,10 @@ class CatalogSnapshotStore(context: Context) : CatalogSnapshotRepository {
     override fun write(snapshot: CatalogSnapshot) {
         require(snapshot.schemaVersion == SCHEMA_VERSION)
         writeAtomically(fileFor(snapshot.sourceKey), json.encodeToString(snapshot))
+    }
+
+    override fun purge(sourceKey: String) {
+        fileFor(sourceKey).delete()
     }
 
     private fun fileFor(sourceKey: String): File =
@@ -115,3 +138,7 @@ private fun sha256(value: String): String =
     MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString(separator = "") { "%02x".format(it.toInt() and 0xff) }
+
+const val ANONYMOUS_CREDENTIAL_SCOPE = "anonymous-v1"
+const val AUTHENTICATED_CREDENTIAL_SCOPE = "authenticated-v1"
+private const val LEGACY_CREDENTIAL_SCOPE = "legacy-unscoped"

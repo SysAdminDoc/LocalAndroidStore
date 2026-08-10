@@ -324,6 +324,9 @@ class DiscoveryUseCaseTest {
         override fun write(snapshot: CatalogSnapshot) {
             values[snapshot.sourceKey] = snapshot
         }
+        override fun purge(sourceKey: String) {
+            values.remove(sourceKey)
+        }
     }
 
     private companion object {

@@ -56,7 +56,42 @@ class GitHubClientTest {
             "\"catalog-v1\"",
             server.takeRequest().getHeader("If-None-Match"),
         )
-        assertNotNull(cache.read("source-a", server.url("/users/alice/repos?per_page=100&type=owner&sort=updated&page=1").toString()))
+        assertNotNull(
+            cache.read(
+                "source-a",
+                server.url("/users/alice/repos?per_page=100&type=owner&sort=updated&page=1").toString(),
+                ANONYMOUS_CREDENTIAL_SCOPE,
+            ),
+        )
+    }
+
+    @Test
+    fun authenticatedAndAnonymousResponsesUseSeparateCacheNamespaces() = runBlocking {
+        val cache = MemoryResponseCache()
+        server.enqueue(MockResponse().setResponseCode(200).setHeader("ETag", "\"public\"").setBody(RELEASE))
+        server.enqueue(MockResponse().setResponseCode(200).setHeader("ETag", "\"private\"").setBody(RELEASE))
+
+        client(cache = cache).latestRelease("alice", "app", false, sourceKey = "source-a")
+        client(cache = cache, pat = "secret-token")
+            .latestRelease("alice", "app", false, sourceKey = "source-a")
+
+        server.takeRequest()
+        assertEquals(null, server.takeRequest().getHeader("If-None-Match"))
+    }
+
+    @Test
+    fun purgingSourceCacheRemovesConditionalResponsesBeforeCredentialReuse() = runBlocking {
+        val cache = MemoryResponseCache()
+        server.enqueue(MockResponse().setResponseCode(200).setHeader("ETag", "\"private-v1\"").setBody(RELEASE))
+        server.enqueue(MockResponse().setResponseCode(200).setHeader("ETag", "\"private-v2\"").setBody(RELEASE))
+        val client = client(cache = cache, pat = "secret-token")
+
+        client.latestRelease("alice", "app", false, sourceKey = "source-a")
+        client.purgeSourceCache("source-a")
+        client.latestRelease("alice", "app", false, sourceKey = "source-a")
+
+        server.takeRequest()
+        assertEquals(null, server.takeRequest().getHeader("If-None-Match"))
     }
 
     @Test
@@ -428,13 +463,20 @@ class GitHubClientTest {
     )
 
     private class MemoryResponseCache : GitHubResponseCacheStore {
-        private val values = mutableMapOf<Pair<String, String>, CachedGitHubResponse>()
+        private val values = mutableMapOf<Triple<String, String, String>, CachedGitHubResponse>()
 
-        override fun read(sourceKey: String, url: String): CachedGitHubResponse? =
-            values[sourceKey to url]
+        override fun read(
+            sourceKey: String,
+            url: String,
+            credentialScope: String,
+        ): CachedGitHubResponse? = values[Triple(sourceKey, url, credentialScope)]
 
         override fun write(response: CachedGitHubResponse) {
-            values[response.sourceKey to response.url] = response
+            values[Triple(response.sourceKey, response.url, response.credentialScope)] = response
+        }
+
+        override fun purgeSource(sourceKey: String) {
+            values.keys.removeIf { it.first == sourceKey }
         }
     }
 

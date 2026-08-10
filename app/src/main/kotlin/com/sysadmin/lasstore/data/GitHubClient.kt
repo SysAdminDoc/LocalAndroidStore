@@ -286,6 +286,10 @@ class GitHubClient(
         )
     }
 
+    fun purgeSourceCache(sourceKey: String) {
+        responseCache?.purgeSource(sourceKey)
+    }
+
     suspend fun download(
         url: String,
         target: File,
@@ -472,7 +476,12 @@ class GitHubClient(
         patOverride: String?,
         sourceKey: String,
     ): String? {
-        val cached = responseCache?.read(sourceKey, url)
+        val credentialScope = if (hasAuth(patOverride)) {
+            AUTHENTICATED_CREDENTIAL_SCOPE
+        } else {
+            ANONYMOUS_CREDENTIAL_SCOPE
+        }
+        val cached = responseCache?.read(sourceKey, url, credentialScope)
         val req = Request.Builder().url(url).apply {
             authHeaders(patOverride).forEach { (k, v) -> header(k, v) }
             cached?.etag?.takeIf { it.isNotBlank() }?.let { header("If-None-Match", it) }
@@ -496,6 +505,7 @@ class GitHubClient(
                         etag = etag,
                         body = body,
                         cachedAtEpochMillis = System.currentTimeMillis(),
+                        credentialScope = credentialScope,
                     )
                 )
             }

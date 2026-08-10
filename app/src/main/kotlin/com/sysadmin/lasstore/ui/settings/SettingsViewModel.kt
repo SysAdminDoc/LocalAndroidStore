@@ -74,6 +74,13 @@ class SettingsViewModel : ViewModel() {
                         topic = source.topic.trim(),
                     )
                 }
+                val affectedSourceKeys = (
+                    _state.value.settings.sources.map { it.key } + normalized.map { it.key }
+                    ).toSet()
+                affectedSourceKeys.forEach { sourceKey ->
+                    sl.github.purgeSourceCache(sourceKey)
+                    sl.catalogSnapshots.purge(sourceKey)
+                }
                 sl.settings.replaceSourcePats(
                     sourcePats = sourcePats,
                     activeSourceKeys = normalized.map { it.key }.toSet(),
