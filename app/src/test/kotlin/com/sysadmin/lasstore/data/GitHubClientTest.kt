@@ -1,6 +1,7 @@
 package com.sysadmin.lasstore.data
 
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
@@ -244,17 +245,89 @@ class GitHubClientTest {
         Unit
     }
 
+    @Test
+    fun downloadRejectsUntrustedAssetHostBeforeSendingPat() = runBlocking {
+        val directory = Files.createTempDirectory("las-download-host").toFile()
+        val target = File(directory, "release.apk")
+
+        val failure = runCatching {
+            client(pat = "secret-pat").download(
+                url = "https://attacker.invalid/release.apk",
+                target = target,
+            ) { _, _ -> }
+        }.exceptionOrNull()
+
+        assertTrue(failure is IOException)
+        assertFalse(target.exists())
+        assertEquals(0, server.requestCount)
+        directory.deleteRecursively()
+        Unit
+    }
+
+    @Test
+    fun downloadDoesNotSendPatAcrossUntrustedRedirect() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(302)
+                .setHeader("Location", "https://attacker.invalid/release.apk"),
+        )
+        val directory = Files.createTempDirectory("las-download-redirect").toFile()
+        val target = File(directory, "release.apk")
+
+        val failure = runCatching {
+            client(pat = "secret-pat").download(
+                url = server.url("/release.apk").toString(),
+                target = target,
+            ) { _, _ -> }
+        }.exceptionOrNull()
+
+        assertTrue(failure is IOException)
+        assertEquals(1, server.requestCount)
+        assertEquals("Bearer secret-pat", server.takeRequest().getHeader("Authorization"))
+        assertFalse(target.exists())
+        directory.deleteRecursively()
+        Unit
+    }
+
+    @Test
+    fun downloadRejectsContentLengthAndCumulativeBytesAboveLimit() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Length", "9")
+                .setBody("too-large"),
+        )
+        val directory = Files.createTempDirectory("las-download-size").toFile()
+        val target = File(directory, "release.apk")
+
+        val failure = runCatching {
+            client(maxDownloadBytes = 8).download(
+                url = server.url("/release.apk").toString(),
+                target = target,
+            ) { _, _ -> }
+        }.exceptionOrNull()
+
+        assertTrue(failure is IOException)
+        assertFalse(target.exists())
+        assertFalse(File("${target.absolutePath}.part").exists())
+        directory.deleteRecursively()
+        Unit
+    }
+
     private fun client(
         cache: GitHubResponseCacheStore? = null,
         retryDelay: suspend (Long) -> Unit = {},
         retryJitterMillis: () -> Long = { 0L },
+        pat: String = "",
+        maxDownloadBytes: Long = 200L * 1024L * 1024L,
     ) = GitHubClient(
-        patProvider = { "" },
+        patProvider = { pat },
         logger = null,
         responseCache = cache,
         apiBaseUrl = server.url("/").toString().removeSuffix("/"),
         retryDelay = retryDelay,
         retryJitterMillis = retryJitterMillis,
+        maxDownloadBytes = maxDownloadBytes,
     )
 
     private class MemoryResponseCache : GitHubResponseCacheStore {

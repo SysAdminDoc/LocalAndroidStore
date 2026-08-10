@@ -9,6 +9,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.ResponseBody
@@ -110,6 +112,7 @@ class GitHubClient(
     private val retryDelay: suspend (Long) -> Unit = { delay(it) },
     private val retryJitterMillis: () -> Long = { Random.nextLong(50L, 251L) },
     private val networkAvailable: () -> Boolean = { true },
+    private val maxDownloadBytes: Long = MAX_DOWNLOAD_BYTES,
 ) : GitHubGateway {
 
     private val json = Json {
@@ -192,74 +195,136 @@ class GitHubClient(
         onProgress: (downloaded: Long, total: Long) -> Unit,
     ): File {
         ensureNetworkAvailable()
+        val initialUrl = validateDownloadUrl(url)
         target.parentFile?.mkdirs()
         val partial = File("${target.absolutePath}.part")
         partial.delete()
-        val request = Request.Builder().url(url).apply {
+        val request = Request.Builder().url(initialUrl).apply {
             authHeaders(patOverride).forEach { (key, value) -> header(key, value) }
         }.build()
         return suspendCancellableCoroutine { continuation ->
-            val call = client.newCall(request)
+            val activeCall = java.util.concurrent.atomic.AtomicReference<Call>()
+            val downloadClient = client.newBuilder()
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build()
             continuation.invokeOnCancellation {
-                call.cancel()
+                activeCall.get()?.cancel()
                 partial.delete()
                 target.delete()
             }
-            call.enqueue(object : Callback {
-                override fun onFailure(call: Call, exception: IOException) {
-                    partial.delete()
-                    if (continuation.isActive) continuation.resumeWithException(exception)
-                }
+            fun fail(throwable: Throwable) {
+                partial.delete()
+                target.delete()
+                if (continuation.isActive) continuation.resumeWithException(throwable)
+            }
 
-                override fun onResponse(call: Call, response: Response) {
-                    try {
-                        response.use { current ->
-                            if (!current.isSuccessful) {
-                                throw responseFailure(current, "downloading release asset")
+            fun enqueue(nextRequest: Request, redirects: Int) {
+                if (!continuation.isActive) return
+                val call = downloadClient.newCall(nextRequest)
+                activeCall.set(call)
+                call.enqueue(object : Callback {
+                    override fun onFailure(call: Call, exception: IOException) {
+                        fail(exception)
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        try {
+                            if (response.isRedirect) {
+                                val location = response.header("Location")
+                                val nextUrl = location
+                                    ?.let { response.request.url.resolve(it) }
+                                    ?: throw IOException("Release asset redirect had no Location")
+                                response.close()
+                                if (redirects >= MAX_DOWNLOAD_REDIRECTS) {
+                                    throw IOException("Release asset followed too many redirects")
+                                }
+                                val validated = validateDownloadUrl(nextUrl)
+                                enqueue(
+                                    Request.Builder()
+                                        .url(validated)
+                                        .header("Accept", "application/vnd.github+json")
+                                        .header("User-Agent", "LocalAndroidStore")
+                                        .build(),
+                                    redirects + 1,
+                                )
+                                return
                             }
-                            val body: ResponseBody = current.body
-                                ?: throw IOException("Empty body for $url")
-                            val total = body.contentLength()
-                            partial.sink().buffer().use { sink: BufferedSink ->
-                                body.source().use { source ->
-                                    val buffer = okio.Buffer()
-                                    var downloaded = 0L
-                                    var lastReport = 0L
-                                    while (true) {
-                                        val count = source.read(buffer, 64 * 1024L)
-                                        if (count == -1L) break
-                                        sink.write(buffer, count)
-                                        downloaded += count
-                                        if (downloaded - lastReport > 64 * 1024L) {
-                                            onProgress(downloaded, total)
-                                            lastReport = downloaded
+                            response.use { current ->
+                                if (!current.isSuccessful) {
+                                    throw responseFailure(current, "downloading release asset")
+                                }
+                                val body: ResponseBody = current.body
+                                    ?: throw IOException("Empty body for $initialUrl")
+                                val total = body.contentLength()
+                                if (total > maxDownloadBytes) {
+                                    throw IOException(
+                                        "Release asset exceeds the ${maxDownloadBytes / (1024 * 1024)} MiB limit",
+                                    )
+                                }
+                                partial.sink().buffer().use { sink: BufferedSink ->
+                                    body.source().use { source ->
+                                        val buffer = okio.Buffer()
+                                        var downloaded = 0L
+                                        var lastReport = 0L
+                                        while (true) {
+                                            val count = source.read(buffer, 64 * 1024L)
+                                            if (count == -1L) break
+                                            if (downloaded > maxDownloadBytes - count) {
+                                                throw IOException(
+                                                    "Release asset exceeds the ${maxDownloadBytes / (1024 * 1024)} MiB limit",
+                                                )
+                                            }
+                                            sink.write(buffer, count)
+                                            downloaded += count
+                                            if (downloaded - lastReport > 64 * 1024L) {
+                                                onProgress(downloaded, total)
+                                                lastReport = downloaded
+                                            }
                                         }
+                                        onProgress(downloaded, total)
                                     }
-                                    onProgress(downloaded, total)
                                 }
                             }
-                        }
-                        if (target.exists() && !target.delete()) {
-                            throw IOException("Could not replace ${target.name}")
-                        }
-                        if (!partial.renameTo(target)) {
-                            throw IOException("Could not finalize ${target.name}")
-                        }
-                        if (continuation.isActive) {
-                            continuation.resume(target)
-                        } else {
-                            target.delete()
-                        }
-                    } catch (throwable: Throwable) {
-                        partial.delete()
-                        target.delete()
-                        if (continuation.isActive) {
-                            continuation.resumeWithException(throwable)
+                            if (target.exists() && !target.delete()) {
+                                throw IOException("Could not replace ${target.name}")
+                            }
+                            if (!partial.renameTo(target)) {
+                                throw IOException("Could not finalize ${target.name}")
+                            }
+                            if (continuation.isActive) {
+                                continuation.resume(target)
+                            } else {
+                                target.delete()
+                            }
+                        } catch (throwable: Throwable) {
+                            fail(throwable)
                         }
                     }
-                }
-            })
+                })
+            }
+
+            enqueue(request, redirects = 0)
         }
+    }
+
+    private fun validateDownloadUrl(url: String): HttpUrl {
+        val parsed = url.toHttpUrlOrNull()
+            ?: throw IOException("Release asset URL is malformed")
+        return validateDownloadUrl(parsed)
+    }
+
+    private fun validateDownloadUrl(parsed: HttpUrl): HttpUrl {
+        val configuredApi = apiBaseUrl.toHttpUrlOrNull()
+            ?: throw IOException("Configured GitHub API URL is malformed")
+        val allowedHost = parsed.host.equals(configuredApi.host, ignoreCase = true) ||
+            parsed.host.lowercase(Locale.US) in TRUSTED_ASSET_HOSTS
+        val configuredInsecureTestUrl = parsed.host.equals(configuredApi.host, ignoreCase = true) &&
+            configuredApi.scheme != "https" && parsed.scheme == configuredApi.scheme
+        if (!allowedHost || (parsed.scheme != "https" && !configuredInsecureTestUrl)) {
+            throw IOException("Release asset URL is outside the trusted GitHub hosts")
+        }
+        return parsed
     }
 
     private suspend fun getJson(
@@ -407,10 +472,19 @@ class GitHubClient(
     }
 
     companion object {
+        private const val MAX_DOWNLOAD_BYTES = 200L * 1024L * 1024L
+        private const val MAX_DOWNLOAD_REDIRECTS = 5
         private const val MAX_ATTEMPTS = 3
         private const val BASE_RETRY_DELAY_MILLIS = 200L
         private const val MAX_RETRY_DELAY_MILLIS = 2_000L
         private const val MAX_INLINE_RATE_LIMIT_WAIT_MILLIS = 2_000L
+        private val TRUSTED_ASSET_HOSTS = setOf(
+            "api.github.com",
+            "github.com",
+            "objects.githubusercontent.com",
+            "release-assets.githubusercontent.com",
+            "github-releases.githubusercontent.com",
+        )
 
         private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
