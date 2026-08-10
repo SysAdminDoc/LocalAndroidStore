@@ -17,6 +17,7 @@ import javax.net.ssl.SSLHandshakeException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.SerializationException
@@ -141,6 +142,7 @@ class DiscoveryUseCase(
                 sourceKey = source.key,
             )
         } catch (throwable: Throwable) {
+            if (throwable is CancellationException) throw throwable
             logger?.error("Discovery", "Could not list repositories for ${source.displayName}", throwable)
             return@coroutineScope recoverFromSnapshot(
                 source,
@@ -192,6 +194,7 @@ class DiscoveryUseCase(
                         )
                     )
                 } catch (throwable: Throwable) {
+                    if (throwable is CancellationException) throw throwable
                     logger?.warn(
                         "Discovery",
                         "${repo.owner.login}/${repo.name}: ${throwable.message}",

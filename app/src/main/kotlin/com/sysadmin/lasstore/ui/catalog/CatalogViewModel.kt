@@ -28,6 +28,7 @@ import com.sysadmin.lasstore.install.PreapprovalSessionResult
 import com.sysadmin.lasstore.install.QueuedUpdateStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -108,6 +109,8 @@ class CatalogViewModel : ViewModel() {
 
     /** Active install jobs keyed by sourceKey/owner/repo. Used for cancellation. */
     private val activeJobs = ConcurrentHashMap<String, Job>()
+    @Volatile private var refreshJob: Job? = null
+    @Volatile private var refreshGeneration = 0L
 
     /** APK + metadata held after inspection when waiting for permission review (Item 34). */
     private data class PendingInstallData(
@@ -230,13 +233,20 @@ class CatalogViewModel : ViewModel() {
     }
 
     fun refresh() {
-        viewModelScope.launch(Dispatchers.IO) {
+        refreshJob?.cancel()
+        val generation = ++refreshGeneration
+        val job = viewModelScope.launch(Dispatchers.IO) {
             _state.update { it.copy(refreshing = true, errorMessage = null) }
-            val settings = sl.settings.flow.first()
-            val enabledSources = settings.sources.filter { it.enabled }
-            val discoveryResult = runCatching { discovery.discover(settings.sources) }
-                .onFailure { sl.logger.error("Catalog", "discover failed", it) }
-                .getOrElse {
+            try {
+                val settings = sl.settings.flow.first()
+                ensureActive()
+                val enabledSources = settings.sources.filter { it.enabled }
+                val discoveryResult = try {
+                    discovery.discover(settings.sources)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (throwable: Throwable) {
+                    sl.logger.error("Catalog", "discover failed", throwable)
                     CatalogDiscoveryResult(
                         apps = emptyList(),
                         issues = listOf(
@@ -249,27 +259,52 @@ class CatalogViewModel : ViewModel() {
                         ),
                     )
                 }
-            val infos = discoveryResult.apps
-            sl.logger.info(
-                "Catalog",
-                "Discovered ${infos.size} APK-bearing repos across ${enabledSources.size} enabled sources"
-            )
-            // Hydrate applicationId from the persistent cache so UpdateAvailable survives cold starts.
-            val cards = infos.map { info ->
-                val cached = sl.appIdCache.get(info.sourceKey, info.owner, info.repo)
-                buildCardState(info, cached)
-            }
-            val catalogNotice = catalogNotice(discoveryResult)
-            _state.update {
-                it.copy(
-                    refreshing = false,
-                    cards = cards,
-                    errorMessage = catalogNotice.takeIf {
-                        cards.isEmpty() && discoveryResult.issues.isNotEmpty()
-                    },
-                    catalogNotice = catalogNotice.takeIf { cards.isNotEmpty() },
+                ensureActive()
+                val infos = discoveryResult.apps
+                sl.logger.info(
+                    "Catalog",
+                    "Discovered ${infos.size} APK-bearing repos across ${enabledSources.size} enabled sources"
                 )
+                // Hydrate applicationId from the persistent cache so UpdateAvailable survives cold starts.
+                val cards = buildList {
+                    infos.forEach { info ->
+                        ensureActive()
+                        val cached = sl.appIdCache.get(info.sourceKey, info.owner, info.repo)
+                        add(buildCardState(info, cached))
+                    }
+                }
+                ensureActive()
+                val catalogNotice = catalogNotice(discoveryResult)
+                _state.update { current ->
+                    if (generation != refreshGeneration) {
+                        current
+                    } else {
+                        current.copy(
+                            refreshing = false,
+                            cards = cards,
+                            errorMessage = catalogNotice.takeIf {
+                                cards.isEmpty() && discoveryResult.issues.isNotEmpty()
+                            },
+                            catalogNotice = catalogNotice.takeIf { cards.isNotEmpty() },
+                        )
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                if (generation != refreshGeneration) return@launch
+                sl.logger.error("Catalog", "refresh failed", throwable)
+                _state.update {
+                    it.copy(
+                        refreshing = false,
+                        errorMessage = "Catalog refresh failed unexpectedly.",
+                    )
+                }
             }
+        }
+        refreshJob = job
+        job.invokeOnCompletion {
+            if (refreshGeneration == generation) refreshJob = null
         }
     }
 

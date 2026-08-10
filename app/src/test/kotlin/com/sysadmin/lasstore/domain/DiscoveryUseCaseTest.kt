@@ -11,13 +11,59 @@ import com.sysadmin.lasstore.data.GitHubSource
 import java.net.UnknownHostException
 import javax.net.ssl.SSLHandshakeException
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiscoveryUseCaseTest {
+    @Test
+    fun cancellationDoesNotRecoverOrPersistAPartialDiscovery() = runBlocking {
+        val enteredLookup = CompletableDeferred<Unit>()
+        val releaseLookup = CompletableDeferred<Unit>()
+        val completedLookup = AtomicBoolean(false)
+        val snapshots = MemorySnapshots()
+        val gateway = object : GitHubGateway {
+            override suspend fun listUserRepos(
+                user: String,
+                patOverride: String?,
+                sourceKey: String,
+            ): List<GhRepo> = listOf(repo(user, "blocked"))
+
+            override suspend fun latestRelease(
+                owner: String,
+                repo: String,
+                includePrereleases: Boolean,
+                patOverride: String?,
+                sourceKey: String,
+            ): GhRelease {
+                enteredLookup.complete(Unit)
+                releaseLookup.await()
+                completedLookup.set(true)
+                return release(repo)
+            }
+        }
+        val discovery = DiscoveryUseCase(
+            github = gateway,
+            logger = null,
+            snapshots = snapshots,
+        )
+
+        val job = launch { discovery.discover(listOf(GitHubSource(user = "alice"))) }
+        enteredLookup.await()
+        job.cancelAndJoin()
+
+        assertTrue(job.isCancelled)
+        assertFalse(completedLookup.get())
+        assertEquals(null, snapshots.read("alice"))
+    }
+
     @Test
     fun releaseLookupConcurrencyNeverExceedsFour() = runBlocking {
         val active = AtomicInteger()
