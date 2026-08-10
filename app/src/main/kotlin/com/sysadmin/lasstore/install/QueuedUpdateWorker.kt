@@ -50,7 +50,10 @@ class QueuedUpdateWorker(
                 Result.success()
             }
             is QueuedUpdateResult.Failed -> {
-                if (result.retryable && attempt < QueuedUpdateStatusStore.MAX_ATTEMPTS) {
+                if (result.kind == QueuedUpdateFailureKind.AuditPending) {
+                    statusStore.markAuditPending(payload, attempt, result.message)
+                    Result.failure()
+                } else if (result.retryable && attempt < QueuedUpdateStatusStore.MAX_ATTEMPTS) {
                     statusStore.markRetrying(payload, attempt, result)
                     Result.retry()
                 } else {

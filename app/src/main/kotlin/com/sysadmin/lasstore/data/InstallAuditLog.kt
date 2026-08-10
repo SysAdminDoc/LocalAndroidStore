@@ -2,10 +2,15 @@ package com.sysadmin.lasstore.data
 
 import android.content.Context
 import com.sysadmin.lasstore.domain.AppInfo
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.FileOutputStream
 
 /**
  * On-disk JSON-Lines record of every install / uninstall / signature-block event.
@@ -18,7 +23,11 @@ class InstallAuditLog(context: Context) {
     private val dir = File(context.filesDir, "logs").apply { mkdirs() }
     private val file = File(dir, "install.log")
     private val rotated = File(dir, "install.log.1")
-    private val json = Json { encodeDefaults = true }
+    private val json = Json {
+        encodeDefaults = true
+        ignoreUnknownKeys = true
+    }
+    private val fileLock = Any()
 
     @Serializable
     data class Entry(
@@ -38,6 +47,9 @@ class InstallAuditLog(context: Context) {
         val message: String = "",
     )
 
+    private val _entries = MutableStateFlow(readEntries())
+    val entries: StateFlow<List<Entry>> = _entries.asStateFlow()
+
     fun installSucceeded(info: AppInfo, meta: ApkMetadata) =
         append(Entry(
             ts = System.currentTimeMillis(), event = "install_ok",
@@ -45,6 +57,21 @@ class InstallAuditLog(context: Context) {
             tagName = info.tagName, versionName = meta.versionName,
             versionCode = meta.versionCode, certSha256 = meta.signingSha256,
         ))
+
+    /** Durable outbox marker written before install trust/cache state is changed. */
+    fun installSuccessPending(info: AppInfo, meta: ApkMetadata): Boolean = append(
+        Entry(
+            ts = System.currentTimeMillis(),
+            event = "install_success_pending",
+            applicationId = meta.applicationId,
+            source = info.handle,
+            tagName = info.tagName,
+            versionName = meta.versionName,
+            versionCode = meta.versionCode,
+            certSha256 = meta.signingSha256,
+            reason = "state_transition_pending_audit_completion",
+        ),
+    )
 
     fun installBlocked(info: AppInfo, meta: ApkMetadata, reason: String) =
         append(Entry(
@@ -125,14 +152,80 @@ class InstallAuditLog(context: Context) {
         ),
     )
 
-    private fun append(entry: Entry): Boolean =
-        runCatching {
-            file.appendText(json.encodeToString(entry) + "\n")
-            if (file.length() > MAX_BYTES) {
-                rotated.delete()
-                file.renameTo(rotated)
+    /** Durable outbox marker written before a publisher pin replacement is applied. */
+    fun publisherPinReplacementPending(
+        info: AppInfo,
+        meta: ApkMetadata,
+        previousPinSha256: String,
+        installedSignerSha256: String?,
+    ): Boolean = append(
+        Entry(
+            ts = System.currentTimeMillis(),
+            event = "publisher_pin_replacement_pending",
+            applicationId = meta.applicationId,
+            source = info.handle,
+            tagName = info.tagName,
+            versionName = meta.versionName,
+            versionCode = meta.versionCode,
+            certSha256 = meta.signingSha256,
+            previousCertSha256 = previousPinSha256,
+            installedCertSha256 = installedSignerSha256.orEmpty(),
+            verifiedLineageSha256 = meta.lineageSha256,
+            verifiedSignatureSchemes = meta.verifiedSignatureSchemes.map { it.name }.sorted(),
+            reason = "state_transition_pending_audit_completion",
+        ),
+    )
+
+    fun clear() {
+        synchronized(fileLock) {
+            file.delete()
+            rotated.delete()
+        }
+        _entries.value = emptyList()
+    }
+
+    private fun append(entry: Entry): Boolean {
+        val written = runCatching {
+            val line = json.encodeToString(entry) + "\n"
+            synchronized(fileLock) {
+                if (file.length() + line.toByteArray().size > MAX_BYTES) {
+                    rotated.delete()
+                    if (!file.renameTo(rotated)) {
+                        file.writeText("")
+                    }
+                }
+                FileOutputStream(file, true).use { output ->
+                    output.write(line.toByteArray())
+                    output.flush()
+                    output.fd.sync()
+                }
             }
         }.isSuccess
+        if (written) {
+            _entries.value = (_entries.value + entry).takeLast(MAX_ENTRIES)
+        }
+        return written
+    }
 
-    private companion object { const val MAX_BYTES = 256L * 1024L }
+    private fun readEntries(): List<Entry> =
+        listOf(rotated, file)
+            .flatMap { source ->
+                runCatching {
+                    if (!source.isFile) {
+                        emptyList()
+                    } else {
+                        source.useLines { lines ->
+                            lines.mapNotNull { line ->
+                                runCatching { json.decodeFromString<Entry>(line) }.getOrNull()
+                            }.toList()
+                        }
+                    }
+                }.getOrDefault(emptyList())
+            }
+            .takeLast(MAX_ENTRIES)
+
+    private companion object {
+        const val MAX_BYTES = 256L * 1024L
+        const val MAX_ENTRIES = 500
+    }
 }

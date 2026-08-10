@@ -39,6 +39,14 @@ class InstallAuditLogInstrumentedTest {
             ),
         )
         assertTrue(
+            audit.publisherPinReplacementPending(
+                info = info,
+                meta = metadata,
+                previousPinSha256 = OLD_SIGNER,
+                installedSignerSha256 = OLD_SIGNER,
+            ),
+        )
+        assertTrue(
             audit.publisherPinReplaced(
                 info = info,
                 meta = metadata,
@@ -48,13 +56,14 @@ class InstallAuditLogInstrumentedTest {
         )
 
         val lines = auditFile.readLines()
-        assertTrue(lines.size == 2)
+        assertTrue(lines.size == 3)
         assertTrue(lines[0].contains("\"event\":\"publisher_pin_recovery_authorized\""))
         assertTrue(lines[0].contains("\"reason\":\"typed_package_plus_second_acknowledgement\""))
         assertTrue(lines[0].contains("\"previousCertSha256\":\"$OLD_SIGNER\""))
-        assertTrue(lines[1].contains("\"event\":\"publisher_pin_replaced\""))
-        assertTrue(lines[1].contains("\"certSha256\":\"$NEW_SIGNER\""))
-        assertTrue(lines[1].contains("\"verifiedSignatureSchemes\":[\"V3\"]"))
+        assertTrue(lines[1].contains("\"event\":\"publisher_pin_replacement_pending\""))
+        assertTrue(lines[2].contains("\"event\":\"publisher_pin_replaced\""))
+        assertTrue(lines[2].contains("\"certSha256\":\"$NEW_SIGNER\""))
+        assertTrue(lines[2].contains("\"verifiedSignatureSchemes\":[\"V3\"]"))
     }
 
     private fun appInfo() = AppInfo(

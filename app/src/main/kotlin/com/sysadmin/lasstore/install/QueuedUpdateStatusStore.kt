@@ -14,6 +14,7 @@ enum class QueuedUpdatePhase {
     Queued,
     Running,
     Retrying,
+    AuditPending,
     Installed,
     Failed,
     Cancelled,
@@ -35,6 +36,7 @@ enum class QueuedUpdateFailureKind {
     Policy,
     Storage,
     InvalidArtifact,
+    AuditPending,
     Unknown,
 }
 
@@ -57,7 +59,8 @@ data class QueuedUpdateStatus(
     val isPending: Boolean
         get() = phase == QueuedUpdatePhase.Queued ||
             phase == QueuedUpdatePhase.Running ||
-            phase == QueuedUpdatePhase.Retrying
+            phase == QueuedUpdatePhase.Retrying ||
+            phase == QueuedUpdatePhase.AuditPending
 }
 
 class QueuedUpdateStatusStore(context: Context) {
@@ -138,6 +141,20 @@ class QueuedUpdateStatusStore(context: Context) {
             phase = QueuedUpdatePhase.Installed,
             attempt = get(payload)?.attempt ?: 1,
             message = message,
+        )
+    }
+
+    fun markAuditPending(
+        payload: QueuedUpdatePayload,
+        attempt: Int,
+        message: String,
+    ) {
+        save(
+            payload,
+            phase = QueuedUpdatePhase.AuditPending,
+            attempt = attempt,
+            message = message,
+            failureKind = QueuedUpdateFailureKind.AuditPending,
         )
     }
 

@@ -75,7 +75,9 @@ class QueuedUpdateJobService : JobService() {
                 is QueuedUpdateResult.Queued ->
                     statusStore.markAwaitingInstall(payload, attempt, result.sessionId)
                 is QueuedUpdateResult.Failed -> {
-                    if (retry) {
+                    if (result.kind == QueuedUpdateFailureKind.AuditPending) {
+                        statusStore.markAuditPending(payload, attempt, result.message)
+                    } else if (retry) {
                         statusStore.markRetrying(payload, attempt, result)
                     } else {
                         statusStore.markFailed(payload, attempt, result)

@@ -685,6 +685,18 @@ class CatalogViewModel : ViewModel() {
             }
             return
         }
+        if (!sl.audit.publisherPinReplacementPending(
+                info = currentCard.info,
+                meta = meta,
+                previousPinSha256 = details.storedPinSha256,
+                installedSignerSha256 = details.installedSignerSha256,
+            )
+        ) {
+            _state.update {
+                it.copy(warning = "Could not write the trust-replacement pending record. The pin was not changed.")
+            }
+            return
+        }
 
         val replacement = runCatching {
             sl.secrets.setPin(meta.applicationId, meta.signingSha256)
@@ -700,12 +712,31 @@ class CatalogViewModel : ViewModel() {
             return
         }
 
-        sl.audit.publisherPinReplaced(
-            info = currentCard.info,
-            meta = meta,
-            previousPinSha256 = details.storedPinSha256,
-            installedSignerSha256 = details.installedSignerSha256,
-        )
+        if (!sl.audit.publisherPinReplaced(
+                info = currentCard.info,
+                meta = meta,
+                previousPinSha256 = details.storedPinSha256,
+                installedSignerSha256 = details.installedSignerSha256,
+            )
+        ) {
+            val rollback = runCatching {
+                sl.secrets.setPin(meta.applicationId, details.storedPinSha256)
+                check(sl.secrets.getPin(meta.applicationId) == details.storedPinSha256) {
+                    "Publisher pin rollback did not persist"
+                }
+            }
+            sl.logger.error("Trust", "Publisher pin replacement audit completion failed", rollback.exceptionOrNull())
+            _state.update {
+                it.copy(
+                    warning = if (rollback.isSuccess) {
+                        "Could not write durable trust-replacement evidence. The pin was restored."
+                    } else {
+                        "Trust replacement is pending durable audit evidence. Do not rely on this pin until the next refresh."
+                    },
+                )
+            }
+            return
+        }
         sl.logger.warn(
             "Trust",
             "Publisher pin replaced for ${meta.applicationId} after two-step confirmation: " +
@@ -1149,15 +1180,35 @@ class CatalogViewModel : ViewModel() {
                 }
             }
             is InstallResult.Failure -> {
-                if (sl.foregroundInstalls.get(key) != null) {
-                    sl.audit.installFailed(card.info, meta, result.message)
-                    sl.logger.warn(
+                if (result.auditPending) {
+                    sl.logger.error(
                         "Install",
-                        "Install failed for ${meta.applicationId}: ${result.message}",
+                        "Install completed but audit evidence is pending for ${meta.applicationId}",
                     )
-                    sl.foregroundInstalls.remove(key)
+                    _state.update {
+                        it.copy(
+                            warning = "Install completed, but durable audit evidence is pending. " +
+                                "Refresh after storage is available.",
+                        )
+                    }
+                    updateCard(card.info) {
+                        it.copy(
+                            status = CardStatus.Working,
+                            progress = 1f,
+                            message = "Install complete; recording audit evidence…",
+                        )
+                    }
+                } else {
+                    if (sl.foregroundInstalls.get(key) != null) {
+                        sl.audit.installFailed(card.info, meta, result.message)
+                        sl.logger.warn(
+                            "Install",
+                            "Install failed for ${meta.applicationId}: ${result.message}",
+                        )
+                        sl.foregroundInstalls.remove(key)
+                    }
+                    updateCard(card.info) { it.copy(status = CardStatus.Error, message = result.message) }
                 }
-                updateCard(card.info) { it.copy(status = CardStatus.Error, message = result.message) }
             }
         }
     }

@@ -356,7 +356,20 @@ class PackageInstallerService(
                 }
                 PackageInstaller.STATUS_SUCCESS -> {
                     ForegroundInstallResultRouter.detach(registration.capability)
-                    if (cont.isActive) cont.resume(InstallResult.Success)
+                    if (cont.isActive) {
+                        if (intent.getBooleanExtra(EXTRA_AUDIT_PENDING, false)) {
+                            cont.resume(
+                                InstallResult.Failure(
+                                    message = "Android completed the install, but LocalAndroidStore " +
+                                        "could not write durable audit evidence. The operation remains " +
+                                        "pending recovery.",
+                                    auditPending = true,
+                                )
+                            )
+                        } else {
+                            cont.resume(InstallResult.Success)
+                        }
+                    }
                 }
                 PackageInstaller.STATUS_FAILURE,
                 PackageInstaller.STATUS_FAILURE_ABORTED,
@@ -446,6 +459,7 @@ sealed interface InstallResult {
     data class Failure(
         val message: String,
         val status: Int? = null,
+        val auditPending: Boolean = false,
     ) : InstallResult
 }
 

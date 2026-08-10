@@ -237,7 +237,7 @@ internal class InstallResultReceiver : android.content.BroadcastReceiver() {
             validation.terminal &&
             validation.registration.route == InstallResultRoute.Foreground
         ) {
-            runCatching {
+            val finalized = runCatching {
                 ForegroundInstallFinalizer.handleTerminal(
                     appContext,
                     intent,
@@ -246,6 +246,9 @@ internal class InstallResultReceiver : android.content.BroadcastReceiver() {
                 )
             }.onFailure { throwable ->
                 logger.error("Installer", "Could not finalize durable install result", throwable)
+            }.getOrDefault(false)
+            if (!finalized && intent.getIntExtra(PackageInstaller.EXTRA_STATUS, STATUS_MISSING) == PackageInstaller.STATUS_SUCCESS) {
+                intent.putExtra(EXTRA_AUDIT_PENDING, true)
             }
         }
 
@@ -331,4 +334,5 @@ private const val ACTION_INSTALL_RESULT = "com.sysadmin.lasstore.action.INSTALL_
 internal const val EXTRA_CAPABILITY = "com.sysadmin.lasstore.extra.INSTALL_CAPABILITY"
 internal const val EXTRA_DECLARED_SESSION_ID = "com.sysadmin.lasstore.extra.INSTALL_SESSION"
 internal const val EXTRA_DECLARED_APPLICATION_ID = "com.sysadmin.lasstore.extra.INSTALL_PACKAGE"
+internal const val EXTRA_AUDIT_PENDING = "com.sysadmin.lasstore.extra.INSTALL_AUDIT_PENDING"
 private const val STATUS_MISSING = Int.MIN_VALUE
