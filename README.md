@@ -68,7 +68,8 @@ cd LocalAndroidStore
 # then sideload app/build/outputs/apk/debug/app-debug.apk
 ```
 
-This repository's automated verification produces the debug APK only; it does not sign release artifacts.
+Automated verification produces the debug APK only. This repository does not publish CI-signed or
+attested release artifacts; release signing is a deliberate local release-owner operation.
 
 ---
 
@@ -210,7 +211,7 @@ LocalAndroidStore is in your trust boundary — once you grant it "Install unkno
 - **OkHttp 4.12+** — known-CVE-clean as of 2026-04-25.
 - **The Android Keystore-backed Tink keyset** that protects local PATs and signing pins.
 - **The Android platform's `PackageInstaller.Session` + `apksig`** for verifying signatures. Both are first-party Google code.
-- **LocalAndroidStore itself.** The signed v0.2 APK is reproducible from this repo + the cert SHA-256 published in CHANGELOG. Anyone can rebuild and compare. The publisher key (`9c6a9276…e6ebd3a0d`) is the project's identity — if it leaks, the project is compromised; mitigation is rotating the key and getting users to verify the new lineage manually.
+- **LocalAndroidStore itself.** A release owner signs the release APK locally with the ignored `keystore.properties` configuration and records its certificate fingerprint and SHA-256 alongside the release. This checkout does not claim CI signing, artifact attestations, or reproducible release bytes. The publisher key (`9c6a9276…e6ebd3a0d`) is the project's identity — if it leaks, the project is compromised; mitigation is rotating the key and getting users to verify the new lineage manually.
 
 **What you don't trust:**
 
@@ -227,17 +228,30 @@ LocalAndroidStore is in your trust boundary — once you grant it "Install unkno
 - We don't fetch a second APK at runtime. The APK staged for install is the APK published on GitHub Releases; nothing else.
 - We don't share your installed-app list with anyone.
 
-**How to verify a release yourself:**
+**How the release owner builds and verifies a release:**
+
+The release owner must have an external signing keystore and an ignored `keystore.properties` file;
+a clean checkout without that file must not be distributed as a release. Run:
 
 ```bash
-# Compare the cert SHA-256 with the value in CHANGELOG.md
-apksigner verify --print-certs LocalAndroidStore-v0.2.0.apk
+# Build the non-debug release with the locally configured keystore
+./gradlew assembleRelease
 
-# Compare the APK SHA-256 with the released sidecar
-sha256sum -c LocalAndroidStore-v0.2.0.apk.sha256
+# Verify the exact artifact before publishing it
+apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+sha256sum app/build/outputs/apk/release/app-release.apk
 ```
 
-If either fails, treat the binary as untrusted and report it.
+Record the printed certificate fingerprint and SHA-256 in the release notes. A user can then verify
+the downloaded artifact directly:
+
+```bash
+apksigner verify --verbose --print-certs LocalAndroidStore-vX.Y.Z.apk
+sha256sum -c LocalAndroidStore-vX.Y.Z.apk.sha256
+```
+
+If the keystore is unavailable, the certificate or hash does not match the release notes, or either
+verification command fails, treat the binary as untrusted and do not distribute it.
 
 ---
 
