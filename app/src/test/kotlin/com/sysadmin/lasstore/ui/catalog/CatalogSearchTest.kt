@@ -44,6 +44,13 @@ class CatalogSearchTest {
     }
 
     @Test
+    fun fuzzySubsequenceDoesNotMatchSparseCharactersAcrossLongFields() {
+        val longName = card(name = "AlphaBetaGamma")
+
+        assertEquals(emptyList<CardState>(), filterCards(listOf(longName), "aag"))
+    }
+
+    @Test
     fun higherRelevanceBeatsHigherStars() {
         val exact = card(name = "Deck", repo = "deck", stars = 1)
         val partial = card(name = "Astra Deck", repo = "Astra-Deck", stars = 100)

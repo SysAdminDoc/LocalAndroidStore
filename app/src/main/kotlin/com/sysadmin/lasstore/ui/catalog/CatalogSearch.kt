@@ -67,7 +67,8 @@ private fun String.scoreToken(token: String): Int {
         words.any { it.startsWith(token) } -> 105
         contains(token) -> 90
         acronym.startsWith(token) -> 78
-        compactField.isOrderedSubsequenceOf(token) -> 55 + (token.length * 20 / compactField.length.coerceAtLeast(1))
+        token.isBoundedSubsequenceOf(compactField) ->
+            55 + (token.length * 20 / compactField.length.coerceAtLeast(1))
         else -> 0
     }
 }
@@ -96,14 +97,15 @@ private fun String.normalizedSearchText(): String =
         .replace(separatorRegex, " ")
         .trim()
 
-private fun String.isOrderedSubsequenceOf(token: String): Boolean {
-    if (token.length < 2) return false
+private fun String.isBoundedSubsequenceOf(field: String): Boolean {
+    if (length < 3) return false
+    if (field.length - length > length) return false
     var index = 0
-    for (char in this) {
-        if (index < token.length && char == token[index]) {
+    for (char in field) {
+        if (index < length && char == this[index]) {
             index += 1
         }
-        if (index == token.length) return true
+        if (index == length) return true
     }
     return false
 }
