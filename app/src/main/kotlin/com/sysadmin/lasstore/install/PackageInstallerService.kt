@@ -73,6 +73,7 @@ class PackageInstallerService(
         firstInstall: Boolean = true,
         referrerUri: Uri? = null,
         onSessionCreated: (Int) -> Unit = {},
+        operationId: String? = null,
     ): InstallResult = suspendCancellableCoroutine { cont ->
         val pi = context.packageManager.packageInstaller
         val params = buildSessionParams(
@@ -100,6 +101,7 @@ class PackageInstallerService(
             sessionId = sessionId,
             applicationId = applicationId,
             route = InstallResultRoute.Foreground,
+            operationId = operationId,
             pi = pi,
             cont = cont,
         )
@@ -138,6 +140,7 @@ class PackageInstallerService(
         label: String,
         referrerUri: Uri? = null,
         onSessionCreated: (Int) -> Unit = {},
+        operationId: String? = null,
     ): PreapprovalSessionResult = suspendCancellableCoroutine { cont ->
         val pi = context.packageManager.packageInstaller
         // Pre-approval requires knowing the package name in advance.
@@ -165,6 +168,7 @@ class PackageInstallerService(
             sessionId = sessionId,
             applicationId = applicationId,
             route = InstallResultRoute.Preapproval,
+            operationId = operationId,
         )
         ForegroundInstallResultRouter.attach(registration.capability) { _, resultIntent ->
             ForegroundInstallResultRouter.detach(registration.capability)
@@ -219,6 +223,7 @@ class PackageInstallerService(
         sessionId: Int,
         applicationId: String,
         apk: File,
+        operationId: String? = null,
     ): InstallResult =
         suspendCancellableCoroutine { cont ->
             val pi = context.packageManager.packageInstaller
@@ -226,6 +231,7 @@ class PackageInstallerService(
                 sessionId = sessionId,
                 applicationId = applicationId,
                 route = InstallResultRoute.Foreground,
+                operationId = operationId,
                 pi = pi,
                 cont = cont,
             )
@@ -339,10 +345,16 @@ class PackageInstallerService(
         sessionId: Int,
         applicationId: String,
         route: InstallResultRoute,
+        operationId: String?,
         pi: PackageInstaller,
         cont: kotlinx.coroutines.CancellableContinuation<InstallResult>,
     ): InstallResultRegistration {
-        val registration = resultRegistry.register(sessionId, applicationId, route)
+        val registration = resultRegistry.register(
+            sessionId = sessionId,
+            applicationId = applicationId,
+            route = route,
+            operationId = operationId,
+        )
         ForegroundInstallResultRouter.attach(registration.capability) { ctx, intent ->
             val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -999)
             val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""

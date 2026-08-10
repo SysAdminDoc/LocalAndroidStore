@@ -19,12 +19,14 @@ internal data class InstallResultRegistration(
     val sessionId: Int,
     val applicationId: String,
     val route: InstallResultRoute,
+    val operationId: String? = null,
 )
 
 internal data class InstallResultEnvelope(
     val capability: String?,
     val declaredSessionId: Int?,
     val declaredApplicationId: String?,
+    val declaredOperationId: String? = null,
     val platformSessionId: Int?,
     val platformApplicationId: String?,
     val status: Int,
@@ -37,6 +39,7 @@ internal data class InstallResultEnvelope(
             capability = intent.getStringExtra(EXTRA_CAPABILITY),
             declaredSessionId = intent.intExtraOrNull(EXTRA_DECLARED_SESSION_ID),
             declaredApplicationId = intent.getStringExtra(EXTRA_DECLARED_APPLICATION_ID),
+            declaredOperationId = intent.getStringExtra(EXTRA_DECLARED_OPERATION_ID),
             platformSessionId = intent.intExtraOrNull(PackageInstaller.EXTRA_SESSION_ID),
             platformApplicationId = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME),
             status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, STATUS_MISSING),
@@ -75,6 +78,11 @@ internal object InstallResultValidator {
         if (envelope.declaredApplicationId != registration.applicationId) {
             return InstallResultValidation.Rejected("declared package mismatch")
         }
+        if (registration.operationId != null &&
+            envelope.declaredOperationId != registration.operationId
+        ) {
+            return InstallResultValidation.Rejected("declared operation mismatch")
+        }
         if (envelope.platformApplicationId != null &&
             envelope.platformApplicationId != registration.applicationId
         ) {
@@ -110,18 +118,25 @@ internal class InstallResultRegistry(context: Context) {
         sessionId: Int,
         applicationId: String,
         route: InstallResultRoute,
+        operationId: String? = null,
     ): InstallResultRegistration {
         val registration = InstallResultRegistration(
             capability = newCapability(),
             sessionId = sessionId,
             applicationId = applicationId,
             route = route,
+            operationId = operationId,
         )
-        val persisted = prefs.edit()
+        val editor = prefs.edit()
             .putInt(key(registration.capability, FIELD_SESSION), sessionId)
             .putString(key(registration.capability, FIELD_PACKAGE), applicationId)
             .putString(key(registration.capability, FIELD_ROUTE), route.name)
-            .commit()
+        if (operationId == null) {
+            editor.remove(key(registration.capability, FIELD_OPERATION))
+        } else {
+            editor.putString(key(registration.capability, FIELD_OPERATION), operationId)
+        }
+        val persisted = editor.commit()
         check(persisted) { "Could not persist install-result capability" }
         return registration
     }
@@ -138,6 +153,7 @@ internal class InstallResultRegistry(context: Context) {
             sessionId = prefs.getInt(sessionKey, INVALID_SESSION_ID),
             applicationId = applicationId,
             route = route,
+            operationId = prefs.getString(key(capability, FIELD_OPERATION), null),
         )
     }
 
@@ -170,6 +186,7 @@ internal class InstallResultRegistry(context: Context) {
         .remove(key(capability, FIELD_SESSION))
         .remove(key(capability, FIELD_PACKAGE))
         .remove(key(capability, FIELD_ROUTE))
+        .remove(key(capability, FIELD_OPERATION))
         .commit()
 
     private fun key(capability: String, field: String): String = "$capability.$field"
@@ -185,6 +202,7 @@ internal class InstallResultRegistry(context: Context) {
         const val FIELD_SESSION = "session"
         const val FIELD_PACKAGE = "package"
         const val FIELD_ROUTE = "route"
+        const val FIELD_OPERATION = "operation"
         const val INVALID_SESSION_ID = -1
         const val CAPABILITY_BYTES = 32
         val CAPABILITY_PATTERN = Regex("[0-9a-f]{64}")
@@ -293,8 +311,11 @@ internal class InstallResultReceiver : android.content.BroadcastReceiver() {
                             com.sysadmin.lasstore.data.ServiceLocator.foregroundInstalls
                                 .findBySession(validation.registration.sessionId)
                                 ?.let { operation ->
-                                    com.sysadmin.lasstore.data.ServiceLocator.foregroundInstalls
-                                        .remove(operation.key)
+                            com.sysadmin.lasstore.data.ServiceLocator.foregroundInstalls
+                                        .removeIfCurrent(
+                                            operation.key,
+                                            operation.operationId,
+                                        )
                                 }
                         }
                     }
@@ -317,6 +338,7 @@ internal fun installResultIntent(
     putExtra(EXTRA_CAPABILITY, registration.capability)
     putExtra(EXTRA_DECLARED_SESSION_ID, registration.sessionId)
     putExtra(EXTRA_DECLARED_APPLICATION_ID, registration.applicationId)
+    registration.operationId?.let { putExtra(EXTRA_DECLARED_OPERATION_ID, it) }
 }
 
 internal fun Intent.pendingUserActionIntent(): Intent? =
@@ -334,5 +356,6 @@ private const val ACTION_INSTALL_RESULT = "com.sysadmin.lasstore.action.INSTALL_
 internal const val EXTRA_CAPABILITY = "com.sysadmin.lasstore.extra.INSTALL_CAPABILITY"
 internal const val EXTRA_DECLARED_SESSION_ID = "com.sysadmin.lasstore.extra.INSTALL_SESSION"
 internal const val EXTRA_DECLARED_APPLICATION_ID = "com.sysadmin.lasstore.extra.INSTALL_PACKAGE"
+internal const val EXTRA_DECLARED_OPERATION_ID = "com.sysadmin.lasstore.extra.INSTALL_OPERATION"
 internal const val EXTRA_AUDIT_PENDING = "com.sysadmin.lasstore.extra.INSTALL_AUDIT_PENDING"
 private const val STATUS_MISSING = Int.MIN_VALUE

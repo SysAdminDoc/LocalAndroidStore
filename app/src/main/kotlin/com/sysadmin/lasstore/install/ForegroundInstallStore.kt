@@ -10,6 +10,7 @@ import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.signerMatchesVerifiedArtifact
 import com.sysadmin.lasstore.domain.AppInfo
 import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +30,7 @@ enum class ForegroundInstallPhase {
 @Serializable
 data class ForegroundInstallOperation(
     val key: String,
+    val operationId: String = "",
     val info: AppInfo,
     val phase: ForegroundInstallPhase,
     val apkPath: String,
@@ -68,40 +70,66 @@ class ForegroundInstallStore(private val context: Context) {
         info: AppInfo,
         apk: File,
         referrerUrl: String,
-    ): ForegroundInstallOperation = update(
-        ForegroundInstallOperation(
+        operationId: String = newOperationId(),
+    ): ForegroundInstallOperation {
+        val operation = ForegroundInstallOperation(
             key = key(info),
+            operationId = operationId,
             info = info,
             phase = ForegroundInstallPhase.Downloading,
             apkPath = apk.absolutePath,
             referrerUrl = referrerUrl,
-        ),
-    )
+        )
+        synchronized(lock) {
+            val previous = _operations.value.firstOrNull { it.key == operation.key }
+            val next = _operations.value.filterNot { it.key == operation.key } + operation
+            persist(next)
+            _operations.value = next
+            previous?.takeIf { it.apkPath != operation.apkPath }?.let(::deleteFiles)
+        }
+        return operation
+    }
 
-    fun markPreapproving(key: String, sessionId: Int): ForegroundInstallOperation? =
-        transform(key) {
+    fun isCurrent(key: String, operationId: String): Boolean =
+        get(key)?.operationId == operationId
+
+    fun markPreapproving(
+        key: String,
+        operationId: String,
+        sessionId: Int,
+    ): ForegroundInstallOperation? = transform(key, operationId) {
             it.copy(
                 phase = ForegroundInstallPhase.Preapproving,
                 preapprovalSessionId = sessionId,
             )
         }
 
-    fun markDownloading(key: String, preapprovalSessionId: Int?): ForegroundInstallOperation? =
-        transform(key) {
+    fun markPreapproving(key: String, sessionId: Int): ForegroundInstallOperation? =
+        get(key)?.let { markPreapproving(key, it.operationId, sessionId) }
+
+    fun markDownloading(
+        key: String,
+        operationId: String,
+        preapprovalSessionId: Int?,
+    ): ForegroundInstallOperation? = transform(key, operationId) {
             it.copy(
                 phase = ForegroundInstallPhase.Downloading,
                 preapprovalSessionId = preapprovalSessionId,
             )
         }
 
+    fun markDownloading(key: String, preapprovalSessionId: Int?): ForegroundInstallOperation? =
+        get(key)?.let { markDownloading(key, it.operationId, preapprovalSessionId) }
+
     fun markPermissionReview(
         key: String,
+        operationId: String,
         metadata: ApkMetadata,
         pinnedSignerSha256: String?,
         installedAlready: Boolean,
         preapprovalSessionId: Int?,
         permissions: List<String>,
-    ): ForegroundInstallOperation? = transform(key) {
+    ): ForegroundInstallOperation? = transform(key, operationId) {
         it.copy(
             phase = ForegroundInstallPhase.PermissionReview,
             metadata = metadata,
@@ -112,13 +140,33 @@ class ForegroundInstallStore(private val context: Context) {
         )
     }
 
-    fun markCommitting(
+    fun markPermissionReview(
         key: String,
         metadata: ApkMetadata,
         pinnedSignerSha256: String?,
         installedAlready: Boolean,
+        preapprovalSessionId: Int?,
+        permissions: List<String>,
+    ): ForegroundInstallOperation? = get(key)?.let {
+        markPermissionReview(
+            key = key,
+            operationId = it.operationId,
+            metadata = metadata,
+            pinnedSignerSha256 = pinnedSignerSha256,
+            installedAlready = installedAlready,
+            preapprovalSessionId = preapprovalSessionId,
+            permissions = permissions,
+        )
+    }
+
+    fun markCommitting(
+        key: String,
+        operationId: String,
+        metadata: ApkMetadata,
+        pinnedSignerSha256: String?,
+        installedAlready: Boolean,
         installerSessionId: Int,
-    ): ForegroundInstallOperation? = transform(key) {
+    ): ForegroundInstallOperation? = transform(key, operationId) {
         it.copy(
             phase = ForegroundInstallPhase.Committing,
             metadata = metadata,
@@ -130,14 +178,47 @@ class ForegroundInstallStore(private val context: Context) {
         )
     }
 
+    fun markCommitting(
+        key: String,
+        metadata: ApkMetadata,
+        pinnedSignerSha256: String?,
+        installedAlready: Boolean,
+        installerSessionId: Int,
+    ): ForegroundInstallOperation? = get(key)?.let {
+        markCommitting(
+            key = key,
+            operationId = it.operationId,
+            metadata = metadata,
+            pinnedSignerSha256 = pinnedSignerSha256,
+            installedAlready = installedAlready,
+            installerSessionId = installerSessionId,
+        )
+    }
+
     fun remove(key: String, deleteApk: Boolean = true): ForegroundInstallOperation? =
+        removeInternal(key, expectedOperationId = null, deleteApk = deleteApk)
+
+    fun removeIfCurrent(
+        key: String,
+        operationId: String,
+        deleteApk: Boolean = true,
+    ): ForegroundInstallOperation? =
+        removeInternal(key, expectedOperationId = operationId, deleteApk = deleteApk)
+
+    private fun removeInternal(
+        key: String,
+        expectedOperationId: String?,
+        deleteApk: Boolean,
+    ): ForegroundInstallOperation? =
         synchronized(lock) {
             val removed = _operations.value.firstOrNull { it.key == key } ?: return@synchronized null
+            if (expectedOperationId != null && removed.operationId != expectedOperationId) {
+                return@synchronized null
+            }
             val next = _operations.value.filterNot { it.key == key }
             persist(next)
             _operations.value = next
-            if (deleteApk) apkFile(removed)?.delete()
-            partialFile(removed)?.delete()
+            if (deleteApk) deleteFiles(removed)
             removed
         }
 
@@ -207,10 +288,17 @@ class ForegroundInstallStore(private val context: Context) {
 
     private fun transform(
         key: String,
+        operationId: String,
         block: (ForegroundInstallOperation) -> ForegroundInstallOperation,
     ): ForegroundInstallOperation? {
         val current = get(key) ?: return null
+        if (current.operationId != operationId) return null
         return update(block(current))
+    }
+
+    private fun deleteFiles(operation: ForegroundInstallOperation) {
+        apkFile(operation)?.delete()
+        partialFile(operation)?.delete()
     }
 
     private fun load(): List<ForegroundInstallOperation> =
@@ -236,6 +324,8 @@ class ForegroundInstallStore(private val context: Context) {
     companion object {
         fun key(info: AppInfo): String = "${info.sourceKey}/${info.owner}/${info.repo}"
 
+        fun newOperationId(): String = UUID.randomUUID().toString()
+
         private const val PREFS_NAME = "foreground_install_state"
         private const val KEY_OPERATIONS = "operations"
         private const val KEY_PENDING_MEDIA = "pending_media_store_uris"
@@ -253,10 +343,13 @@ internal object ForegroundInstallFinalizer {
         ServiceLocator.init(context.applicationContext)
         val sl = ServiceLocator
         val operation = sl.foregroundInstalls.findBySession(registration.sessionId)
-            ?.takeIf { it.phase == ForegroundInstallPhase.Committing }
+            ?.takeIf {
+                it.phase == ForegroundInstallPhase.Committing &&
+                    (registration.operationId == null || it.operationId == registration.operationId)
+            }
             ?: return false
         val metadata = operation.metadata ?: run {
-            sl.foregroundInstalls.remove(operation.key)
+            sl.foregroundInstalls.removeIfCurrent(operation.key, operation.operationId)
             logger.warn("Installer", "Foreground install result lacked persisted APK metadata")
             return true
         }
@@ -312,7 +405,7 @@ internal object ForegroundInstallFinalizer {
             sl.audit.installFailed(operation.info, metadata, decoded)
             logger.warn("Install", "Install failed for ${metadata.applicationId}: $decoded")
         }
-        sl.foregroundInstalls.remove(operation.key)
+        sl.foregroundInstalls.removeIfCurrent(operation.key, operation.operationId)
         return true
     }
 
@@ -341,6 +434,7 @@ internal object ForegroundInstallFinalizer {
                 sessionId = operation.installerSessionId ?: return false,
                 applicationId = metadata.applicationId,
                 route = InstallResultRoute.Foreground,
+                operationId = operation.operationId,
             ),
             logger = logger,
         )

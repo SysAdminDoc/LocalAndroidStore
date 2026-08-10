@@ -70,6 +70,26 @@ class InstallResultContractTest {
     }
 
     @Test
+    fun rejectsMismatchedForegroundOperationGeneration() {
+        val generationBound = registration.copy(operationId = "current-operation")
+
+        val result = InstallResultValidator.validate(
+            generationBound,
+            InstallResultEnvelope(
+                capability = generationBound.capability,
+                declaredSessionId = generationBound.sessionId,
+                declaredApplicationId = generationBound.applicationId,
+                declaredOperationId = "stale-operation",
+                platformSessionId = generationBound.sessionId,
+                platformApplicationId = generationBound.applicationId,
+                status = PackageInstaller.STATUS_SUCCESS,
+            ),
+        )
+
+        assertRejected(result, "declared operation mismatch")
+    }
+
+    @Test
     fun rejectsUnknownStatusAndConsumedCapability() {
         assertRejected(
             InstallResultValidator.validate(registration, envelope(status = 9_999)),
@@ -85,10 +105,12 @@ class InstallResultContractTest {
         status: Int,
         platformSessionId: Int? = null,
         platformApplicationId: String? = null,
+        declaredOperationId: String? = registration.operationId,
     ) = InstallResultEnvelope(
         capability = registration.capability,
         declaredSessionId = registration.sessionId,
         declaredApplicationId = registration.applicationId,
+        declaredOperationId = declaredOperationId,
         platformSessionId = platformSessionId,
         platformApplicationId = platformApplicationId,
         status = status,

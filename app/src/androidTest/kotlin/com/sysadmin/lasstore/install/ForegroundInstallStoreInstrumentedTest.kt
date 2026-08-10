@@ -14,6 +14,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -72,6 +73,38 @@ class ForegroundInstallStoreInstrumentedTest {
         assertFalse(apk.exists())
         assertFalse(partial.exists())
         assertNull(store.get(operation.key))
+    }
+
+    @Test
+    fun staleOperationCannotRemoveOrAdvanceReplacement() {
+        val oldApk = File(cacheDirectory.apply(File::mkdirs), "old.apk").apply {
+            writeText("old")
+        }
+        val newApk = File(cacheDirectory, "new.apk").apply {
+            writeText("new")
+        }
+        val store = ForegroundInstallStore(context)
+        val old = store.start(appInfo(), oldApk, appInfo().asset.browserDownloadUrl)
+        val current = store.start(
+            info = appInfo(),
+            apk = newApk,
+            referrerUrl = appInfo().asset.browserDownloadUrl,
+            operationId = "current-generation",
+        )
+
+        assertNull(store.removeIfCurrent(old.key, old.operationId))
+        assertNull(
+            store.markCommitting(
+                key = old.key,
+                operationId = old.operationId,
+                metadata = metadata(),
+                pinnedSignerSha256 = "AA",
+                installedAlready = true,
+                installerSessionId = SESSION_ID,
+            ),
+        )
+        assertEquals(current.operationId, store.get(current.key)?.operationId)
+        assertTrue(newApk.exists())
     }
 
     @Test
