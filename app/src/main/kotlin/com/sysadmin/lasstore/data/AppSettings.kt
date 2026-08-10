@@ -54,6 +54,23 @@ fun normalizeSources(sources: List<GitHubSource>): List<GitHubSource> {
     return cleaned.ifEmpty { listOf(GitHubSource()) }
 }
 
+fun validateSources(sources: List<GitHubSource>): String? {
+    val blankIndex = sources.indexOfFirst { it.user.trim().isBlank() }
+    if (blankIndex >= 0) {
+        return "Enter a GitHub user or organization for source ${blankIndex + 1}."
+    }
+    val duplicate = sources
+        .withIndex()
+        .groupBy { it.value.key }
+        .values
+        .firstOrNull { it.size > 1 }
+    if (duplicate != null) {
+        val label = duplicate.first().value.user.trim()
+        return "Source '$label' is listed more than once. Keep one entry or use a different owner."
+    }
+    return null
+}
+
 fun legacySource(settings: AppSettings): GitHubSource = GitHubSource(
     user = settings.githubUser,
     topic = settings.topic,

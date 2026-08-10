@@ -45,8 +45,13 @@ class SecretStore(context: Context) {
     fun getPat(sourceKey: String): String =
         backend.read().sourcePats[sourceKey] ?: getPat()
 
+    fun getSourcePat(sourceKey: String): String? = backend.read().sourcePats[sourceKey]
+
     fun setPat(sourceKey: String, pat: String) =
         backend.update { it.withSourcePat(sourceKey, pat) }
+
+    fun replaceSourcePats(sourcePats: Map<String, String>, activeSourceKeys: Set<String>) =
+        backend.update { it.replaceSourcePats(sourcePats, activeSourceKeys) }
 
     fun getPin(packageName: String): String? = backend.read().pins[packageName]
     fun setPin(packageName: String, sha256Hex: String) {

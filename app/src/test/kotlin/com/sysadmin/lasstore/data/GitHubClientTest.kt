@@ -180,6 +180,62 @@ class GitHubClientTest {
     }
 
     @Test
+    fun testConnectionReportsAuthenticatedOwnerScopesAndRateBudget() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("X-RateLimit-Remaining", "41")
+                .setHeader("X-RateLimit-Reset", "1700000000")
+                .setBody("{\"login\":\"alice\"}"),
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("X-OAuth-Scopes", "repo, read:user")
+                .setBody("{\"login\":\"alice\"}"),
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("X-RateLimit-Remaining", "39")
+                .setHeader("X-RateLimit-Reset", "1700000000")
+                .setBody(REPOSITORY_LIST),
+        )
+
+        val result = client(pat = "secret-token").testConnection("alice")
+
+        assertEquals("alice", result.authenticatedLogin)
+        assertTrue(result.authenticatedOwnerAccess)
+        assertEquals(1, result.accessibleRepoCount)
+        assertEquals(setOf("repo", "read:user"), result.tokenScopes)
+        assertEquals(39L, result.rateLimitRemaining)
+        assertEquals(1_700_000_000_000L, result.rateLimitResetEpochMillis)
+        assertTrue((1..3).all { server.takeRequest().getHeader("Authorization") == "Bearer secret-token" })
+    }
+
+    @Test
+    fun testConnectionSurfacesRequiredScopesWhenRepositoryAccessIsRejected() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{\"login\":\"alice\"}"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{\"login\":\"token-owner\"}"))
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(403)
+                .setHeader("X-Accepted-OAuth-Scopes", "repo")
+                .setHeader("X-RateLimit-Remaining", "0")
+                .setHeader("X-RateLimit-Reset", "1700000000"),
+        )
+
+        val failure = runCatching {
+            client(pat = "secret-token").testConnection("alice")
+        }.exceptionOrNull()
+
+        assertTrue(failure is GitHubRequestException)
+        assertEquals(setOf("repo"), (failure as GitHubRequestException).acceptedScopes)
+        assertEquals(0L, failure.rateLimitRemaining)
+        assertEquals(1_700_000_000_000L, failure.rateLimitResetEpochMillis)
+    }
+
+    @Test
     fun exhausted403IsRateLimitRatherThanAuthorizationFailure() = runBlocking {
         server.enqueue(
             MockResponse()

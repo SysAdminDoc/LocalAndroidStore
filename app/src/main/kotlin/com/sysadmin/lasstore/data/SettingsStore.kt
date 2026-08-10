@@ -64,7 +64,10 @@ class SettingsStore(private val context: Context, private val secrets: SecretSto
     fun getPat(): String = secrets.getPat()
     fun setPat(pat: String) = secrets.setPat(pat)
     fun getPat(sourceKey: String): String = secrets.getPat(sourceKey)
+    fun getSourcePat(sourceKey: String): String? = secrets.getSourcePat(sourceKey)
     fun setPat(sourceKey: String, pat: String) = secrets.setPat(sourceKey, pat)
+    fun replaceSourcePats(sourcePats: Map<String, String>, activeSourceKeys: Set<String>) =
+        secrets.replaceSourcePats(sourcePats, activeSourceKeys)
 
     private fun decodeSources(raw: String?): List<GitHubSource>? {
         if (raw.isNullOrBlank()) return null

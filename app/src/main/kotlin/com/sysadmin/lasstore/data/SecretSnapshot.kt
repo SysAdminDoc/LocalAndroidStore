@@ -25,6 +25,17 @@ internal data class SecretSnapshot(
         return copy(sourcePats = next, updatedAtEpochMillis = System.currentTimeMillis())
     }
 
+    fun replaceSourcePats(
+        sourcePats: Map<String, String>,
+        activeSourceKeys: Set<String>,
+    ): SecretSnapshot {
+        val next = sourcePats
+            .asSequence()
+            .filter { (key, value) -> key in activeSourceKeys && value.isNotBlank() }
+            .associate { (key, value) -> key to value.trim() }
+        return copy(sourcePats = next, updatedAtEpochMillis = System.currentTimeMillis())
+    }
+
     fun withPin(packageName: String, sha256Hex: String): SecretSnapshot =
         copy(
             pins = pins + (packageName to sha256Hex),

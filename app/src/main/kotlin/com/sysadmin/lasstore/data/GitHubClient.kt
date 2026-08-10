@@ -44,6 +44,9 @@ class GitHubRequestException(
     val statusCode: Int,
     val retryAtEpochMillis: Long? = null,
     message: String,
+    val rateLimitRemaining: Long? = null,
+    val rateLimitResetEpochMillis: Long? = null,
+    val acceptedScopes: Set<String> = emptySet(),
 ) : IOException(message)
 
 class NetworkUnavailableException :
@@ -73,6 +76,18 @@ fun normalizeSha256Digest(value: String?): String? {
         it.length == 64 && it.all { character -> character.lowercaseChar() in HEX_DIGITS }
     }?.lowercase(Locale.US)
 }
+
+data class GitHubConnectionResult(
+    val requestedOwner: String,
+    val authenticatedLogin: String?,
+    val ownerExists: Boolean,
+    val authenticatedOwnerAccess: Boolean,
+    val accessibleRepoCount: Int,
+    val tokenScopes: Set<String>,
+    val acceptedScopes: Set<String>,
+    val rateLimitRemaining: Long?,
+    val rateLimitResetEpochMillis: Long?,
+)
 
 interface GitHubGateway {
     suspend fun listUserRepos(
@@ -214,6 +229,62 @@ class GitHubClient(
                 json.decodeFromString<GhRelease>(body)
             }
         }
+
+    suspend fun testConnection(
+        user: String,
+        patOverride: String? = null,
+    ): GitHubConnectionResult = withContext(Dispatchers.IO) {
+        ensureNetworkAvailable()
+        val owner = user.trim()
+        if (owner.isBlank()) throw IOException("A GitHub user or organization is required")
+        val ownerPath = encodePathSegment(owner)
+        val ownerResponse = executeConnectionRequest(
+            url = "$apiBaseUrl/users/$ownerPath",
+            patOverride = patOverride,
+        )
+        if (!hasAuth(patOverride)) {
+            return@withContext GitHubConnectionResult(
+                requestedOwner = owner,
+                authenticatedLogin = null,
+                ownerExists = true,
+                authenticatedOwnerAccess = false,
+                accessibleRepoCount = 0,
+                tokenScopes = emptySet(),
+                acceptedScopes = ownerResponse.acceptedScopes,
+                rateLimitRemaining = ownerResponse.rateLimitRemaining,
+                rateLimitResetEpochMillis = ownerResponse.rateLimitResetEpochMillis,
+            )
+        }
+
+        val identity = executeConnectionRequest(
+            url = "$apiBaseUrl/user",
+            patOverride = patOverride,
+        )
+        val authenticatedLogin = json.decodeFromString<GhAuthenticatedUser>(identity.body).login
+        val repositories = executeConnectionRequest(
+            url = "$apiBaseUrl/user/repos?per_page=100&visibility=all&" +
+                "affiliation=owner,organization_member&sort=updated&page=1",
+            patOverride = patOverride,
+        )
+        val accessibleRepos = json.decodeFromString<List<GhRepo>>(repositories.body)
+            .count { it.owner.login.equals(owner, ignoreCase = true) }
+        GitHubConnectionResult(
+            requestedOwner = owner,
+            authenticatedLogin = authenticatedLogin,
+            ownerExists = true,
+            authenticatedOwnerAccess = authenticatedLogin.equals(owner, ignoreCase = true) ||
+                accessibleRepos > 0,
+            accessibleRepoCount = accessibleRepos,
+            tokenScopes = identity.oauthScopes,
+            acceptedScopes = repositories.acceptedScopes.ifEmpty { identity.acceptedScopes },
+            rateLimitRemaining = repositories.rateLimitRemaining
+                ?: identity.rateLimitRemaining
+                ?: ownerResponse.rateLimitRemaining,
+            rateLimitResetEpochMillis = repositories.rateLimitResetEpochMillis
+                ?: identity.rateLimitResetEpochMillis
+                ?: ownerResponse.rateLimitResetEpochMillis,
+        )
+    }
 
     suspend fun download(
         url: String,
@@ -432,6 +503,29 @@ class GitHubClient(
         }
     }
 
+    private fun executeConnectionRequest(
+        url: String,
+        patOverride: String?,
+    ): GitHubConnectionResponse {
+        val request = Request.Builder().url(url).apply {
+            authHeaders(patOverride).forEach { (key, value) -> header(key, value) }
+        }.build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw responseFailure(response, "testing GitHub connection")
+            }
+            return GitHubConnectionResponse(
+                body = response.body?.string() ?: "{}",
+                oauthScopes = parseScopes(response.header("X-OAuth-Scopes")),
+                acceptedScopes = parseScopes(response.header("X-Accepted-OAuth-Scopes")),
+                rateLimitRemaining = response.header("X-RateLimit-Remaining")?.toLongOrNull(),
+                rateLimitResetEpochMillis = response.header("X-RateLimit-Reset")
+                    ?.toLongOrNull()
+                    ?.times(1_000L),
+            )
+        }
+    }
+
     private suspend fun listReposPaged(
         urlForPage: (Int) -> String,
         patOverride: String?,
@@ -511,8 +605,18 @@ class GitHubClient(
             statusCode = response.code,
             retryAtEpochMillis = retryAt,
             message = "GitHub HTTP ${response.code} while $operation.$retryCopy",
+            rateLimitRemaining = remaining,
+            rateLimitResetEpochMillis = resetAt,
+            acceptedScopes = parseScopes(response.header("X-Accepted-OAuth-Scopes")),
         )
     }
+
+    private fun parseScopes(value: String?): Set<String> = value
+        .orEmpty()
+        .split(',')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .toSet()
 
     private fun ensureNetworkAvailable() {
         if (!networkAvailable()) throw NetworkUnavailableException()
@@ -541,6 +645,17 @@ class GitHubClient(
             .build()
     }
 }
+
+@Serializable
+private data class GhAuthenticatedUser(val login: String)
+
+private data class GitHubConnectionResponse(
+    val body: String,
+    val oauthScopes: Set<String>,
+    val acceptedScopes: Set<String>,
+    val rateLimitRemaining: Long?,
+    val rateLimitResetEpochMillis: Long?,
+)
 
 private const val HEX_DIGITS = "0123456789abcdef"
 

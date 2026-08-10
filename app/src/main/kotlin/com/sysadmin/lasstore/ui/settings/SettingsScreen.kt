@@ -51,10 +51,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.sysadmin.lasstore.data.DEFAULT_GITHUB_TOPIC
 import com.sysadmin.lasstore.data.DEFAULT_GITHUB_USER
 import com.sysadmin.lasstore.data.GitHubSource
 import com.sysadmin.lasstore.data.normalizeSources
+import com.sysadmin.lasstore.data.validateSources
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 
 @Composable
@@ -69,7 +73,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         )
     }
 
-    val normalizedSources = normalizeSources(drafts.map { it.toSource() })
+    val draftSources = drafts.map { it.toSource() }
+    val validationError = validateSources(draftSources)
+    val normalizedSources = normalizeSources(draftSources)
     val sourcePats = drafts
         .mapNotNull { draft ->
             if (draft.user.isBlank()) null else draft.toSource().key to draft.pat
@@ -134,6 +140,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                             mutableListOf(SourceDraft())
                         }
                     },
+                    connection = state.connectionChecks[source.toSource().key],
+                    onTestConnection = { viewModel.testConnection(source.user, source.pat) },
                 )
             }
         }
@@ -154,13 +162,21 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
             Text("Add GitHub source")
         }
 
+        validationError?.let { error ->
+            SettingsError(text = error)
+        }
+        state.saveError?.let { error ->
+            SettingsError(text = error)
+        }
+
         Button(
             onClick = {
                 viewModel.save(
-                    sources = normalizedSources,
+                    sources = draftSources,
                     sourcePats = sourcePats,
                 )
             },
+            enabled = validationError == null && !state.saving,
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(vertical = 14.dp),
             colors = ButtonDefaults.buttonColors(
@@ -174,7 +190,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 modifier = Modifier.size(19.dp),
             )
             Spacer(Modifier.width(8.dp))
-            Text("Save source registry")
+            Text(if (state.saving) "Saving source registry…" else "Save source registry")
         }
 
         if (state.savedAt > 0L) {
@@ -192,6 +208,23 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun SettingsError(text: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = Catppuccin.Red.copy(alpha = 0.08f),
+        border = BorderStroke(1.dp, Catppuccin.Red.copy(alpha = 0.3f)),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = Catppuccin.Red,
+            modifier = Modifier.padding(13.dp),
+        )
     }
 }
 
@@ -287,6 +320,8 @@ private fun SourceEditor(
     canRemove: Boolean,
     onChange: (SourceDraft) -> Unit,
     onRemove: () -> Unit,
+    connection: ConnectionCheckState?,
+    onTestConnection: () -> Unit,
 ) {
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedTextColor = Catppuccin.TextStrong,
@@ -394,12 +429,34 @@ private fun SourceEditor(
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 supportingText = {
-                    Text("Optional · unlocks private repos and higher API limits.")
+                    Text(
+                        "Optional · unlocks private repos and higher API limits. " +
+                            "Renaming carries this token; removing the source deletes its override on save.",
+                    )
                 },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 colors = fieldColors,
             )
+
+            OutlinedButton(
+                onClick = onTestConnection,
+                enabled = source.user.trim().isNotBlank() && connection?.running != true,
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, Catppuccin.StrokeBright),
+                contentPadding = PaddingValues(vertical = 11.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Catppuccin.MauveStrong),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CloudSync,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(if (connection?.running == true) "Testing connection…" else "Test connection")
+            }
+
+            connection?.let { ConnectionFeedback(it) }
 
             HorizontalDivider(color = Catppuccin.Stroke)
 
@@ -428,6 +485,55 @@ private fun SourceEditor(
                 onChange = { onChange(source.copy(showPrereleases = it)) },
             )
         }
+    }
+}
+
+@Composable
+private fun ConnectionFeedback(state: ConnectionCheckState) {
+    state.error?.let { error ->
+        Text(
+            text = error,
+            style = MaterialTheme.typography.bodySmall,
+            color = Catppuccin.Red,
+        )
+    }
+    state.result?.let { result ->
+        val access = when {
+            result.authenticatedLogin == null ->
+                "Owner is reachable. No token supplied, so private access was not checked."
+            result.authenticatedOwnerAccess ->
+                "Authenticated as ${result.authenticatedLogin}; access to ${result.requestedOwner} confirmed."
+            else ->
+                "Authenticated as ${result.authenticatedLogin}; no repositories for " +
+                    "${result.requestedOwner} were returned."
+        }
+        Text(
+            text = access,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (result.authenticatedOwnerAccess || result.authenticatedLogin == null) {
+                Catppuccin.Mint
+            } else {
+                Catppuccin.Peach
+            },
+        )
+        val scopes = result.tokenScopes.takeIf { it.isNotEmpty() }?.joinToString().orEmpty()
+        Text(
+            text = "Scopes: ${scopes.ifBlank { "not exposed by GitHub" }}",
+            style = MaterialTheme.typography.bodySmall,
+            color = Catppuccin.Subtext,
+        )
+    }
+    val remaining = state.result?.rateLimitRemaining ?: state.rateLimitRemaining
+    val reset = state.result?.rateLimitResetEpochMillis ?: state.rateLimitResetEpochMillis
+    if (remaining != null || reset != null) {
+        val resetText = reset?.let {
+            SimpleDateFormat("MMM d, HH:mm z", Locale.US).format(Date(it))
+        } ?: "unknown"
+        Text(
+            text = "Rate budget: ${remaining ?: "unknown"} remaining · resets $resetText",
+            style = MaterialTheme.typography.bodySmall,
+            color = Catppuccin.Subtext,
+        )
     }
 }
 

@@ -36,4 +36,17 @@ class AppSettingsTest {
     fun normalizeSourcesKeepsDefaultWhenEverythingIsBlank() {
         assertEquals(listOf(GitHubSource()), normalizeSources(listOf(GitHubSource(user = ""))))
     }
+
+    @Test
+    fun validateSourcesRejectsBlankAndDuplicateIdentitiesBeforeNormalization() {
+        assertEquals(
+            "Enter a GitHub user or organization for source 2.",
+            validateSources(listOf(GitHubSource(user = "alice"), GitHubSource(user = " "))),
+        )
+        assertTrue(
+            validateSources(
+                listOf(GitHubSource(user = "Alice"), GitHubSource(user = " alice ")),
+            )?.contains("listed more than once") == true,
+        )
+    }
 }

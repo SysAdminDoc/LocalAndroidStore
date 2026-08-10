@@ -18,6 +18,20 @@ class SecretSnapshotTest {
     }
 
     @Test
+    fun replacingSourcePatsPurgesRemovedSourcesInOneSnapshot() {
+        val snapshot = SecretSnapshot(
+            globalPat = "global",
+            sourcePats = mapOf("old-owner" to "old", "kept" to "old-kept"),
+        ).replaceSourcePats(
+            sourcePats = mapOf("renamed" to " new-token ", "old-owner" to "stale"),
+            activeSourceKeys = setOf("renamed"),
+        )
+
+        assertEquals("global", snapshot.globalPat)
+        assertEquals(mapOf("renamed" to "new-token"), snapshot.sourcePats)
+    }
+
+    @Test
     fun pinsCanBeAddedAndRemovedWithoutTouchingTokens() {
         val snapshot = SecretSnapshot(globalPat = "pat")
             .withPin("com.example.app", "abc123")
