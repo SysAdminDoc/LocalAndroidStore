@@ -7,6 +7,7 @@ import android.net.Uri
 import com.sysadmin.lasstore.data.ApkMetadata
 import com.sysadmin.lasstore.data.Logger
 import com.sysadmin.lasstore.data.ServiceLocator
+import com.sysadmin.lasstore.data.signerMatchesVerifiedArtifact
 import com.sysadmin.lasstore.domain.AppInfo
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -303,6 +304,14 @@ internal object ForegroundInstallFinalizer {
         val metadata = operation.metadata ?: return false
         val installed = ServiceLocator.installState.info(metadata.applicationId) ?: return false
         if (installed.versionCode != metadata.versionCode) return false
+        if (!signerMatchesVerifiedArtifact(installed.currentSignerSha256, metadata.signingSha256)) {
+            logger.warn(
+                "Installer",
+                "Refusing to reconcile ${metadata.applicationId}: installed signer does not " +
+                    "match the verified APK metadata",
+            )
+            return false
+        }
         val synthetic = Intent()
             .putExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_SUCCESS)
         return handleTerminal(

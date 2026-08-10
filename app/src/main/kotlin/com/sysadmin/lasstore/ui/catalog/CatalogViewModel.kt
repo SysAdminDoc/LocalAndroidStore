@@ -11,6 +11,7 @@ import com.sysadmin.lasstore.data.ApkInspectionResult
 import com.sysadmin.lasstore.data.ApkMetadata
 import com.sysadmin.lasstore.data.DeveloperVerificationNotice
 import com.sysadmin.lasstore.data.ServiceLocator
+import com.sysadmin.lasstore.data.signerMatchesPin
 import com.sysadmin.lasstore.domain.AppInfo
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.domain.CatalogDiscoveryResult
@@ -284,48 +285,81 @@ class CatalogViewModel : ViewModel() {
                     sl.appIdCache.reconcileInstalled(
                         entry = it,
                         installed = installed,
-                        pinnedSignerSha256 = sl.secrets.getPin(installed.applicationId),
                     )
                 }
-                val inspected = reconciled?.inspectedRelease
-                    ?.takeIf { it.asset == com.sysadmin.lasstore.data.ReleaseAssetIdentity.from(info) }
-                val hydratedInfo = info.copy(
-                    applicationId = applicationId,
-                    versionCode = inspected?.versionCode,
-                    versionName = inspected?.versionName ?: info.versionName,
-                )
-                val relation = reconciled?.let {
-                    classifyReleaseVersion(hydratedInfo, it, installed.versionCode)
-                } ?: ReleaseVersionRelation.UninspectedRelease
-                val status = when {
-                    relation == ReleaseVersionRelation.InstalledAsset -> CardStatus.Installed
-                    relation == ReleaseVersionRelation.Upgrade && isIgnored -> CardStatus.Installed
-                    relation == ReleaseVersionRelation.Upgrade -> CardStatus.UpdateAvailable
-                    relation == ReleaseVersionRelation.SameVersionRelease ->
-                        CardStatus.ReinstallAvailable
-                    relation == ReleaseVersionRelation.Downgrade ->
-                        CardStatus.DowngradeAvailable
-                    relation == ReleaseVersionRelation.PackageMismatch -> CardStatus.Error
-                    else -> CardStatus.ReleaseAvailable
+                val pinnedSignerSha256 = sl.secrets.getPin(installed.applicationId)
+                if (!signerMatchesPin(installed.currentSignerSha256, pinnedSignerSha256)) {
+                    CardState(
+                        info = info.copy(applicationId = applicationId),
+                        status = CardStatus.SignatureMismatch,
+                        installedVersion = installed.versionName,
+                        installedVersionCode = installed.versionCode,
+                        isIgnored = isIgnored,
+                        message = "Installed publisher key does not match LocalAndroidStore's " +
+                            "trust pin. Review the installed signer before updating.",
+                    )
+                } else {
+                    val inspected = reconciled?.inspectedRelease
+                        ?.takeIf { it.asset == com.sysadmin.lasstore.data.ReleaseAssetIdentity.from(info) }
+                    val hydratedInfo = info.copy(
+                        applicationId = applicationId,
+                        versionCode = inspected?.versionCode,
+                        versionName = inspected?.versionName ?: info.versionName,
+                    )
+                    val relation = reconciled?.let {
+                        classifyReleaseVersion(hydratedInfo, it, installed.versionCode)
+                    } ?: ReleaseVersionRelation.UninspectedRelease
+                    val status = when {
+                        relation == ReleaseVersionRelation.InstalledAsset -> CardStatus.Installed
+                        relation == ReleaseVersionRelation.Upgrade && isIgnored -> CardStatus.Installed
+                        relation == ReleaseVersionRelation.Upgrade -> CardStatus.UpdateAvailable
+                        relation == ReleaseVersionRelation.SameVersionRelease ->
+                            CardStatus.ReinstallAvailable
+                        relation == ReleaseVersionRelation.Downgrade ->
+                            CardStatus.DowngradeAvailable
+                        relation == ReleaseVersionRelation.PackageMismatch -> CardStatus.Error
+                        else -> CardStatus.ReleaseAvailable
+                    }
+                    CardState(
+                        info = hydratedInfo,
+                        status = status,
+                        installedVersion = installed.versionName,
+                        installedVersionCode = installed.versionCode,
+                        isIgnored = isIgnored,
+                        message = if (relation == ReleaseVersionRelation.PackageMismatch) {
+                            "Release package ${inspected?.applicationId} does not match $applicationId."
+                        } else {
+                            null
+                        },
+                    )
                 }
-                CardState(
-                    info = hydratedInfo,
-                    status = status,
-                    installedVersion = installed.versionName,
-                    installedVersionCode = installed.versionCode,
-                    isIgnored = isIgnored,
-                    message = if (relation == ReleaseVersionRelation.PackageMismatch) {
-                        "Release package ${inspected?.applicationId} does not match $applicationId."
-                    } else {
-                        null
-                    },
-                )
             }
         }
         return withForegroundInstallState(withQueuedUpdateStatus(baseState))
     }
 
     fun install(card: CardState) {
+        val cachedApplicationId = card.info.applicationId ?: sl.appIdCache.get(
+            card.info.sourceKey,
+            card.info.owner,
+            card.info.repo,
+        )?.applicationId
+        val liveInstalled = cachedApplicationId?.let(sl.installState::info)
+        if (
+            liveInstalled != null &&
+            !signerMatchesPin(
+                currentSignerSha256 = liveInstalled.currentSignerSha256,
+                pinnedSignerSha256 = sl.secrets.getPin(liveInstalled.applicationId),
+            )
+        ) {
+            _state.update {
+                it.copy(
+                    warning = "Installation blocked: the installed publisher key does not match " +
+                        "LocalAndroidStore's trust pin. Review the installed signer first.",
+                )
+            }
+            return
+        }
         if (!sl.installer.canRequestInstalls()) {
             _state.update { it.copy(warning = "Grant 'Install unknown apps' first.") }
             sl.installer.openInstallPermissionSettings()
@@ -724,8 +758,18 @@ class CatalogViewModel : ViewModel() {
             card.info.repo,
         )
         val applicationId = card.info.applicationId ?: cached?.applicationId
-        if (applicationId == null || sl.installState.info(applicationId) == null) {
+        val installed = applicationId?.let(sl.installState::info)
+        if (applicationId == null || installed == null) {
             _state.update { it.copy(warning = "Queue is only available for installed apps.") }
+            return
+        }
+        if (!signerMatchesPin(installed.currentSignerSha256, sl.secrets.getPin(applicationId))) {
+            _state.update {
+                it.copy(
+                    warning = "Queue blocked: the installed publisher key does not match " +
+                        "LocalAndroidStore's trust pin.",
+                )
+            }
             return
         }
         val queuedInfo = card.info.copy(applicationId = applicationId)
@@ -868,6 +912,20 @@ class CatalogViewModel : ViewModel() {
 
     fun open(card: CardState) {
         val applicationId = card.info.applicationId ?: return
+        val installed = sl.installState.info(applicationId)
+        if (installed == null) {
+            _state.update { it.copy(warning = "$applicationId is no longer installed.") }
+            return
+        }
+        if (!signerMatchesPin(installed.currentSignerSha256, sl.secrets.getPin(applicationId))) {
+            _state.update {
+                it.copy(
+                    warning = "Opening blocked: the installed publisher key does not match " +
+                        "LocalAndroidStore's trust pin.",
+                )
+            }
+            return
+        }
         if (!sl.installer.launch(applicationId)) {
             _state.update { it.copy(warning = "Couldn't launch $applicationId — no exported launcher activity?") }
         }

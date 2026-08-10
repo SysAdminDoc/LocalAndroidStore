@@ -78,11 +78,12 @@ class AppIdCacheInstrumentedTest {
                 applicationId = "com.example.a",
                 versionName = "11",
                 versionCode = 11,
+                currentSignerSha256 = "CC",
             ),
-            pinnedSignerSha256 = "AA",
         )
 
         assertEquals(11L, reconciled.installedVersionCode)
+        assertEquals("CC", reconciled.installedSignerSha256)
         assertNull(reconciled.installedAsset)
     }
 

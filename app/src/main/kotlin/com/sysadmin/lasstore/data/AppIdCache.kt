@@ -144,14 +144,13 @@ class AppIdCache(context: Context) {
     fun reconcileInstalled(
         entry: AppIdEntry,
         installed: InstalledInfo,
-        pinnedSignerSha256: String?,
     ): AppIdEntry {
         val sameRecordedVersion = entry.installedVersionCode == installed.versionCode
         val reconciled = entry.copy(
             applicationId = installed.applicationId,
             installedVersionCode = installed.versionCode,
             installedVersionName = installed.versionName,
-            installedSignerSha256 = pinnedSignerSha256 ?: entry.installedSignerSha256,
+            installedSignerSha256 = installed.currentSignerSha256,
             installedAsset = entry.installedAsset.takeIf { sameRecordedVersion },
         )
         if (reconciled != entry) put(reconciled)
@@ -160,12 +159,12 @@ class AppIdCache(context: Context) {
 
     @Synchronized
     internal fun put(entry: AppIdEntry) {
-        prefs.edit()
+        check(prefs.edit()
             .putString(
                 recordKey(entry.sourceKey, entry.owner, entry.repo),
                 json.encodeToString(entry),
             )
-            .apply()
+            .commit()) { "Could not persist installed application identity" }
     }
 
     private fun recordKey(sourceKey: String, owner: String, repo: String): String =

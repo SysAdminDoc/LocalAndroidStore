@@ -11,6 +11,16 @@ data class InstalledInfo(
     val currentSignerSha256: String? = null,
 )
 
+/** A stored pin is a hard boundary: an unavailable or different current signer is not trusted. */
+internal fun signerMatchesPin(currentSignerSha256: String?, pinnedSignerSha256: String?): Boolean =
+    pinnedSignerSha256.isNullOrBlank() || currentSignerSha256 == pinnedSignerSha256
+
+/** Recovered installs must have an observed signer for the exact verified APK metadata. */
+internal fun signerMatchesVerifiedArtifact(
+    currentSignerSha256: String?,
+    expectedSignerSha256: String,
+): Boolean = expectedSignerSha256.isNotBlank() && currentSignerSha256 == expectedSignerSha256
+
 class InstallStateRepo(private val context: Context) {
     fun isInstalled(applicationId: String): Boolean = info(applicationId) != null
 
