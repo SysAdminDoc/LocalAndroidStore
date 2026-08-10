@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.os.Build
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -62,7 +63,10 @@ import com.sysadmin.lasstore.data.validateSources
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
+fun SettingsScreen(
+    viewModel: SettingsViewModel = viewModel(),
+    onOpenNotificationSettings: () -> Unit = {},
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     var drafts by remember(state.settings.sources, state.sourcePats) {
@@ -95,6 +99,10 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         SettingsHeader()
 
         SecurityPosture(encryptedAtRest = state.encryptedAtRest)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            NotificationPosture(onOpenSettings = onOpenNotificationSettings)
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -308,6 +316,42 @@ private fun SecurityPosture(encryptedAtRest: Boolean) {
                     style = MaterialTheme.typography.bodySmall,
                     color = Catppuccin.Subtext,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotificationPosture(onOpenSettings: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = Catppuccin.Surface1,
+        border = BorderStroke(1.dp, Catppuccin.Stroke),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Text(
+                text = "Background update notifications",
+                style = MaterialTheme.typography.titleSmall,
+                color = Catppuccin.TextStrong,
+            )
+            Text(
+                text = "Android may hide queued-update progress or results if notifications are off. " +
+                    "Foreground installs are unaffected.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Subtext,
+            )
+            OutlinedButton(
+                onClick = onOpenSettings,
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, Catppuccin.StrokeBright),
+                contentPadding = PaddingValues(vertical = 11.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Catppuccin.MauveStrong),
+            ) {
+                Text("Open Android notification settings")
             }
         }
     }

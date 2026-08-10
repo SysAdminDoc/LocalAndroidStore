@@ -807,7 +807,16 @@ class CatalogViewModel : ViewModel() {
     }
 
     /** Queue an installed update through UIDT/WorkManager and gentle PackageInstaller constraints. */
-    fun queueBackgroundUpdate(card: CardState) {
+    fun queueBackgroundUpdate(card: CardState, notificationsGranted: Boolean = true) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsGranted) {
+            _state.update {
+                it.copy(
+                    warning = "Background updates need notifications. Enable them in Settings; " +
+                        "foreground install remains available.",
+                )
+            }
+            return
+        }
         if (card.status != CardStatus.UpdateAvailable) {
             _state.update {
                 it.copy(warning = "Inspect the release and confirm it is a higher version first.")

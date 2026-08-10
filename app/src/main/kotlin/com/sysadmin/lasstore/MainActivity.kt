@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -16,9 +17,15 @@ import com.sysadmin.lasstore.ui.theme.LocalAndroidStoreTheme
 
 class MainActivity : ComponentActivity() {
 
+    private var notificationPermissionResult: ((Boolean) -> Unit)? = null
+
     private val requestNotifications = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* result is informational; we don't gate any UI on it */ }
+    ) { granted ->
+        val callback = notificationPermissionResult
+        notificationPermissionResult = null
+        callback?.invoke(granted)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,25 +33,35 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
-        maybeRequestNotificationsPermission()
         setContent {
             LocalAndroidStoreTheme {
-                AppRoot()
+                AppRoot(
+                    requestNotificationPermission = ::requestNotificationPermission,
+                    openNotificationSettings = ::openNotificationSettings,
+                )
             }
         }
     }
 
-    /**
-     * Android 13+ requires runtime permission for POST_NOTIFICATIONS. We use the channel
-     * for "update available" + "install complete" notifications when scheduled-update Workers
-     * land in v0.4. Asking now means the permission is in place by the time we need it.
-     */
-    private fun maybeRequestNotificationsPermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+    private fun requestNotificationPermission(callback: (Boolean) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            callback(true)
+            return
+        }
         val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
-        if (!granted) {
+        if (granted) {
+            callback(true)
+        } else {
+            notificationPermissionResult = callback
             requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    private fun openNotificationSettings() {
+        startActivity(
+            android.content.Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
+        )
     }
 }

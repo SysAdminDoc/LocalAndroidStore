@@ -64,7 +64,12 @@ import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 
 @Composable
-fun CatalogExperience(viewModel: CatalogViewModel = viewModel()) {
+fun CatalogExperience(
+    viewModel: CatalogViewModel = viewModel(),
+    onBeforeQueue: (CardState, (Boolean) -> Unit) -> Unit = { _, continueQueue ->
+        continueQueue(true)
+    },
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val visibleCards = remember(state.cards, state.searchQuery) {
         filterCards(state.cards, state.searchQuery)
@@ -156,7 +161,11 @@ fun CatalogExperience(viewModel: CatalogViewModel = viewModel()) {
                                 state = card,
                                 onInstall = { viewModel.install(card) },
                                 onUpdate = { viewModel.install(card) },
-                                onQueueUpdate = { viewModel.queueBackgroundUpdate(card) },
+                                onQueueUpdate = {
+                                    onBeforeQueue(card) { notificationsGranted ->
+                                        viewModel.queueBackgroundUpdate(card, notificationsGranted)
+                                    }
+                                },
                                 onCancelQueuedUpdate = { viewModel.cancelBackgroundUpdate(card) },
                                 onUninstall = { viewModel.uninstall(card) },
                                 onOpen = { viewModel.open(card) },

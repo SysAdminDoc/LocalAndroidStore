@@ -41,7 +41,10 @@ private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_LOG = "log"
 
 @Composable
-fun AppRoot() {
+fun AppRoot(
+    requestNotificationPermission: (((Boolean) -> Unit) -> Unit)? = null,
+    openNotificationSettings: () -> Unit = {},
+) {
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val current = backStack?.destination
@@ -73,8 +76,16 @@ fun AppRoot() {
                 .padding(padding)
                 .consumeWindowInsets(padding),
         ) {
-            composable(ROUTE_CATALOG) { CatalogExperience() }
-            composable(ROUTE_SETTINGS) { SettingsScreen() }
+            composable(ROUTE_CATALOG) {
+                CatalogExperience(
+                    onBeforeQueue = { _, continueQueue ->
+                        requestNotificationPermission?.invoke(continueQueue) ?: continueQueue(true)
+                    },
+                )
+            }
+            composable(ROUTE_SETTINGS) {
+                SettingsScreen(onOpenNotificationSettings = openNotificationSettings)
+            }
             composable(ROUTE_LOG) { LogScreen() }
         }
     }
