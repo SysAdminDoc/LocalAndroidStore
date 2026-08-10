@@ -22,6 +22,7 @@ data class ReleaseAssetIdentity(
     val downloadUrl: String,
     val size: Long,
     val prerelease: Boolean,
+    val digest: String? = null,
 ) {
     companion object {
         fun from(info: AppInfo) = ReleaseAssetIdentity(
@@ -31,6 +32,7 @@ data class ReleaseAssetIdentity(
             downloadUrl = info.asset.browserDownloadUrl,
             size = info.asset.size,
             prerelease = info.prerelease,
+            digest = info.asset.digest,
         )
     }
 }

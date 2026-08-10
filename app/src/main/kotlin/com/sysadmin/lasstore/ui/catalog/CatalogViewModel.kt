@@ -481,6 +481,7 @@ class CatalogViewModel : ViewModel() {
                     url = card.info.asset.browserDownloadUrl,
                     target = target,
                     patOverride = sl.settings.getPat(card.info.sourceKey),
+                    expectedDigest = card.info.asset.digest,
                 ) { d, t ->
                     val frac = if (t > 0) (d.toFloat() / t.toFloat()).coerceIn(0f, 1f) else 0f
                     updateCard(card.info) { it.copy(progress = frac, message = "Downloading… ${(frac * 100).toInt()}%") }
@@ -933,6 +934,7 @@ class CatalogViewModel : ViewModel() {
                     url = card.info.asset.browserDownloadUrl,
                     target = target,
                     patOverride = sl.settings.getPat(card.info.sourceKey),
+                    expectedDigest = card.info.asset.digest,
                 ) { d, t ->
                     val frac = if (t > 0) (d.toFloat() / t.toFloat()).coerceIn(0f, 1f) else 0f
                     updateCard(card.info) { it.copy(progress = frac, message = "Downloading… ${(frac * 100).toInt()}%") }

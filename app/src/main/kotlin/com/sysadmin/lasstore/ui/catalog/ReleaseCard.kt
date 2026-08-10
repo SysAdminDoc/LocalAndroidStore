@@ -64,6 +64,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.sysadmin.lasstore.data.normalizeSha256Digest
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import java.time.Instant
@@ -213,6 +214,15 @@ fun ReleaseCard(
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
+
+                if (normalizeSha256Digest(state.info.asset.digest) == null) {
+                    Text(
+                        text = "Integrity unavailable · GitHub did not publish a SHA-256 digest; " +
+                            "background updates are disabled.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Peach,
+                    )
+                }
 
                 if (
                     state.installedVersion != null &&

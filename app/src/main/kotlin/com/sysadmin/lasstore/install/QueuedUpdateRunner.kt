@@ -7,7 +7,10 @@ import android.content.pm.PackageInstaller
 import com.sysadmin.lasstore.data.ApkInspectionResult
 import com.sysadmin.lasstore.data.GitHubFailureKind
 import com.sysadmin.lasstore.data.GitHubRequestException
+import com.sysadmin.lasstore.data.InvalidReleaseAssetDigestException
+import com.sysadmin.lasstore.data.ReleaseAssetDigestMismatchException
 import com.sysadmin.lasstore.data.ServiceLocator
+import com.sysadmin.lasstore.data.normalizeSha256Digest
 import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.IOException
@@ -48,6 +51,12 @@ internal object QueuedUpdateFailureClassifier {
                 retryAtEpochMillis = throwable.retryAtEpochMillis,
             )
         }
+        is ReleaseAssetDigestMismatchException,
+        is InvalidReleaseAssetDigestException ->
+            QueuedUpdateResult.Failed(
+                throwable.message ?: "Release asset integrity verification failed.",
+                QueuedUpdateFailureKind.InvalidArtifact,
+            )
         is SocketTimeoutException ->
             QueuedUpdateResult.Failed("Network request timed out.", QueuedUpdateFailureKind.Timeout)
         is UnknownHostException,
@@ -95,6 +104,12 @@ object QueuedUpdateRunner {
         ServiceLocator.init(context.applicationContext)
         val sl = ServiceLocator
         val info = payload.toAppInfo()
+        if (normalizeSha256Digest(payload.assetDigest) == null) {
+            val message = "Queued update blocked; GitHub did not publish a valid SHA-256 digest " +
+                "for this release asset"
+            sl.logger.warn("QueuedUpdate", message)
+            return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.InvalidArtifact)
+        }
         if (!sl.installer.canRequestInstalls()) {
             val message = "Install unknown apps permission is not granted"
             sl.logger.warn("QueuedUpdate", message)
@@ -118,6 +133,7 @@ object QueuedUpdateRunner {
                 url = payload.assetUrl,
                 target = target,
                 patOverride = sl.settings.getPat(payload.sourceKey),
+                expectedDigest = payload.assetDigest,
                 onProgress = onProgress,
             )
 

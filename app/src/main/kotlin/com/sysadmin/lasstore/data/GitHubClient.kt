@@ -22,6 +22,7 @@ import java.io.File
 import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import javax.net.ssl.SSLHandshakeException
 import java.util.Locale
 import kotlin.math.min
@@ -47,6 +48,31 @@ class GitHubRequestException(
 
 class NetworkUnavailableException :
     IOException("No validated internet connection is available.")
+
+class InvalidReleaseAssetDigestException(
+    val suppliedDigest: String,
+) : IOException("GitHub published an unsupported release asset digest.")
+
+class ReleaseAssetDigestMismatchException(
+    val expectedDigest: String,
+    val actualDigest: String,
+) : IOException(
+    "Downloaded release asset failed GitHub SHA-256 verification " +
+        "(expected=$expectedDigest, actual=$actualDigest).",
+)
+
+/** Returns lowercase SHA-256 hex, accepting GitHub's `sha256:` form. */
+fun normalizeSha256Digest(value: String?): String? {
+    val trimmed = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val hex = if (trimmed.startsWith("sha256:", ignoreCase = true)) {
+        trimmed.substring("sha256:".length)
+    } else {
+        trimmed
+    }
+    return hex.takeIf {
+        it.length == 64 && it.all { character -> character.lowercaseChar() in HEX_DIGITS }
+    }?.lowercase(Locale.US)
+}
 
 interface GitHubGateway {
     suspend fun listUserRepos(
@@ -101,6 +127,7 @@ data class GhAsset(
     @SerialName("browser_download_url") val browserDownloadUrl: String,
     val size: Long = 0,
     @SerialName("content_type") val contentType: String = "",
+    val digest: String? = null,
 )
 
 class GitHubClient(
@@ -192,10 +219,18 @@ class GitHubClient(
         url: String,
         target: File,
         patOverride: String? = null,
+        expectedDigest: String? = null,
         onProgress: (downloaded: Long, total: Long) -> Unit,
     ): File {
         ensureNetworkAvailable()
         val initialUrl = validateDownloadUrl(url)
+        val expectedSha256 = expectedDigest
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { supplied ->
+                normalizeSha256Digest(supplied)
+                    ?: throw InvalidReleaseAssetDigestException(supplied)
+            }
         target.parentFile?.mkdirs()
         val partial = File("${target.absolutePath}.part")
         partial.delete()
@@ -263,26 +298,38 @@ class GitHubClient(
                                     )
                                 }
                                 partial.sink().buffer().use { sink: BufferedSink ->
-                                    body.source().use { source ->
-                                        val buffer = okio.Buffer()
+                                    body.byteStream().use { source ->
+                                        val buffer = ByteArray(DOWNLOAD_BUFFER_BYTES)
+                                        val digest = expectedSha256?.let {
+                                            MessageDigest.getInstance("SHA-256")
+                                        }
                                         var downloaded = 0L
                                         var lastReport = 0L
                                         while (true) {
-                                            val count = source.read(buffer, 64 * 1024L)
-                                            if (count == -1L) break
-                                            if (downloaded > maxDownloadBytes - count) {
+                                            val count = source.read(buffer)
+                                            if (count == -1) break
+                                            val countLong = count.toLong()
+                                            if (downloaded > maxDownloadBytes - countLong) {
                                                 throw IOException(
                                                     "Release asset exceeds the ${maxDownloadBytes / (1024 * 1024)} MiB limit",
                                                 )
                                             }
-                                            sink.write(buffer, count)
-                                            downloaded += count
+                                            digest?.update(buffer, 0, count)
+                                            sink.write(buffer, 0, count)
+                                            downloaded += countLong
                                             if (downloaded - lastReport > 64 * 1024L) {
                                                 onProgress(downloaded, total)
                                                 lastReport = downloaded
                                             }
                                         }
                                         onProgress(downloaded, total)
+                                        val actualSha256 = digest?.digest()?.toHex()
+                                        if (expectedSha256 != null && actualSha256 != expectedSha256) {
+                                            throw ReleaseAssetDigestMismatchException(
+                                                expectedDigest = expectedSha256,
+                                                actualDigest = actualSha256.orEmpty(),
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -472,6 +519,7 @@ class GitHubClient(
     }
 
     companion object {
+        private const val DOWNLOAD_BUFFER_BYTES = 64 * 1024
         private const val MAX_DOWNLOAD_BYTES = 200L * 1024L * 1024L
         private const val MAX_DOWNLOAD_REDIRECTS = 5
         private const val MAX_ATTEMPTS = 3
@@ -491,5 +539,15 @@ class GitHubClient(
             .readTimeout(60, TimeUnit.SECONDS)
             .callTimeout(120, TimeUnit.SECONDS)
             .build()
+    }
+}
+
+private const val HEX_DIGITS = "0123456789abcdef"
+
+private fun ByteArray.toHex(): String = buildString(size * 2) {
+    for (byte in this@toHex) {
+        val value = byte.toInt() and 0xff
+        append(HEX_DIGITS[value ushr 4])
+        append(HEX_DIGITS[value and 0x0f])
     }
 }

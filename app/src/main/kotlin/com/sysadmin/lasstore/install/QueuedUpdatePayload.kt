@@ -28,6 +28,7 @@ data class QueuedUpdatePayload(
     val assetContentType: String,
     val publishedAt: String?,
     val prerelease: Boolean,
+    val assetDigest: String? = null,
 ) {
     val workName: String get() = "queued-update-$sourceKey-$owner-$repo"
 
@@ -50,6 +51,7 @@ data class QueuedUpdatePayload(
             browserDownloadUrl = assetUrl,
             size = assetSize,
             contentType = assetContentType,
+            digest = assetDigest,
         ),
         publishedAt = publishedAt,
         prerelease = prerelease,
@@ -77,6 +79,7 @@ data class QueuedUpdatePayload(
         KEY_ASSET_URL to assetUrl,
         KEY_ASSET_SIZE to assetSize,
         KEY_ASSET_CONTENT_TYPE to assetContentType,
+        KEY_ASSET_DIGEST to assetDigest.orEmpty(),
         KEY_PUBLISHED_AT to publishedAt.orEmpty(),
         KEY_PRERELEASE to prerelease,
     )
@@ -98,6 +101,7 @@ data class QueuedUpdatePayload(
         putExtra(KEY_ASSET_URL, assetUrl)
         putExtra(KEY_ASSET_SIZE, assetSize)
         putExtra(KEY_ASSET_CONTENT_TYPE, assetContentType)
+        putExtra(KEY_ASSET_DIGEST, assetDigest.orEmpty())
         putExtra(KEY_PUBLISHED_AT, publishedAt.orEmpty())
         putExtra(KEY_PRERELEASE, prerelease)
     }
@@ -119,6 +123,7 @@ data class QueuedUpdatePayload(
         bundle.putString(KEY_ASSET_URL, assetUrl)
         bundle.putLong(KEY_ASSET_SIZE, assetSize)
         bundle.putString(KEY_ASSET_CONTENT_TYPE, assetContentType)
+        bundle.putString(KEY_ASSET_DIGEST, assetDigest.orEmpty())
         bundle.putString(KEY_PUBLISHED_AT, publishedAt.orEmpty())
         bundle.putBoolean(KEY_PRERELEASE, prerelease)
     }
@@ -143,6 +148,7 @@ data class QueuedUpdatePayload(
             assetContentType = info.asset.contentType,
             publishedAt = info.publishedAt,
             prerelease = info.prerelease,
+            assetDigest = info.asset.digest,
         )
 
         fun from(bundle: PersistableBundle): QueuedUpdatePayload? {
@@ -174,6 +180,7 @@ data class QueuedUpdatePayload(
                 assetContentType = bundle.getString(KEY_ASSET_CONTENT_TYPE).orEmpty(),
                 publishedAt = bundle.getString(KEY_PUBLISHED_AT).blankToNull(),
                 prerelease = bundle.getBoolean(KEY_PRERELEASE),
+                assetDigest = bundle.getString(KEY_ASSET_DIGEST).blankToNull(),
             )
         }
 
@@ -206,6 +213,7 @@ data class QueuedUpdatePayload(
                 assetContentType = data.getString(KEY_ASSET_CONTENT_TYPE).orEmpty(),
                 publishedAt = data.getString(KEY_PUBLISHED_AT).blankToNull(),
                 prerelease = data.getBoolean(KEY_PRERELEASE, false),
+                assetDigest = data.getString(KEY_ASSET_DIGEST).blankToNull(),
             )
         }
 
@@ -238,6 +246,7 @@ data class QueuedUpdatePayload(
                 assetContentType = intent.getStringExtra(KEY_ASSET_CONTENT_TYPE).orEmpty(),
                 publishedAt = intent.getStringExtra(KEY_PUBLISHED_AT).blankToNull(),
                 prerelease = intent.getBooleanExtra(KEY_PRERELEASE, false),
+                assetDigest = intent.getStringExtra(KEY_ASSET_DIGEST).blankToNull(),
             )
         }
     }
@@ -329,6 +338,7 @@ private const val KEY_ASSET_NAME = "asset_name"
 private const val KEY_ASSET_URL = "asset_url"
 private const val KEY_ASSET_SIZE = "asset_size"
 private const val KEY_ASSET_CONTENT_TYPE = "asset_content_type"
+private const val KEY_ASSET_DIGEST = "asset_digest"
 private const val KEY_PUBLISHED_AT = "published_at"
 private const val KEY_PRERELEASE = "prerelease"
 

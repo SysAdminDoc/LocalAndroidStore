@@ -3,6 +3,7 @@ package com.sysadmin.lasstore.data
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.cancelAndJoin
@@ -314,6 +315,46 @@ class GitHubClientTest {
         Unit
     }
 
+    @Test
+    fun downloadAcceptsAssetWhenGitHubSha256DigestMatches() = runBlocking {
+        val body = "verified-release"
+        server.enqueue(MockResponse().setResponseCode(200).setBody(body))
+        val directory = Files.createTempDirectory("las-download-digest-match").toFile()
+        val target = File(directory, "release.apk")
+
+        client().download(
+            url = server.url("/release.apk").toString(),
+            target = target,
+            expectedDigest = "sha256:${sha256(body)}",
+        ) { _, _ -> }
+
+        assertEquals(body, target.readText())
+        assertFalse(File("${target.absolutePath}.part").exists())
+        directory.deleteRecursively()
+        Unit
+    }
+
+    @Test
+    fun downloadDeletesArtifactWhenGitHubSha256DigestDoesNotMatch() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("tampered-release"))
+        val directory = Files.createTempDirectory("las-download-digest-mismatch").toFile()
+        val target = File(directory, "release.apk")
+
+        val failure = runCatching {
+            client().download(
+                url = server.url("/release.apk").toString(),
+                target = target,
+                expectedDigest = "sha256:${sha256("expected-release")}",
+            ) { _, _ -> }
+        }.exceptionOrNull()
+
+        assertTrue(failure is ReleaseAssetDigestMismatchException)
+        assertFalse(target.exists())
+        assertFalse(File("${target.absolutePath}.part").exists())
+        directory.deleteRecursively()
+        Unit
+    }
+
     private fun client(
         cache: GitHubResponseCacheStore? = null,
         retryDelay: suspend (Long) -> Unit = {},
@@ -342,6 +383,11 @@ class GitHubClientTest {
     }
 
     private companion object {
+        fun sha256(value: String): String = MessageDigest
+            .getInstance("SHA-256")
+            .digest(value.toByteArray())
+            .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+
         fun repositoryJson(name: String) = """
             {
               "name":"$name",

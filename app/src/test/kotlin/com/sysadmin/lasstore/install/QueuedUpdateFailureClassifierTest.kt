@@ -3,6 +3,7 @@ package com.sysadmin.lasstore.install
 import android.content.pm.PackageInstaller
 import com.sysadmin.lasstore.data.GitHubFailureKind
 import com.sysadmin.lasstore.data.GitHubRequestException
+import com.sysadmin.lasstore.data.ReleaseAssetDigestMismatchException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import org.junit.Assert.assertEquals
@@ -72,5 +73,18 @@ class QueuedUpdateFailureClassifierTest {
 
         assertTrue(timeout.retryable)
         assertEquals(QueuedUpdateFailureKind.Timeout, timeout.kind)
+    }
+
+    @Test
+    fun assetDigestFailureIsTerminalInvalidArtifact() {
+        val failure = QueuedUpdateFailureClassifier.fromThrowable(
+            ReleaseAssetDigestMismatchException(
+                expectedDigest = "expected",
+                actualDigest = "actual",
+            )
+        )
+
+        assertFalse(failure.retryable)
+        assertEquals(QueuedUpdateFailureKind.InvalidArtifact, failure.kind)
     }
 }
