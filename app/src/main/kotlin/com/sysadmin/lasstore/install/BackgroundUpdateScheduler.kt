@@ -39,7 +39,11 @@ class BackgroundUpdateScheduler(
 ) {
     fun enqueue(info: AppInfo): Boolean {
         val payload = QueuedUpdatePayload.from(info)
-        com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus.markQueued(payload)
+        val statusStore = com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus
+        statusStore.get(payload)
+            ?.packageInstallerSessionId
+            ?.let(com.sysadmin.lasstore.data.ServiceLocator.installer::abandonSession)
+        statusStore.markQueued(payload)
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
             backgroundUpdateTransportForApi() == BackgroundUpdateTransport.UserInitiatedJob
@@ -60,8 +64,13 @@ class BackgroundUpdateScheduler(
     }
 
     fun cancel(info: AppInfo) {
-        val payload = QueuedUpdatePayload.from(info)
-        com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus
+        val statusStore = com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus
+        val current = statusStore.get(info.sourceKey, info.owner, info.repo)
+        val payload = QueuedUpdatePayload.from(
+            info = info,
+            generationId = current?.generationId ?: QueuedUpdatePayload.newGenerationId(),
+        )
+        statusStore
             .get(payload)
             ?.packageInstallerSessionId
             ?.let(com.sysadmin.lasstore.data.ServiceLocator.installer::abandonSession)
@@ -69,7 +78,7 @@ class BackgroundUpdateScheduler(
             context.getSystemService(JobScheduler::class.java).cancel(jobIdFor(payload))
         }
         WorkManager.getInstance(context).cancelUniqueWork(payload.workName)
-        com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus.markCancelled(payload)
+        statusStore.markCancelled(payload)
         logger.info("QueuedUpdate", "Cancelled queued update for ${payload.owner}/${payload.repo}")
     }
 

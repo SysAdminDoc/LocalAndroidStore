@@ -55,6 +55,7 @@ data class QueuedUpdateStatus(
     val retryAtEpochMillis: Long? = null,
     val failureKind: QueuedUpdateFailureKind? = null,
     val packageInstallerSessionId: Int? = null,
+    val generationId: String = "",
 ) {
     val isPending: Boolean
         get() = phase == QueuedUpdatePhase.Queued ||
@@ -82,24 +83,30 @@ class QueuedUpdateStatusStore(context: Context) {
                 it.repo.equals(repo, ignoreCase = true)
         }
 
+    fun isCurrent(payload: QueuedUpdatePayload): Boolean = synchronized(LOCK) {
+        val status = currentStatusLocked(payload) ?: return@synchronized false
+        status.generationId.isBlank() || status.generationId == payload.generationId
+    }
+
     fun markQueued(payload: QueuedUpdatePayload) {
         save(
             payload,
             phase = QueuedUpdatePhase.Queued,
             attempt = 0,
             message = "Queued for a gentle background update.",
+            allowGenerationReplacement = true,
         )
     }
 
     fun beginAttempt(payload: QueuedUpdatePayload): Int {
         val attempt = ((get(payload)?.attempt ?: 0) + 1).coerceAtMost(MAX_ATTEMPTS + 1)
-        save(
+        val saved = save(
             payload,
             phase = QueuedUpdatePhase.Running,
             attempt = attempt,
             message = "Background update attempt $attempt of $MAX_ATTEMPTS.",
         )
-        return attempt
+        return if (saved) attempt else STALE_ATTEMPT
     }
 
     fun markRetrying(
@@ -158,19 +165,34 @@ class QueuedUpdateStatusStore(context: Context) {
         )
     }
 
+    fun markInstallerSession(
+        payload: QueuedUpdatePayload,
+        attempt: Int,
+        packageInstallerSessionId: Int,
+    ): Boolean {
+        val current = get(payload) ?: return false
+        return save(
+            payload = payload,
+            phase = current.phase,
+            attempt = attempt,
+            message = current.message,
+            retryAtEpochMillis = current.retryAtEpochMillis,
+            failureKind = current.failureKind,
+            packageInstallerSessionId = packageInstallerSessionId,
+        )
+    }
+
     fun markAwaitingInstall(
         payload: QueuedUpdatePayload,
         attempt: Int,
         packageInstallerSessionId: Int,
-    ) {
-        save(
+    ): Boolean = save(
             payload,
             phase = QueuedUpdatePhase.Queued,
             attempt = attempt,
             message = "Download verified; waiting for Android's gentle install constraints.",
             packageInstallerSessionId = packageInstallerSessionId,
         )
-    }
 
     fun shouldDeferForRateLimit(payload: QueuedUpdatePayload): Boolean =
         get(payload)?.retryAtEpochMillis?.let { it > System.currentTimeMillis() } == true
@@ -193,7 +215,9 @@ class QueuedUpdateStatusStore(context: Context) {
         retryAtEpochMillis: Long? = null,
         failureKind: QueuedUpdateFailureKind? = null,
         packageInstallerSessionId: Int? = null,
-    ) = synchronized(LOCK) {
+        allowGenerationReplacement: Boolean = false,
+    ): Boolean = synchronized(LOCK) {
+        if (!allowGenerationReplacement && !isCurrentLocked(payload)) return@synchronized false
         val status = QueuedUpdateStatus(
             workName = payload.workName,
             sourceKey = payload.sourceKey,
@@ -208,12 +232,22 @@ class QueuedUpdateStatusStore(context: Context) {
             retryAtEpochMillis = retryAtEpochMillis,
             failureKind = failureKind,
             packageInstallerSessionId = packageInstallerSessionId,
+            generationId = payload.generationId,
         )
         check(prefs.edit().putString(key(payload.workName), json.encodeToString(status)).commit()) {
             "Could not persist queued update status"
         }
         _statuses.value = load()
+        true
     }
+
+    private fun isCurrentLocked(payload: QueuedUpdatePayload): Boolean {
+        val status = currentStatusLocked(payload) ?: return false
+        return status.generationId.isBlank() || status.generationId == payload.generationId
+    }
+
+    private fun currentStatusLocked(payload: QueuedUpdatePayload): QueuedUpdateStatus? =
+        _statuses.value.firstOrNull { it.workName == payload.workName }
 
     private fun load(): List<QueuedUpdateStatus> = prefs.all
         .filterKeys { it.startsWith(KEY_PREFIX) }
@@ -229,6 +263,7 @@ class QueuedUpdateStatusStore(context: Context) {
 
     companion object {
         const val MAX_ATTEMPTS = 3
+        const val STALE_ATTEMPT = -1
         private const val PREFS_NAME = "queued_update_status"
         private const val KEY_PREFIX = "status."
         private val LOCK = Any()

@@ -14,8 +14,10 @@ class QueuedUpdateWorker(
         val payload = QueuedUpdatePayload.from(inputData) ?: return Result.failure()
         ServiceLocator.init(applicationContext)
         val statusStore = ServiceLocator.queuedUpdateStatus
+        if (!statusStore.isCurrent(payload)) return Result.success()
         if (statusStore.shouldDeferForRateLimit(payload)) return Result.retry()
         val attempt = statusStore.beginAttempt(payload)
+        if (attempt == QueuedUpdateStatusStore.STALE_ATTEMPT) return Result.success()
         if (attempt > QueuedUpdateStatusStore.MAX_ATTEMPTS) {
             statusStore.markFailed(
                 payload,
@@ -31,6 +33,7 @@ class QueuedUpdateWorker(
             context = applicationContext,
             payload = payload,
             useInstallConstraints = false,
+            attempt = attempt,
             onProgress = { downloaded, total ->
                 setProgressAsync(
                     workDataOf(
@@ -45,8 +48,11 @@ class QueuedUpdateWorker(
                 statusStore.markInstalled(payload)
                 Result.success()
             }
+            QueuedUpdateResult.Stale -> Result.success()
             is QueuedUpdateResult.Queued -> {
-                statusStore.markAwaitingInstall(payload, attempt, result.sessionId)
+                if (!statusStore.markAwaitingInstall(payload, attempt, result.sessionId)) {
+                    ServiceLocator.installer.abandonSession(result.sessionId)
+                }
                 Result.success()
             }
             is QueuedUpdateResult.Failed -> {

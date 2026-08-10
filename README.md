@@ -46,7 +46,7 @@ That's what this is.
 - **Developer Verification preflight** — installs separately report whether a Google verification surface is present, that package registration is **Unknown** (Android exposes no status capability to this app), and that LocalAndroidStore's direct sideload route is outside the initial participating-store enforcement beginning 2026-09-30. The advisory links to Google's official guidance.
 - **Version-aware installed state** — source-scoped records retain package, manifest version, signer, and GitHub asset identity. A tag or asset change is shown as a new release until its APK is inspected; only a higher manifest `versionCode` becomes an update, while equal-code reinstalls and lower-code downgrades require explicit actions.
 - **GitHub PATs (optional)** — source-specific tokens bump API rate limits from 60 → 5,000/hr and unlock private repos for that source. Stored in a Tink AEAD-encrypted app-private file, with the keyset protected by the Android Keystore.
-- **Activity log + crash log** — every download, install, uninstall, and crash is logged in-app and to disk at `<app files dir>/logs/crash.log`.
+- **Durable device journal + redacted support export** — runtime diagnostics, install/trust decisions, and crash evidence are separate restart-safe streams with independent clear controls. A bounded ZIP can be shared without PATs, authorization headers, credential-bearing URLs, signing secrets, or installed-app inventory.
 - **Async everywhere** — the UI never blocks on a download or an API call.
 
 ---
@@ -105,7 +105,10 @@ There is no opinionated topic filter unless you turn one on — your own user / 
 
 | Path | Purpose |
 | --- | --- |
-| `<files-dir>/logs/crash.log` | On-disk crash log |
+| `<files-dir>/logs/diagnostics.log[.1]` | Bounded, redacted runtime diagnostics |
+| `<files-dir>/logs/install.log[.1]` | Bounded install, uninstall, and publisher-trust audit |
+| `<files-dir>/logs/crash.log[.1]` | Bounded handled and uncaught failure evidence |
+| `<cache-dir>/support/` | Latest user-requested redacted support ZIP |
 | `<files-dir>/catalog/http/` | ETag-tagged GitHub response cache |
 | `<files-dir>/catalog/snapshots/` | Dated per-source offline catalog snapshots |
 | `<cache-dir>/apks/` | Downloaded APKs (transient, OS-cleanable) |
@@ -133,7 +136,9 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 │   ├── SecretStore.kt         Tink AEAD secret file for PAT + per-package signing pins
 │   ├── AppSettings.kt         Source settings model + normalization
 │   ├── SettingsStore.kt       DataStore Preferences for non-secret settings
-│   ├── Logger.kt              In-memory + on-disk log with crash handler
+│   ├── Logger.kt              Restart-safe bounded diagnostics + crash evidence
+│   ├── InstallAuditLog.kt     Durable install and publisher-trust decisions
+│   ├── SupportBundle.kt       Allowlisted, bounded, redacted ZIP export
 │   └── ServiceLocator.kt      Hand-rolled DI, init from App.onCreate()
 ├── domain/
 │   ├── AppInfo.kt             Discovered model + CardStatus enum
@@ -153,6 +158,8 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 The signature-pin store is keyed by `applicationId`. Before the installer or permission-review step, `ApkInspector` asks `apksig` to verify the exact downloaded bytes across the app's API 26+ support window. Verification must report a supported v1/v2/v3/v3.1 scheme, exactly one current certificate, no errors, and—when present—a valid proof-of-rotation lineage ending at that certificate. Android's archive parser must independently return the same current signer and a valid package id. Only metadata carrying that verified evidence can enroll or roll forward a pin after a successful install; the secret store also rejects incomplete fingerprints.
 
 An unrelated publisher key is never accepted automatically. The recovery surface is intentionally separate from installation: it re-reads the live pin and installed signer, requires exact typed package confirmation plus a second independent-verification acknowledgement, writes authorization and completion events to the install audit, replaces only the local pin, and requires the APK to pass the full download/inspection flow again.
+
+The manifest retains `QUERY_ALL_PACKAGES` for one narrow compatibility reason: catalog APKs can be arbitrary headless packages without launcher activities, while their package IDs are discovered at runtime. `InstallStateRepo` validates and queries only the specific package ID needed for a catalog card or install-ownership check; it does not enumerate installed packages, and support exports exclude installed-app inventory. A launcher-only `<queries>` declaration would make those valid headless apps appear uninstalled on Android 11+.
 
 Developer Verification preflight runs after APK metadata inspection and before `PackageInstaller.Session.commit()`. It models verification-surface presence, registration status, and rollout applicability as separate facts. Registration remains `Unknown` because Android exposes no status capability to LocalAndroidStore. Google's [official FAQ](https://developer.android.com/developer-verification/guides/faq) says direct sideloads and stores outside its initial participating list are not subject to the 2026-09-30 regional phase; global rollout begins in 2027, with the exact date and future independent-store behavior still unpublished. The advisory is informational and never blocks installation.
 
@@ -223,7 +230,7 @@ LocalAndroidStore is in your trust boundary — once you grant it "Install unkno
 
 **What we're not in the business of:**
 
-- We don't ship telemetry. Crash logs are local only (`<files>/logs/crash.log` + `install.log`).
+- We don't ship telemetry. Diagnostics, install audit, and crash evidence stay local unless you explicitly use **Export redacted support bundle** from Activity.
 - We don't run silent installs. Stock Android doesn't allow it without device-owner status; the system dialog is unavoidable on first install of every catalog app. v0.4 will offer Shizuku as an opt-in tier-2 path.
 - We don't fetch a second APK at runtime. The APK staged for install is the APK published on GitHub Releases; nothing else.
 - We don't share your installed-app list with anyone.

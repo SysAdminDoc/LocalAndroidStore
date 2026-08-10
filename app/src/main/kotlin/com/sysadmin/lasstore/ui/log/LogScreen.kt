@@ -1,7 +1,9 @@
 package com.sysadmin.lasstore.ui.log
 
+import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
@@ -24,7 +27,11 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,28 +42,71 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sysadmin.lasstore.data.InstallAuditLog
 import com.sysadmin.lasstore.data.LogEntry
 import com.sysadmin.lasstore.data.LogLevel
 import com.sysadmin.lasstore.data.ServiceLocator
+import com.sysadmin.lasstore.data.SupportBundleExporter
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private enum class JournalCategory(
+    val label: String,
+    val description: String,
+) {
+    Diagnostics(
+        label = "Diagnostics",
+        description = "Recent runtime, network, and workflow events.",
+    ),
+    InstallAudit(
+        label = "Install audit",
+        description = "Durable install, uninstall, and trust decisions.",
+    ),
+    CrashEvidence(
+        label = "Crash evidence",
+        description = "Durable handled and uncaught failure details.",
+    ),
+}
 
 @Composable
 fun LogScreen() {
-    val entries by ServiceLocator.logger.entries.collectAsStateWithLifecycle()
-    val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.US) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val diagnostics by ServiceLocator.logger.entries.collectAsStateWithLifecycle()
+    val auditEntries by ServiceLocator.audit.entries.collectAsStateWithLifecycle()
+    val crashEntries by ServiceLocator.logger.crashEntries.collectAsStateWithLifecycle()
+    var category by rememberSaveable { mutableStateOf(JournalCategory.Diagnostics) }
+    var showClearConfirmation by rememberSaveable { mutableStateOf(false) }
+    var exporting by remember { mutableStateOf(false) }
+    var exportStatus by remember { mutableStateOf<String?>(null) }
+    val entries = when (category) {
+        JournalCategory.Diagnostics -> diagnostics
+        JournalCategory.InstallAudit -> auditEntries.map(InstallAuditLog.Entry::asLogEntry)
+        JournalCategory.CrashEvidence -> crashEntries
+    }
+    val counts = mapOf(
+        JournalCategory.Diagnostics to diagnostics.size,
+        JournalCategory.InstallAudit to auditEntries.size,
+        JournalCategory.CrashEvidence to crashEntries.size,
+    )
+    val timeFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US) }
     val warningCount = entries.count { it.level == LogLevel.Warn }
     val errorCount = entries.count { it.level == LogLevel.Error }
 
@@ -67,8 +117,62 @@ fun LogScreen() {
     ) {
         ActivityHeader(
             hasEntries = entries.isNotEmpty(),
-            onClear = ServiceLocator.logger::clear,
+            exporting = exporting,
+            onExport = {
+                if (!exporting) {
+                    exporting = true
+                    exportStatus = null
+                    scope.launch {
+                        runCatching {
+                            withContext(Dispatchers.IO) {
+                                val exporter = SupportBundleExporter(context)
+                                val bundle = exporter.create()
+                                Intent.createChooser(
+                                    exporter.shareIntent(bundle),
+                                    "Share redacted support bundle",
+                                )
+                            }
+                        }.onSuccess { chooser ->
+                            context.startActivity(chooser)
+                            exportStatus = "Redacted support bundle is ready to share."
+                        }.onFailure {
+                            exportStatus = "Support export failed: ${it.message ?: "unknown error"}"
+                        }
+                        exporting = false
+                    }
+                }
+            },
+            onClear = { showClearConfirmation = true },
         )
+
+        JournalTabs(
+            selected = category,
+            counts = counts,
+            onSelected = {
+                category = it
+                exportStatus = null
+            },
+        )
+
+        Text(
+            text = category.description,
+            style = MaterialTheme.typography.bodySmall,
+            color = Catppuccin.Subtext,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+        )
+
+        exportStatus?.let { status ->
+            Text(
+                text = status,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (status.startsWith("Support export failed")) {
+                    Catppuccin.Red
+                } else {
+                    Catppuccin.Green
+                },
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            )
+        }
 
         ActivityMetrics(
             total = entries.size,
@@ -77,7 +181,7 @@ fun LogScreen() {
         )
 
         if (entries.isEmpty()) {
-            EmptyActivity()
+            EmptyActivity(category)
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -91,7 +195,7 @@ fun LogScreen() {
             ) {
                 items(
                     items = entries.reversed(),
-                    key = { "${it.ts}-${it.tag}-${it.message.hashCode()}" },
+                    key = { "${category.name}-${it.ts}-${it.tag}-${it.message.hashCode()}" },
                 ) { entry ->
                     ActivityEntry(
                         entry = entry,
@@ -101,11 +205,44 @@ fun LogScreen() {
             }
         }
     }
+
+    if (showClearConfirmation) {
+        val copy = category.clearCopy()
+        AlertDialog(
+            onDismissRequest = { showClearConfirmation = false },
+            title = { Text(copy.first) },
+            text = { Text(copy.second) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        when (category) {
+                            JournalCategory.Diagnostics ->
+                                ServiceLocator.logger.clearDiagnostics()
+                            JournalCategory.InstallAudit ->
+                                ServiceLocator.audit.clear()
+                            JournalCategory.CrashEvidence ->
+                                ServiceLocator.logger.clearCrashEvidence()
+                        }
+                        showClearConfirmation = false
+                    },
+                ) {
+                    Text(copy.first)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirmation = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 }
 
 @Composable
 private fun ActivityHeader(
     hasEntries: Boolean,
+    exporting: Boolean,
+    onExport: () -> Unit,
     onClear: () -> Unit,
 ) {
     Column(
@@ -141,20 +278,60 @@ private fun ActivityHeader(
                     color = Catppuccin.TextStrong,
                 )
                 Text(
-                    text = "Local install, update, and security events.",
+                    text = "Inspect local evidence or export a redacted support bundle.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Catppuccin.Subtext,
                 )
+            }
+            IconButton(
+                onClick = onExport,
+                enabled = !exporting,
+            ) {
+                if (exporting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Export redacted support bundle",
+                        tint = Catppuccin.Sapphire,
+                    )
+                }
             }
             if (hasEntries) {
                 IconButton(onClick = onClear) {
                     Icon(
                         imageVector = Icons.Default.DeleteSweep,
-                        contentDescription = "Clear activity",
+                        contentDescription = "Clear selected journal",
                         tint = Catppuccin.Subtext,
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun JournalTabs(
+    selected: JournalCategory,
+    counts: Map<JournalCategory, Int>,
+    onSelected: (JournalCategory) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        JournalCategory.entries.forEach { category ->
+            FilterChip(
+                selected = selected == category,
+                onClick = { onSelected(category) },
+                label = { Text("${category.label} ${counts[category] ?: 0}") },
+            )
         }
     }
 }
@@ -238,7 +415,7 @@ private fun ActivityMetric(
 }
 
 @Composable
-private fun EmptyActivity() {
+private fun EmptyActivity(category: JournalCategory) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -263,15 +440,18 @@ private fun EmptyActivity() {
                 )
             }
             Text(
-                text = "The journal is quiet",
+                text = when (category) {
+                    JournalCategory.Diagnostics -> "No diagnostics recorded"
+                    JournalCategory.InstallAudit -> "No install decisions recorded"
+                    JournalCategory.CrashEvidence -> "No crash evidence recorded"
+                },
                 style = MaterialTheme.typography.titleLarge,
                 color = Catppuccin.TextStrong,
             )
             Text(
-                text = "Downloads, installs, update checks, and security decisions will appear here.",
+                text = category.description,
                 style = MaterialTheme.typography.bodyMedium,
                 color = Catppuccin.Subtext,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
         }
     }
@@ -366,7 +546,11 @@ private fun ActivityEntry(
                         contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
                     ) {
                         Icon(
-                            imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            imageVector = if (expanded) {
+                                Icons.Default.ExpandLess
+                            } else {
+                                Icons.Default.ExpandMore
+                            },
                             contentDescription = null,
                             modifier = Modifier.size(17.dp),
                         )
@@ -377,4 +561,48 @@ private fun ActivityEntry(
             }
         }
     }
+}
+
+private fun InstallAuditLog.Entry.asLogEntry(): LogEntry = LogEntry(
+    ts = ts,
+    level = when (event) {
+        "install_failed" -> LogLevel.Error
+        "install_blocked",
+        "developer_verification_warned",
+        "publisher_pin_recovery_authorized",
+        -> LogLevel.Warn
+        else -> LogLevel.Info
+    },
+    tag = applicationId.ifBlank { source.ifBlank { "Install" } },
+    message = buildString {
+        append(event.replace('_', ' '))
+        if (source.isNotBlank()) append("\nSource: $source")
+        if (tagName.isNotBlank()) append("\nRelease: $tagName")
+        if (!versionName.isNullOrBlank() || versionCode != null) {
+            append("\nVersion: ${versionName.orEmpty()} (${versionCode ?: "unknown"})")
+        }
+        if (reason.isNotBlank()) append("\nReason: $reason")
+        if (message.isNotBlank()) append("\nMessage: $message")
+        if (certSha256.isNotBlank()) append("\nSigner: $certSha256")
+        if (previousCertSha256.isNotBlank()) append("\nPrevious signer: $previousCertSha256")
+        if (installedCertSha256.isNotBlank()) append("\nInstalled signer: $installedCertSha256")
+        if (verifiedSignatureSchemes.isNotEmpty()) {
+            append("\nVerified schemes: ${verifiedSignatureSchemes.joinToString()}")
+        }
+    },
+)
+
+private fun JournalCategory.clearCopy(): Pair<String, String> = when (this) {
+    JournalCategory.Diagnostics ->
+        "Clear diagnostics" to
+            "Remove recent runtime diagnostics from memory and local diagnostic files. " +
+            "Install audit and crash evidence stay."
+    JournalCategory.InstallAudit ->
+        "Clear install audit" to
+            "Delete local install, uninstall, and publisher-trust decision history. " +
+            "Diagnostics and crash evidence stay."
+    JournalCategory.CrashEvidence ->
+        "Clear crash evidence" to
+            "Delete handled and uncaught failure evidence from local crash files. " +
+            "Diagnostics and install audit stay."
 }

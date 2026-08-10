@@ -274,6 +274,8 @@ class PackageInstallerService(
         firstInstall: Boolean,
         referrerUri: Uri?,
         resultData: Intent,
+        operationId: String? = null,
+        onSessionCreated: (Int) -> Unit = {},
     ): InstallResult {
         val pi = context.packageManager.packageInstaller
         val params = buildSessionParams(
@@ -287,12 +289,19 @@ class PackageInstallerService(
             logger.error("Installer", "createSession for constrained install failed", t)
             return InstallResult.Failure(t.message ?: "createSession failed")
         }
+        try {
+            onSessionCreated(sessionId)
+        } catch (t: Throwable) {
+            runCatching { pi.abandonSession(sessionId) }
+            return InstallResult.Failure(t.message ?: "install state persistence failed")
+        }
 
         val registration = try {
             resultRegistry.register(
                 sessionId = sessionId,
                 applicationId = applicationId,
                 route = InstallResultRoute.Queued,
+                operationId = operationId,
             )
         } catch (t: Throwable) {
             runCatching { pi.abandonSession(sessionId) }

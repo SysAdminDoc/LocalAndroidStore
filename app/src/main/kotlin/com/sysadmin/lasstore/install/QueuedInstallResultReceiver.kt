@@ -16,6 +16,14 @@ internal object QueuedInstallResultHandler {
             logger.warn("QueuedUpdate", "Install result missing queued update metadata")
             return
         }
+        if (!sl.queuedUpdateStatus.isCurrent(payload)) {
+            logger.info(
+                "QueuedUpdate",
+                "Ignoring stale install result for ${payload.owner}/${payload.repo} " +
+                    "generation ${payload.generationId}",
+            )
+            return
+        }
 
         val info = payload.toAppInfo().copy(applicationId = metadata.applicationId)
         val meta = metadata.toApkMetadata()
@@ -32,9 +40,11 @@ internal object QueuedInstallResultHandler {
             }
             PackageInstaller.STATUS_SUCCESS -> {
                 if (recordSuccess(payload, info, metadata, meta)) {
+                    if (!sl.queuedUpdateStatus.isCurrent(payload)) return
                     sl.queuedUpdateStatus.markInstalled(payload)
                     sl.logger.info("QueuedUpdate", "Installed ${metadata.applicationId} ${metadata.versionName.orEmpty()} after constraints")
                 } else {
+                    if (!sl.queuedUpdateStatus.isCurrent(payload)) return
                     sl.queuedUpdateStatus.markAuditPending(
                         payload,
                         sl.queuedUpdateStatus.get(payload)?.attempt ?: 1,
@@ -52,6 +62,7 @@ internal object QueuedInstallResultHandler {
             PackageInstaller.STATUS_FAILURE_STORAGE,
             PackageInstaller.STATUS_FAILURE_TIMEOUT -> {
                 val decoded = decodeFailure(context, status, message)
+                if (!sl.queuedUpdateStatus.isCurrent(payload)) return
                 sl.queuedUpdateStatus.markFailed(
                     payload,
                     sl.queuedUpdateStatus.get(payload)?.attempt ?: 1,
@@ -71,12 +82,14 @@ internal object QueuedInstallResultHandler {
         apkMetadata: com.sysadmin.lasstore.data.ApkMetadata,
     ): Boolean {
         val sl = ServiceLocator
+        if (!sl.queuedUpdateStatus.isCurrent(payload)) return false
         if (!sl.audit.installSuccessPending(info, apkMetadata)) {
             sl.logger.error("QueuedUpdate", "Could not write install-success pending audit evidence")
             return false
         }
         val previousPin = metadata.previousPinnedSha256
         val stateUpdate = runCatching {
+            check(sl.queuedUpdateStatus.isCurrent(payload)) { "Queued update was replaced" }
             if (!apkMetadata.isEligibleForPinEnrollment) {
                 sl.logger.error(
                     "QueuedUpdate",
@@ -94,6 +107,7 @@ internal object QueuedInstallResultHandler {
                 }
                 sl.logger.info("QueuedUpdate", "Rolled pin forward for ${metadata.applicationId}: $previousPin -> ${metadata.signingSha256}")
             }
+            check(sl.queuedUpdateStatus.isCurrent(payload)) { "Queued update was replaced" }
             sl.appIdCache.recordInstalled(payload.toAppInfo(), apkMetadata)
         }
         if (stateUpdate.isFailure) {

@@ -8,6 +8,7 @@ import com.sysadmin.lasstore.data.ApkMetadata
 import com.sysadmin.lasstore.data.ApkSignatureScheme
 import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.domain.AppInfo
+import java.util.UUID
 
 data class QueuedUpdatePayload(
     val owner: String,
@@ -29,6 +30,7 @@ data class QueuedUpdatePayload(
     val publishedAt: String?,
     val prerelease: Boolean,
     val assetDigest: String? = null,
+    val generationId: String = "",
 ) {
     val workName: String get() = "queued-update-$sourceKey-$owner-$repo"
 
@@ -80,6 +82,7 @@ data class QueuedUpdatePayload(
         KEY_ASSET_SIZE to assetSize,
         KEY_ASSET_CONTENT_TYPE to assetContentType,
         KEY_ASSET_DIGEST to assetDigest.orEmpty(),
+        KEY_GENERATION_ID to generationId,
         KEY_PUBLISHED_AT to publishedAt.orEmpty(),
         KEY_PRERELEASE to prerelease,
     )
@@ -102,6 +105,7 @@ data class QueuedUpdatePayload(
         putExtra(KEY_ASSET_SIZE, assetSize)
         putExtra(KEY_ASSET_CONTENT_TYPE, assetContentType)
         putExtra(KEY_ASSET_DIGEST, assetDigest.orEmpty())
+        putExtra(KEY_GENERATION_ID, generationId)
         putExtra(KEY_PUBLISHED_AT, publishedAt.orEmpty())
         putExtra(KEY_PRERELEASE, prerelease)
     }
@@ -124,12 +128,16 @@ data class QueuedUpdatePayload(
         bundle.putLong(KEY_ASSET_SIZE, assetSize)
         bundle.putString(KEY_ASSET_CONTENT_TYPE, assetContentType)
         bundle.putString(KEY_ASSET_DIGEST, assetDigest.orEmpty())
+        bundle.putString(KEY_GENERATION_ID, generationId)
         bundle.putString(KEY_PUBLISHED_AT, publishedAt.orEmpty())
         bundle.putBoolean(KEY_PRERELEASE, prerelease)
     }
 
     companion object {
-        fun from(info: AppInfo): QueuedUpdatePayload = QueuedUpdatePayload(
+        fun from(
+            info: AppInfo,
+            generationId: String = newGenerationId(),
+        ): QueuedUpdatePayload = QueuedUpdatePayload(
             owner = info.owner,
             repo = info.repo,
             sourceKey = info.sourceKey,
@@ -149,6 +157,7 @@ data class QueuedUpdatePayload(
             publishedAt = info.publishedAt,
             prerelease = info.prerelease,
             assetDigest = info.asset.digest,
+            generationId = generationId,
         )
 
         fun from(bundle: PersistableBundle): QueuedUpdatePayload? {
@@ -181,6 +190,7 @@ data class QueuedUpdatePayload(
                 publishedAt = bundle.getString(KEY_PUBLISHED_AT).blankToNull(),
                 prerelease = bundle.getBoolean(KEY_PRERELEASE),
                 assetDigest = bundle.getString(KEY_ASSET_DIGEST).blankToNull(),
+                generationId = bundle.getString(KEY_GENERATION_ID).orEmpty(),
             )
         }
 
@@ -214,6 +224,7 @@ data class QueuedUpdatePayload(
                 publishedAt = data.getString(KEY_PUBLISHED_AT).blankToNull(),
                 prerelease = data.getBoolean(KEY_PRERELEASE, false),
                 assetDigest = data.getString(KEY_ASSET_DIGEST).blankToNull(),
+                generationId = data.getString(KEY_GENERATION_ID).orEmpty(),
             )
         }
 
@@ -247,8 +258,11 @@ data class QueuedUpdatePayload(
                 publishedAt = intent.getStringExtra(KEY_PUBLISHED_AT).blankToNull(),
                 prerelease = intent.getBooleanExtra(KEY_PRERELEASE, false),
                 assetDigest = intent.getStringExtra(KEY_ASSET_DIGEST).blankToNull(),
+                generationId = intent.getStringExtra(KEY_GENERATION_ID).orEmpty(),
             )
         }
+
+        fun newGenerationId(): String = UUID.randomUUID().toString()
     }
 }
 
@@ -339,6 +353,7 @@ private const val KEY_ASSET_URL = "asset_url"
 private const val KEY_ASSET_SIZE = "asset_size"
 private const val KEY_ASSET_CONTENT_TYPE = "asset_content_type"
 private const val KEY_ASSET_DIGEST = "asset_digest"
+private const val KEY_GENERATION_ID = "generation_id"
 private const val KEY_PUBLISHED_AT = "published_at"
 private const val KEY_PRERELEASE = "prerelease"
 

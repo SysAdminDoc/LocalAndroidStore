@@ -21,6 +21,7 @@ import java.net.UnknownHostException
 
 sealed interface QueuedUpdateResult {
     data object Installed : QueuedUpdateResult
+    data object Stale : QueuedUpdateResult
     data class Queued(val sessionId: Int) : QueuedUpdateResult
     data class Failed(
         val message: String,
@@ -99,11 +100,13 @@ object QueuedUpdateRunner {
         context: Context,
         payload: QueuedUpdatePayload,
         useInstallConstraints: Boolean,
+        attempt: Int = 0,
         onProgress: (downloaded: Long, total: Long) -> Unit = { _, _ -> },
     ): QueuedUpdateResult {
         ServiceLocator.init(context.applicationContext)
         val sl = ServiceLocator
         val info = payload.toAppInfo()
+        if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
         if (normalizeSha256Digest(payload.assetDigest) == null) {
             val message = "Queued update blocked; GitHub did not publish a valid SHA-256 digest " +
                 "for this release asset"
@@ -124,10 +127,12 @@ object QueuedUpdateRunner {
             sl.logger.warn("QueuedUpdate", message)
             return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.Policy)
         }
+        if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
 
         val cacheDir = File(sl.appContext.cacheDir, "apks").apply { mkdirs() }
         val target = File(cacheDir, "${payload.owner}_${payload.repo}_${payload.tagName}_queued.apk")
         return try {
+            if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
             sl.logger.info("QueuedUpdate", "Downloading ${payload.owner}/${payload.repo} ${payload.tagName}")
             sl.github.download(
                 url = payload.assetUrl,
@@ -136,6 +141,7 @@ object QueuedUpdateRunner {
                 expectedDigest = payload.assetDigest,
                 onProgress = onProgress,
             )
+            if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
 
             val meta = when (val inspection = sl.apkInspector.inspectResult(target)) {
                 is ApkInspectionResult.Verified -> inspection.metadata
@@ -156,8 +162,10 @@ object QueuedUpdateRunner {
                     )
                 }
             }
+            if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
             val hydratedInfo = info.copy(applicationId = meta.applicationId)
             if (meta.applicationId != applicationId) {
+                if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
                 sl.audit.installBlocked(hydratedInfo, meta, "application_id_changed")
                 return QueuedUpdateResult.Failed(
                     "Downloaded APK package changed from $applicationId to ${meta.applicationId}",
@@ -169,12 +177,14 @@ object QueuedUpdateRunner {
             val lineageRotationAccepted = pinned != null && pinned != meta.signingSha256 && pinned in meta.lineageSha256
             val pinAccepted = pinned.isNullOrEmpty() || pinned == meta.signingSha256 || lineageRotationAccepted
             if (!pinAccepted) {
+                if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
                 sl.audit.installBlocked(hydratedInfo, meta, "signature_pin_mismatch")
                 val message = "Publisher key changed for ${meta.applicationId}; queued update blocked"
                 sl.logger.warn("QueuedUpdate", message)
                 return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.Signature)
             }
 
+            if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
             sl.appIdCache.recordInspected(info, meta)
             if (meta.versionCode <= installedInfo.versionCode) {
                 val relation = if (meta.versionCode == installedInfo.versionCode) {
@@ -185,6 +195,7 @@ object QueuedUpdateRunner {
                 val message = "Queued update stopped: inspected APK is a $relation " +
                     "(${meta.versionCode} vs installed ${installedInfo.versionCode}); " +
                     "foreground confirmation is required"
+                if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
                 sl.audit.installBlocked(hydratedInfo, meta, "queued_non_upgrade")
                 sl.logger.warn("QueuedUpdate", message)
                 return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.Policy)
@@ -192,18 +203,21 @@ object QueuedUpdateRunner {
 
             val newDangerousPerms = PermissionDiff.newDangerousPermissions(sl.appContext, meta)
             if (newDangerousPerms.isNotEmpty()) {
+                if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
                 sl.audit.installBlocked(hydratedInfo, meta, "permission_review_required")
                 val message = "Queued update requires permission review: ${newDangerousPerms.joinToString()}"
                 sl.logger.warn("QueuedUpdate", message)
                 return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.PermissionReview)
             }
 
+            if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
             sl.developerVerification.evaluate(meta).let { notice ->
                 sl.audit.developerVerificationWarned(hydratedInfo, meta, notice.reason)
                 sl.logger.warn("QueuedUpdate", "Developer Verification advisory for ${meta.applicationId}: ${notice.reason}")
             }
 
             val referrerUri = Uri.parse(payload.assetUrl)
+            if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
             val result = if (useInstallConstraints && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 val resultData = QueuedInstallResultHandler.resultData(
                     payload.copy(applicationId = meta.applicationId),
@@ -215,6 +229,12 @@ object QueuedUpdateRunner {
                     firstInstall = false,
                     referrerUri = referrerUri,
                     resultData = resultData,
+                    operationId = payload.generationId,
+                    onSessionCreated = { sessionId ->
+                        check(
+                            sl.queuedUpdateStatus.markInstallerSession(payload, attempt, sessionId),
+                        ) { "Queued update was replaced before install session creation" }
+                    },
                 )
             } else {
                 sl.installer.installApk(
@@ -222,12 +242,26 @@ object QueuedUpdateRunner {
                     applicationId = meta.applicationId,
                     firstInstall = false,
                     referrerUri = referrerUri,
+                    operationId = payload.generationId,
+                    onSessionCreated = { sessionId ->
+                        check(
+                            sl.queuedUpdateStatus.markInstallerSession(payload, attempt, sessionId),
+                        ) { "Queued update was replaced before install session creation" }
+                    },
                 )
             }
 
+            if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
             when (result) {
                 InstallResult.Success -> {
-                    if (recordImmediateSuccess(hydratedInfo, meta, pinned, lineageRotationAccepted)) {
+                    if (recordImmediateSuccess(
+                            payload = payload,
+                            info = hydratedInfo,
+                            meta = meta,
+                            pinned = pinned,
+                            lineageRotationAccepted = lineageRotationAccepted,
+                        )
+                    ) {
                         sl.logger.info("QueuedUpdate", "Installed ${meta.applicationId} ${meta.versionName.orEmpty()}")
                         QueuedUpdateResult.Installed
                     } else {
@@ -242,6 +276,7 @@ object QueuedUpdateRunner {
                     QueuedUpdateResult.Queued(result.sessionId)
                 }
                 is InstallResult.Failure -> {
+                    if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
                     sl.audit.installFailed(hydratedInfo, meta, result.message)
                     QueuedUpdateFailureClassifier.fromInstaller(result.status, result.message)
                 }
@@ -271,17 +306,20 @@ object QueuedUpdateRunner {
     }
 
     private fun recordImmediateSuccess(
+        payload: QueuedUpdatePayload,
         info: com.sysadmin.lasstore.domain.AppInfo,
         meta: com.sysadmin.lasstore.data.ApkMetadata,
         pinned: String?,
         lineageRotationAccepted: Boolean,
     ): Boolean {
         val sl = ServiceLocator
+        if (!sl.queuedUpdateStatus.isCurrent(payload)) return false
         if (!sl.audit.installSuccessPending(info, meta)) {
             sl.logger.error("QueuedUpdate", "Could not write install-success pending audit evidence")
             return false
         }
         val stateUpdate = runCatching {
+            check(sl.queuedUpdateStatus.isCurrent(payload)) { "Queued update was replaced" }
             if (!meta.isEligibleForPinEnrollment) {
                 sl.logger.error(
                     "QueuedUpdate",
@@ -305,6 +343,7 @@ object QueuedUpdateRunner {
             sl.logger.error("QueuedUpdate", "Could not commit installed trust/cache state", stateUpdate.exceptionOrNull())
             return false
         }
+        if (!sl.queuedUpdateStatus.isCurrent(payload)) return false
         if (!sl.audit.installSucceeded(info, meta)) {
             sl.logger.error("QueuedUpdate", "Install success audit completion is pending")
             return false

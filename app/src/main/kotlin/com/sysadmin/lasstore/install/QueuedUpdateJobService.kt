@@ -32,6 +32,7 @@ class QueuedUpdateJobService : JobService() {
         }
         val statusStore = ServiceLocator.queuedUpdateStatus
         val attempt = statusStore.beginAttempt(payload)
+        if (attempt == QueuedUpdateStatusStore.STALE_ATTEMPT) return false
         if (attempt > QueuedUpdateStatusStore.MAX_ATTEMPTS) {
             statusStore.markFailed(
                 payload,
@@ -59,6 +60,7 @@ class QueuedUpdateJobService : JobService() {
                 context = applicationContext,
                 payload = payload,
                 useInstallConstraints = true,
+                attempt = attempt,
                 onProgress = { downloaded, total ->
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                         updateTransferredNetworkBytes(params, downloaded, 0L)
@@ -72,8 +74,12 @@ class QueuedUpdateJobService : JobService() {
                 attempt < QueuedUpdateStatusStore.MAX_ATTEMPTS
             when (result) {
                 QueuedUpdateResult.Installed -> statusStore.markInstalled(payload)
-                is QueuedUpdateResult.Queued ->
-                    statusStore.markAwaitingInstall(payload, attempt, result.sessionId)
+                QueuedUpdateResult.Stale -> Unit
+                is QueuedUpdateResult.Queued -> {
+                    if (!statusStore.markAwaitingInstall(payload, attempt, result.sessionId)) {
+                        ServiceLocator.installer.abandonSession(result.sessionId)
+                    }
+                }
                 is QueuedUpdateResult.Failed -> {
                     if (result.kind == QueuedUpdateFailureKind.AuditPending) {
                         statusStore.markAuditPending(payload, attempt, result.message)

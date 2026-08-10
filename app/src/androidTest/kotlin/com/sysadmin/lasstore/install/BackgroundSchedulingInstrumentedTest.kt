@@ -13,6 +13,7 @@ import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.domain.AppInfo
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -38,6 +39,7 @@ class BackgroundSchedulingInstrumentedTest {
             QueuedUpdateJobService::class.java.name,
             job.service.className,
         )
+        assertEquals(payload.generationId, job.extras.getString("generation_id"))
     }
 
     @Test
@@ -54,6 +56,10 @@ class BackgroundSchedulingInstrumentedTest {
                 .getWorkInfosForUniqueWork(payload.workName)
                 .get(10, TimeUnit.SECONDS)
             assertTrue(work.isNotEmpty())
+            assertEquals(
+                payload.generationId,
+                work.first().inputData.getString("generation_id"),
+            )
             assertTrue(
                 work.all {
                     it.state == WorkInfo.State.ENQUEUED ||
@@ -102,6 +108,45 @@ class BackgroundSchedulingInstrumentedTest {
             )
         } finally {
             manager.cancelWorkById(request.id).result.get(10, TimeUnit.SECONDS)
+        }
+    }
+
+    @Test
+    fun replacementGenerationIgnoresLateStatusWrites() {
+        ServiceLocator.init(context)
+        context.getSharedPreferences("queued_update_status", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
+        val oldPayload = QueuedUpdatePayload.from(appInfo(), generationId = "old-generation")
+        val newPayload = QueuedUpdatePayload.from(appInfo(), generationId = "new-generation")
+        val statusStore = ServiceLocator.queuedUpdateStatus
+
+        try {
+            statusStore.markQueued(oldPayload)
+            assertTrue(statusStore.isCurrent(oldPayload))
+
+            statusStore.markQueued(newPayload)
+            assertFalse(statusStore.isCurrent(oldPayload))
+            assertTrue(statusStore.isCurrent(newPayload))
+
+            statusStore.markFailed(
+                oldPayload,
+                attempt = 1,
+                failure = QueuedUpdateResult.Failed(
+                    "old attempt failed",
+                    QueuedUpdateFailureKind.Network,
+                ),
+            )
+            statusStore.markInstalled(oldPayload)
+
+            assertEquals(QueuedUpdatePhase.Queued, statusStore.get(newPayload)?.phase)
+            assertEquals("new-generation", statusStore.get(newPayload)?.generationId)
+        } finally {
+            context.getSharedPreferences("queued_update_status", Context.MODE_PRIVATE)
+                .edit()
+                .clear()
+                .commit()
         }
     }
 
