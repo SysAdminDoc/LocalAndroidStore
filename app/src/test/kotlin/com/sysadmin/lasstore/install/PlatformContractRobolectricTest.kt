@@ -26,6 +26,15 @@ class PlatformContractRobolectricTest {
         assertLegacyPlatformContract(expectedApi = 33)
     }
 
+    @Test
+    @Config(sdk = [32])
+    fun invalidPackageIdsAreRejectedBeforePackageManagerLookup() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+
+        assertNull(InstallStateRepo(context).info("not a package id"))
+        assertNull(InstallStateRepo(context).info("../com.example.app"))
+    }
+
     private fun assertLegacyPlatformContract(expectedApi: Int) {
         val context: Context = ApplicationProvider.getApplicationContext()
 

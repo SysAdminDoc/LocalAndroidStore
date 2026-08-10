@@ -5,6 +5,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!--
+        Catalog apps are arbitrary APKs and may not expose a launcher activity. The installed
+        state path therefore needs exact PackageManager lookups for dynamic application IDs;
+        launcher-only <queries> visibility would make valid headless catalog apps look absent.
+        InstallStateRepo validates and queries only the requested ID; it has no inventory API.
+    -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
     <!-- Android 14: claim update ownership for apps we install (normal protection, auto-granted) -->
@@ -16,12 +22,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Android 14+: user-initiated data-transfer update downloads -->
     <uses-permission android:name="android.permission.RUN_USER_INITIATED_JOBS" />
-
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.MAIN" />
-        </intent>
-    </queries>
 
     <application
         android:name=".App"

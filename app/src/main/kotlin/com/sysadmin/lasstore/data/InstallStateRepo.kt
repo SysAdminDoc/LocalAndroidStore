@@ -25,6 +25,7 @@ class InstallStateRepo(private val context: Context) {
     fun isInstalled(applicationId: String): Boolean = info(applicationId) != null
 
     fun info(applicationId: String): InstalledInfo? {
+        if (!PACKAGE_NAME_PATTERN.matches(applicationId)) return null
         val pm = context.packageManager
         return runCatching {
             val pkg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -63,5 +64,11 @@ class InstallStateRepo(private val context: Context) {
                 currentSignerSha256 = currentSigners.singleOrNull(),
             )
         }.getOrNull()
+    }
+
+    private companion object {
+        private val PACKAGE_NAME_PATTERN = Regex(
+            "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$",
+        )
     }
 }
