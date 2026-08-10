@@ -184,6 +184,7 @@ fun CatalogExperience(
                                         independentlyVerified = independentlyVerified,
                                     )
                                 },
+                                onSelectAsset = { asset -> viewModel.selectAsset(card, asset) },
                             )
                         }
                     }

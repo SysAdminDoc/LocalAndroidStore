@@ -101,6 +101,43 @@ class DiscoveryUseCaseTest {
     }
 
     @Test
+    fun discoveryExposesAmbiguousStandaloneAssetsForExplicitSelection() = runBlocking {
+        val gateway = object : GitHubGateway {
+            override suspend fun listUserRepos(
+                user: String,
+                patOverride: String?,
+                sourceKey: String,
+            ): List<GhRepo> = listOf(repo(user, "ambiguous"))
+
+            override suspend fun latestRelease(
+                owner: String,
+                repo: String,
+                includePrereleases: Boolean,
+                patOverride: String?,
+                sourceKey: String,
+            ): GhRelease = release(repo).copy(
+                assets = listOf(
+                    asset("ambiguous-universal-a.apk", size = 200),
+                    asset("ambiguous-universal-b.apk", size = 100),
+                ),
+            )
+        }
+
+        val result = DiscoveryUseCase(
+            github = gateway,
+            logger = null,
+            snapshots = MemorySnapshots(),
+        ).discover(listOf(GitHubSource(user = "alice")))
+
+        val app = result.apps.single()
+        assertEquals(
+            listOf("ambiguous-universal-a.apk", "ambiguous-universal-b.apk"),
+            app.assetChoices.map { it.name },
+        )
+        assertEquals("ambiguous-universal-a.apk", app.asset.name)
+    }
+
+    @Test
     fun failedSourceUsesDatedSnapshotWithoutDroppingSuccessfulSource() = runBlocking {
         val now = 2_000_000L
         val snapshots = MemorySnapshots().apply {
@@ -255,6 +292,33 @@ class DiscoveryUseCaseTest {
         )
 
         assertEquals("app-universal.apk", selected?.name)
+    }
+
+    @Test
+    fun assetClassifierRequiresSelectionForMultipleSameRankUniversalAssets() {
+        val assets = listOf(
+            asset("app-universal-a.apk", size = 200),
+            asset("app-universal-b.apk", size = 100),
+        )
+
+        val selection = ApkAssetClassifier.classify(assets, supportedAbis = listOf("arm64-v8a"))
+
+        assertTrue(selection is ApkAssetSelection.SelectionRequired)
+        assertEquals(assets, (selection as ApkAssetSelection.SelectionRequired).candidates)
+        assertEquals(null, ApkAssetClassifier.select(assets, supportedAbis = listOf("arm64-v8a")))
+    }
+
+    @Test
+    fun assetClassifierRequiresSelectionForMultipleSameAbiAssets() {
+        val assets = listOf(
+            asset("app-arm64-v8a-a.apk", size = 200),
+            asset("app-arm64-v8a-b.apk", size = 100),
+        )
+
+        val selection = ApkAssetClassifier.classify(assets, supportedAbis = listOf("arm64-v8a"))
+
+        assertTrue(selection is ApkAssetSelection.SelectionRequired)
+        assertEquals(assets, (selection as ApkAssetSelection.SelectionRequired).candidates)
     }
 
     @Test

@@ -44,6 +44,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -64,8 +65,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.normalizeSha256Digest
 import com.sysadmin.lasstore.domain.CardStatus
+import com.sysadmin.lasstore.domain.ApkAssetClassifier
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import java.time.Instant
 
@@ -85,6 +88,7 @@ fun ReleaseCard(
     onIgnore: () -> Unit,
     onSaveApk: () -> Unit,
     onReplacePublisherPin: (typedApplicationId: String, independentlyVerified: Boolean) -> Unit,
+    onSelectAsset: (GhAsset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val isStale = remember(state.info.publishedAt) {
@@ -94,6 +98,10 @@ fun ReleaseCard(
         published < System.currentTimeMillis() - 365L * 24 * 60 * 60 * 1000
     }
     var notesExpanded by rememberSaveable(state.info.handle) { mutableStateOf(false) }
+    var assetSelectionVisible by rememberSaveable(
+        state.info.handle,
+        state.info.assetChoices.size,
+    ) { mutableStateOf(false) }
     var trustRecoveryVisible by rememberSaveable(
         state.info.handle,
         state.publisherTrustDetails?.downloadedMetadata?.signingSha256,
@@ -101,6 +109,55 @@ fun ReleaseCard(
         mutableStateOf(false)
     }
     val cardShape = RoundedCornerShape(24.dp)
+
+    if (assetSelectionVisible) {
+        AlertDialog(
+            onDismissRequest = { assetSelectionVisible = false },
+            title = { Text("Choose APK variant") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text(
+                        text = "Several standalone APKs match this release. Choose the file " +
+                            "for your device before downloading.",
+                        color = Catppuccin.Subtext,
+                    )
+                    state.info.assetChoices.forEach { candidate ->
+                        TextButton(
+                            onClick = {
+                                assetSelectionVisible = false
+                                onSelectAsset(candidate)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    text = candidate.name,
+                                    color = Catppuccin.TextStrong,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "${ApkAssetClassifier.variantLabel(candidate.name)} · " +
+                                        formatAssetSize(candidate.size),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Catppuccin.Subtext,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { assetSelectionVisible = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
 
     if (trustRecoveryVisible) {
         state.publisherTrustDetails?.let { details ->
@@ -214,6 +271,14 @@ fun ReleaseCard(
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
+
+                if (state.info.assetChoices.size > 1) {
+                    Text(
+                        text = "Multiple compatible APKs require a choice before download.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Peach,
+                    )
+                }
 
                 if (normalizeSha256Digest(state.info.asset.digest) == null) {
                     Text(
@@ -384,6 +449,8 @@ fun ReleaseCard(
                         onReviewTrust = state.publisherTrustDetails?.let {
                             { trustRecoveryVisible = true }
                         },
+                        assetSelectionRequired = state.info.assetChoices.size > 1,
+                        onChooseAsset = { assetSelectionVisible = true },
                     )
                 }
             }
@@ -454,10 +521,23 @@ private fun PrimaryReleaseAction(
     onCancel: () -> Unit,
     onProceedPermissions: () -> Unit,
     onReviewTrust: (() -> Unit)?,
+    assetSelectionRequired: Boolean,
+    onChooseAsset: () -> Unit,
 ) {
     val modifier = Modifier
         .widthIn(min = 122.dp)
         .height(48.dp)
+
+    if (assetSelectionRequired) {
+        AccentButton(
+            text = "Choose APK",
+            icon = Icons.Default.Warning,
+            accent = Catppuccin.Peach,
+            onClick = onChooseAsset,
+            modifier = modifier,
+        )
+        return
+    }
 
     when (status) {
         CardStatus.NotInstalled -> {
@@ -578,6 +658,12 @@ private fun PrimaryReleaseAction(
             )
         }
     }
+}
+
+private fun formatAssetSize(bytes: Long): String = when {
+    bytes >= 1024L * 1024L -> "%.1f MiB".format(java.util.Locale.US, bytes / (1024f * 1024f))
+    bytes >= 1024L -> "%.1f KiB".format(java.util.Locale.US, bytes / 1024f)
+    else -> "$bytes bytes"
 }
 
 @Composable

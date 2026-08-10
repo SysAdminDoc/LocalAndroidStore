@@ -169,10 +169,18 @@ class DiscoveryUseCase(
                             sourceKey = source.key,
                         )
                     } ?: return@async ReleaseLookup.Missing
-                    val asset = ApkAssetClassifier.select(
+                    val selection = ApkAssetClassifier.classify(
                         release.assets,
                         supportedAbis,
-                    ) ?: return@async ReleaseLookup.Missing
+                    )
+                    val asset = when (selection) {
+                        ApkAssetSelection.Unavailable -> return@async ReleaseLookup.Missing
+                        is ApkAssetSelection.Selected -> selection.asset
+                        is ApkAssetSelection.SelectionRequired -> selection.candidates.first()
+                    }
+                    val assetChoices = (selection as? ApkAssetSelection.SelectionRequired)
+                        ?.candidates
+                        .orEmpty()
                     ReleaseLookup.Found(
                         AppInfo(
                             owner = repo.owner.login,
@@ -191,6 +199,7 @@ class DiscoveryUseCase(
                             publishedAt = release.publishedAt,
                             prerelease = release.prerelease,
                             releaseBody = release.body?.takeIf { it.isNotBlank() },
+                            assetChoices = assetChoices,
                         )
                     )
                 } catch (throwable: Throwable) {
@@ -312,10 +321,10 @@ class DiscoveryUseCase(
  * were a standalone APK.
  */
 internal object ApkAssetClassifier {
-    fun select(
+    fun classify(
         assets: List<GhAsset>,
         supportedAbis: List<String>,
-    ): GhAsset? {
+    ): ApkAssetSelection {
         val splitSetPresent = assets.any { isSplitConfig(it.name) }
         val apks = assets.filter { asset ->
             val name = asset.name.lowercase(Locale.US)
@@ -323,24 +332,39 @@ internal object ApkAssetClassifier {
                 !name.endsWith(".apk.idsig") &&
                 !isSplitConfig(name)
         }
-        if (apks.isEmpty()) return null
+        if (apks.isEmpty()) return ApkAssetSelection.Unavailable
         if (splitSetPresent && apks.any { it.name.equals("base.apk", ignoreCase = true) }) {
-            return null
+            return ApkAssetSelection.Unavailable
         }
 
         apks.filter { isUniversal(it.name) }
-            .maxByOrNull { it.size }
-            ?.let { return it }
+            .takeIf { it.isNotEmpty() }
+            ?.let { candidates ->
+                return candidates.toSelection()
+            }
 
         val unlabeled = apks.filter { abiForName(it.name) == null }
-        if (unlabeled.isNotEmpty()) return unlabeled.maxByOrNull { it.size }
+        if (unlabeled.isNotEmpty()) return unlabeled.toSelection()
 
         supportedAbis.forEach { supported ->
             apks.filter { abiForName(it.name) == normalizeAbi(supported) }
-                .maxByOrNull { it.size }
-                ?.let { return it }
+                .takeIf { it.isNotEmpty() }
+                ?.let { candidates ->
+                    return candidates.toSelection()
+                }
         }
-        return null
+        return ApkAssetSelection.Unavailable
+    }
+
+    fun select(
+        assets: List<GhAsset>,
+        supportedAbis: List<String>,
+    ): GhAsset? = (classify(assets, supportedAbis) as? ApkAssetSelection.Selected)?.asset
+
+    internal fun variantLabel(name: String): String = when {
+        isUniversal(name) -> "Universal"
+        abiForName(name) != null -> abiForName(name)!!
+        else -> "Unlabeled standalone APK"
     }
 
     internal fun abiForName(name: String): String? {
@@ -374,4 +398,16 @@ internal object ApkAssetClassifier {
     private val X86 = Regex("(^|[^a-z0-9])(?:x86|i686)([^a-z0-9]|$)")
     private val UNIVERSAL = Regex("(^|[^a-z0-9])(?:universal|noarch|all)([^a-z0-9]|$)")
     private val SPLIT_CONFIG = Regex("(^|[._-])(?:split[._-])?config[._-]")
+}
+
+internal sealed interface ApkAssetSelection {
+    data class Selected(val asset: GhAsset) : ApkAssetSelection
+    data class SelectionRequired(val candidates: List<GhAsset>) : ApkAssetSelection
+    data object Unavailable : ApkAssetSelection
+}
+
+private fun List<GhAsset>.toSelection(): ApkAssetSelection = when (size) {
+    0 -> ApkAssetSelection.Unavailable
+    1 -> ApkAssetSelection.Selected(single())
+    else -> ApkAssetSelection.SelectionRequired(this)
 }

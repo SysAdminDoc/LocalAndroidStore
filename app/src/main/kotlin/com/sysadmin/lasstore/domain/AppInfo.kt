@@ -21,6 +21,7 @@ data class AppInfo(
     val publishedAt: String?,
     val prerelease: Boolean,
     val releaseBody: String? = null,
+    val assetChoices: List<GhAsset> = emptyList(),
 ) {
     val handle: String get() = "$owner/$repo"
 

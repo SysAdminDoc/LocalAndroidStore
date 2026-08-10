@@ -10,6 +10,7 @@ import com.sysadmin.lasstore.data.AppIdEntry
 import com.sysadmin.lasstore.data.ApkInspectionResult
 import com.sysadmin.lasstore.data.ApkMetadata
 import com.sysadmin.lasstore.data.DeveloperVerificationNotice
+import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.signerMatchesPin
 import com.sysadmin.lasstore.domain.AppInfo
@@ -315,6 +316,29 @@ class CatalogViewModel : ViewModel() {
         val isIgnored = sl.ignoreList.isIgnored(info.handle)
         val baseState = when {
             installed == null -> CardState(info = info, status = CardStatus.NotInstalled)
+            info.assetChoices.size > 1 -> {
+                val pinnedSignerSha256 = sl.secrets.getPin(installed.applicationId)
+                if (!signerMatchesPin(installed.currentSignerSha256, pinnedSignerSha256)) {
+                    CardState(
+                        info = info.copy(applicationId = applicationId),
+                        status = CardStatus.SignatureMismatch,
+                        installedVersion = installed.versionName,
+                        installedVersionCode = installed.versionCode,
+                        isIgnored = isIgnored,
+                        message = "Installed publisher key does not match LocalAndroidStore's " +
+                            "trust pin. Review the installed signer before choosing an APK.",
+                    )
+                } else {
+                    CardState(
+                        info = info.copy(applicationId = applicationId),
+                        status = CardStatus.ReleaseAvailable,
+                        installedVersion = installed.versionName,
+                        installedVersionCode = installed.versionCode,
+                        isIgnored = isIgnored,
+                        message = "Multiple standalone APKs match this release. Choose one before downloading.",
+                    )
+                }
+            }
             else -> {
                 val reconciled = cached?.let {
                     sl.appIdCache.reconcileInstalled(
@@ -374,6 +398,10 @@ class CatalogViewModel : ViewModel() {
     }
 
     fun install(card: CardState) {
+        if (card.info.assetChoices.size > 1) {
+            _state.update { it.copy(warning = "Choose an APK variant before downloading.") }
+            return
+        }
         val cachedApplicationId = card.info.applicationId ?: sl.appIdCache.get(
             card.info.sourceKey,
             card.info.owner,
@@ -808,6 +836,10 @@ class CatalogViewModel : ViewModel() {
 
     /** Queue an installed update through UIDT/WorkManager and gentle PackageInstaller constraints. */
     fun queueBackgroundUpdate(card: CardState, notificationsGranted: Boolean = true) {
+        if (card.info.assetChoices.size > 1) {
+            _state.update { it.copy(warning = "Choose an APK variant before queueing an update.") }
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsGranted) {
             _state.update {
                 it.copy(
@@ -929,6 +961,10 @@ class CatalogViewModel : ViewModel() {
 
     /** Item 62: Download the APK and save it to the Downloads folder without installing. */
     fun saveApk(card: CardState) {
+        if (card.info.assetChoices.size > 1) {
+            _state.update { it.copy(warning = "Choose an APK variant before downloading.") }
+            return
+        }
         val key = cardKey(card.info)
         activeJobs[key]?.cancel()
         val job = viewModelScope.launch(Dispatchers.IO) {
@@ -1012,6 +1048,25 @@ class CatalogViewModel : ViewModel() {
         val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(card.info.htmlUrl))
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         sl.appContext.startActivity(intent)
+    }
+
+    fun selectAsset(card: CardState, asset: GhAsset) {
+        if (asset !in card.info.assetChoices) return
+        val selectedInfo = card.info.copy(
+            asset = asset,
+            assetChoices = emptyList(),
+        )
+        val cached = sl.appIdCache.get(
+            selectedInfo.sourceKey,
+            selectedInfo.owner,
+            selectedInfo.repo,
+        )
+        val freshState = buildCardState(selectedInfo, cached)
+        _state.update { ui ->
+            ui.copy(cards = ui.cards.map { current ->
+                if (cardKey(current.info) == cardKey(card.info)) freshState else current
+            })
+        }
     }
 
     fun dismissWarning() = _state.update { it.copy(warning = null) }
