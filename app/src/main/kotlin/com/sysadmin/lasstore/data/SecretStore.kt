@@ -25,9 +25,12 @@ class SecretStore(context: Context) {
             val plain = PlainPreferencesSecretBackend(context.applicationContext)
             val fallback = plain.read()
             if (!fallback.isEmpty) {
-                if (tink.read().isEmpty) {
-                    tink.write(fallback)
+                val encrypted = tink.read()
+                val merged = encrypted.mergeForMigration(fallback)
+                if (merged != encrypted) {
+                    tink.write(merged)
                 }
+                check(tink.read() == merged) { "Encrypted secret migration did not verify" }
                 plain.write(SecretSnapshot())
             }
         }
@@ -133,11 +136,11 @@ private class PlainPreferencesSecretBackend(context: Context) : SynchronizedSecr
 
     @Synchronized
     override fun write(snapshot: SecretSnapshot) {
-        prefs.edit().clear().apply {
+        check(prefs.edit().clear().apply {
             if (snapshot.globalPat.isNotBlank()) putString(KEY_PAT, snapshot.globalPat)
             snapshot.sourcePats.forEach { (key, value) -> putString("$SOURCE_PAT_PREFIX$key", value) }
             snapshot.pins.forEach { (packageName, sha256) -> putString("$PIN_PREFIX$packageName", sha256) }
-        }.apply()
+        }.commit()) { "Could not persist plaintext secret fallback" }
     }
 }
 

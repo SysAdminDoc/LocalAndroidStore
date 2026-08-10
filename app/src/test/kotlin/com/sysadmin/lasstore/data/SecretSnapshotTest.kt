@@ -48,4 +48,47 @@ class SecretSnapshotTest {
         assertEquals("fresh-pin", merged.pins["com.example.one"])
         assertEquals("fallback-pin", merged.pins["com.example.two"])
     }
+
+    @Test
+    fun migrationMergePrefersNewerFallbackOverExistingEncryptedValues() {
+        val encrypted = SecretSnapshot(
+            globalPat = "old-global",
+            sourcePats = mapOf("source" to "old"),
+            pins = mapOf("com.example.app" to "old-pin"),
+            updatedAtEpochMillis = 10L,
+        )
+        val fallback = SecretSnapshot(
+            globalPat = "new-global",
+            sourcePats = mapOf("source" to "new"),
+            pins = mapOf("com.example.app" to "new-pin"),
+            updatedAtEpochMillis = 20L,
+        )
+
+        val merged = encrypted.mergeForMigration(fallback)
+
+        assertEquals("new-global", merged.globalPat)
+        assertEquals("new", merged.sourcePats["source"])
+        assertEquals("new-pin", merged.pins["com.example.app"])
+        assertEquals(20L, merged.updatedAtEpochMillis)
+    }
+
+    @Test
+    fun migrationMergeKeepsEncryptedValuesWhenEncryptedSnapshotIsNewer() {
+        val encrypted = SecretSnapshot(
+            globalPat = "new-global",
+            sourcePats = mapOf("source" to "new"),
+            updatedAtEpochMillis = 20L,
+        )
+        val fallback = SecretSnapshot(
+            globalPat = "old-global",
+            sourcePats = mapOf("source" to "old"),
+            updatedAtEpochMillis = 10L,
+        )
+
+        val merged = encrypted.mergeForMigration(fallback)
+
+        assertEquals("new-global", merged.globalPat)
+        assertEquals("new", merged.sourcePats["source"])
+        assertEquals(20L, merged.updatedAtEpochMillis)
+    }
 }
