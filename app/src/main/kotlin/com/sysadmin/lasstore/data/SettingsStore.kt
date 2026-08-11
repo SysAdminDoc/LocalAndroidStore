@@ -111,6 +111,9 @@ class SettingsStore(
     private val keyDynamicColor = booleanPreferencesKey("dynamic_color")
     private val keyDailyUpdateCap = intPreferencesKey("daily_update_cap")
     private val keySourceDirectoryUrl = stringPreferencesKey("source_directory_url")
+    private val keySocks5ProxyEnabled = booleanPreferencesKey("socks5_proxy_enabled")
+    private val keySocks5ProxyHost = stringPreferencesKey("socks5_proxy_host")
+    private val keySocks5ProxyPort = intPreferencesKey("socks5_proxy_port")
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -119,12 +122,16 @@ class SettingsStore(
     private val sourceListSerializer = ListSerializer(GitHubSource.serializer())
     private val fdroidSourceListSerializer = ListSerializer(FdroidSource.serializer())
     private val transactionMutex = Mutex()
+    @Volatile private var latestSettings: AppSettings = AppSettings()
 
     val flow: Flow<AppSettings> = dataStore.data
         .onStart { recoverPendingTransaction() }
         .map(::inspectPreferences)
         .onEach { persistMalformedPayload(it.malformedPayload) }
         .map { it.settings }
+        .onEach { latestSettings = it }
+
+    fun socks5ProxyConfig(): Socks5ProxyConfig? = latestSettings.socks5ProxyConfig()
 
     /** Recover an interrupted registry/PAT transaction before exposing settings to callers. */
     suspend fun recoverPendingTransaction() = transactionMutex.withLock {
@@ -296,6 +303,9 @@ class SettingsStore(
             prefs[keyDynamicColor] = canonical.dynamicColor
             prefs[keyDailyUpdateCap] = canonical.dailyUpdateCap
             prefs[keySourceDirectoryUrl] = canonical.sourceDirectoryUrl
+            prefs[keySocks5ProxyEnabled] = canonical.socks5ProxyEnabled
+            prefs[keySocks5ProxyHost] = canonical.socks5ProxyHost
+            prefs[keySocks5ProxyPort] = canonical.socks5ProxyPort
         }
     }
 
@@ -322,6 +332,9 @@ class SettingsStore(
                 dynamicColor = prefs[keyDynamicColor] ?: false,
                 dailyUpdateCap = (prefs[keyDailyUpdateCap] ?: 3).coerceIn(0, MAX_DAILY_UPDATE_CAP),
                 sourceDirectoryUrl = prefs[keySourceDirectoryUrl].orEmpty(),
+                socks5ProxyEnabled = prefs[keySocks5ProxyEnabled] ?: false,
+                socks5ProxyHost = prefs[keySocks5ProxyHost] ?: "127.0.0.1",
+                socks5ProxyPort = (prefs[keySocks5ProxyPort] ?: 9050).coerceIn(1, 65535),
             ),
             payloadState = decoded.state,
             malformedPayload = decoded.rawPayload,
@@ -344,6 +357,9 @@ class SettingsStore(
             dynamicColor = settings.dynamicColor,
             dailyUpdateCap = settings.dailyUpdateCap.coerceIn(0, MAX_DAILY_UPDATE_CAP),
             sourceDirectoryUrl = settings.sourceDirectoryUrl.trim(),
+            socks5ProxyEnabled = settings.socks5ProxyEnabled,
+            socks5ProxyHost = settings.socks5ProxyHost.trim(),
+            socks5ProxyPort = settings.socks5ProxyPort.coerceIn(1, 65535),
         )
     }
 

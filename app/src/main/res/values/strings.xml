@@ -73,6 +73,14 @@
     <string name="loading_source_directory">Loading…</string>
     <string name="add_curated_source">Add</string>
     <string name="source_directory_added">Added</string>
+    <string name="socks5_proxy_title">SOCKS5 / Orbot proxy</string>
+    <string name="socks5_proxy_body">Route GitHub, F-Droid, branding, and source-directory requests through a user-provided SOCKS5 endpoint. Orbot commonly exposes 127.0.0.1:9050. The proxy is off by default and changes apply to new requests.</string>
+    <string name="socks5_proxy_toggle">Use SOCKS5 proxy</string>
+    <string name="socks5_proxy_toggle_subtitle">DNS is resolved by the SOCKS5 endpoint when enabled.</string>
+    <string name="socks5_proxy_host">SOCKS5 host</string>
+    <string name="socks5_proxy_port">SOCKS5 port</string>
+    <string name="save_proxy">Save proxy</string>
+    <string name="saving_proxy">Saving…</string>
     <string name="checking_private_releases">Checking private releases…</string>
     <string name="no_releases_on_shelf">No releases on the shelf</string>
     <string name="catalog_unavailable">Catalog unavailable</string>

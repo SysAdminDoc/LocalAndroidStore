@@ -166,6 +166,15 @@ fun SettingsScreen(
     var sourceDirectoryUrl by remember(state.settings.sourceDirectoryUrl) {
         mutableStateOf(state.settings.sourceDirectoryUrl)
     }
+    var socks5ProxyEnabled by remember(state.settings.socks5ProxyEnabled) {
+        mutableStateOf(state.settings.socks5ProxyEnabled)
+    }
+    var socks5ProxyHost by remember(state.settings.socks5ProxyHost) {
+        mutableStateOf(state.settings.socks5ProxyHost)
+    }
+    var socks5ProxyPort by remember(state.settings.socks5ProxyPort) {
+        mutableStateOf(state.settings.socks5ProxyPort.toString())
+    }
     val draftFdroidSources = fdroidDrafts.map(FdroidSourceDraft::toSource)
     val fdroidValidationError = validateFdroidSources(draftFdroidSources)
     val normalizedFdroidSources = normalizeFdroidSources(draftFdroidSources)
@@ -219,6 +228,25 @@ fun SettingsScreen(
             onUrlChange = { sourceDirectoryUrl = it },
             onFetch = { viewModel.fetchSourceDirectory(sourceDirectoryUrl) },
             onAdd = viewModel::addSourceDirectoryEntry,
+        )
+
+        Socks5ProxySettings(
+            enabled = socks5ProxyEnabled,
+            host = socks5ProxyHost,
+            port = socks5ProxyPort,
+            saving = state.proxySaving,
+            message = state.proxyMessage,
+            error = state.proxyError,
+            onEnabledChange = { socks5ProxyEnabled = it },
+            onHostChange = { socks5ProxyHost = it },
+            onPortChange = { socks5ProxyPort = it },
+            onSave = {
+                viewModel.saveSocks5Proxy(
+                    enabled = socks5ProxyEnabled,
+                    host = socks5ProxyHost,
+                    portText = socks5ProxyPort,
+                )
+            },
         )
 
         AppearanceSettings(
@@ -766,6 +794,83 @@ private fun SourceDirectorySettings(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Socks5ProxySettings(
+    enabled: Boolean,
+    host: String,
+    port: String,
+    saving: Boolean,
+    message: String?,
+    error: String?,
+    onEnabledChange: (Boolean) -> Unit,
+    onHostChange: (String) -> Unit,
+    onPortChange: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = Catppuccin.Surface1,
+        border = BorderStroke(1.dp, Catppuccin.Stroke),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.socks5_proxy_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = Catppuccin.TextStrong,
+            )
+            Text(
+                text = stringResource(R.string.socks5_proxy_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Subtext,
+            )
+            SettingRow(
+                title = stringResource(R.string.socks5_proxy_toggle),
+                subtitle = stringResource(R.string.socks5_proxy_toggle_subtitle),
+                value = enabled,
+                onChange = onEnabledChange,
+            )
+            OutlinedTextField(
+                value = host,
+                onValueChange = onHostChange,
+                label = { Text(stringResource(R.string.socks5_proxy_host)) },
+                singleLine = true,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+            )
+            OutlinedTextField(
+                value = port,
+                onValueChange = onPortChange,
+                label = { Text(stringResource(R.string.socks5_proxy_port)) },
+                singleLine = true,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+            )
+            OutlinedButton(
+                onClick = onSave,
+                enabled = !saving,
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, Catppuccin.StrokeBright),
+                contentPadding = PaddingValues(vertical = 11.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Catppuccin.MauveStrong),
+            ) {
+                Text(stringResource(if (saving) R.string.saving_proxy else R.string.save_proxy))
+            }
+            message?.let { text ->
+                Text(text, style = MaterialTheme.typography.bodySmall, color = Catppuccin.Mint)
+            }
+            error?.let { text ->
+                Text(text, style = MaterialTheme.typography.bodySmall, color = Catppuccin.Red)
             }
         }
     }

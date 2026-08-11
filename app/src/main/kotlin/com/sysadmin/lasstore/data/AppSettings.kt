@@ -67,6 +67,9 @@ data class AppSettings(
     val dynamicColor: Boolean = false,
     val dailyUpdateCap: Int = 3,
     val sourceDirectoryUrl: String = "",
+    val socks5ProxyEnabled: Boolean = false,
+    val socks5ProxyHost: String = "127.0.0.1",
+    val socks5ProxyPort: Int = 9050,
 )
 
 const val DEFAULT_GITHUB_USER = "SysAdminDoc"

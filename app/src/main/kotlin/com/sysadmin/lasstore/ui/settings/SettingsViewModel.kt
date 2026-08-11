@@ -19,6 +19,7 @@ import com.sysadmin.lasstore.data.validateSources
 import com.sysadmin.lasstore.data.normalizeFdroidSources
 import com.sysadmin.lasstore.data.validateFdroidSources
 import com.sysadmin.lasstore.data.validateSourceDirectoryUrl
+import com.sysadmin.lasstore.data.validateSocks5Proxy
 import com.sysadmin.lasstore.install.ExternalLaunchResult
 import com.sysadmin.lasstore.install.ShizukuStatus
 import kotlinx.coroutines.CancellationException
@@ -62,6 +63,9 @@ data class SettingsUiState(
     val sourceDirectoryBusy: Boolean = false,
     val sourceDirectoryError: String? = null,
     val sourceDirectoryMessage: String? = null,
+    val proxySaving: Boolean = false,
+    val proxyMessage: String? = null,
+    val proxyError: String? = null,
 ) {
     val saving: Boolean get() = saveStatus == SettingsSaveStatus.Saving
 }
@@ -264,6 +268,9 @@ class SettingsViewModel : ViewModel() {
                     dynamicColor = dynamicColor,
                     dailyUpdateCap = dailyUpdateCap,
                     sourceDirectoryUrl = _state.value.settings.sourceDirectoryUrl,
+                    socks5ProxyEnabled = _state.value.settings.socks5ProxyEnabled,
+                    socks5ProxyHost = _state.value.settings.socks5ProxyHost,
+                    socks5ProxyPort = _state.value.settings.socks5ProxyPort,
                 )
                 val persistedSourcePats = sourcePats
                     .filter { (key, value) ->
@@ -594,4 +601,47 @@ class SettingsViewModel : ViewModel() {
 
     private fun configuredSourceKeys(settings: AppSettings): Set<String> =
         (settings.sources.map { it.key } + settings.fdroidSources.map { it.key }).toSet()
+
+    fun saveSocks5Proxy(enabled: Boolean, host: String, portText: String) {
+        val port = portText.trim().toIntOrNull() ?: -1
+        validateSocks5Proxy(enabled, host, port)?.let { error ->
+            _state.update { it.copy(proxyError = error, proxyMessage = null) }
+            return
+        }
+        if (_state.value.proxySaving) return
+        _state.update {
+            it.copy(proxySaving = true, proxyError = null, proxyMessage = null)
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val current = sl.settings.flow.first()
+                sl.settings.update(
+                    current.copy(
+                        socks5ProxyEnabled = enabled,
+                        socks5ProxyHost = host.trim(),
+                        socks5ProxyPort = port,
+                    ),
+                )
+                _state.update {
+                    it.copy(
+                        proxySaving = false,
+                        proxyMessage = if (enabled) {
+                            "SOCKS5 proxy enabled for new network requests."
+                        } else {
+                            "SOCKS5 proxy disabled; direct networking restored."
+                        },
+                    )
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                _state.update {
+                    it.copy(
+                        proxySaving = false,
+                        proxyError = throwable.message ?: "Could not save the SOCKS5 proxy.",
+                    )
+                }
+            }
+        }
+    }
 }

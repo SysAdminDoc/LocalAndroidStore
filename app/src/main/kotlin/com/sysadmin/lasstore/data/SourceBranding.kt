@@ -12,6 +12,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.net.ProxySelector
 
 @Serializable
 data class SourceNewsItem(
@@ -49,7 +50,8 @@ fun validateSourceBrandingUrl(raw: String): String? {
 }
 
 class SourceBrandingClient(
-    private val client: OkHttpClient = defaultClient(),
+    private val proxySelector: ProxySelector? = null,
+    private val client: OkHttpClient = defaultClient(proxySelector),
     private val json: Json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -99,12 +101,13 @@ class SourceBrandingClient(
         const val MAX_IMAGE_BYTES = 2 * 1024 * 1024
         const val MAX_CACHED_IMAGES = 24
 
-        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        fun defaultClient(proxySelector: ProxySelector? = null): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .callTimeout(20, TimeUnit.SECONDS)
             .followRedirects(false)
             .followSslRedirects(false)
+            .apply { proxySelector?.let(::proxySelector) }
             .build()
     }
 }

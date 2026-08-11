@@ -4,6 +4,7 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import java.net.ProxySelector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -104,7 +105,8 @@ object SourceDirectoryCodec {
 }
 
 class SourceDirectoryClient(
-    private val client: OkHttpClient = defaultClient(),
+    private val proxySelector: ProxySelector? = null,
+    private val client: OkHttpClient = defaultClient(proxySelector),
     private val maxFeedBytes: Long = MAX_SOURCE_DIRECTORY_BYTES,
 ) {
     suspend fun fetch(url: String): SourceDirectoryFeed = withContext(Dispatchers.IO) {
@@ -132,12 +134,13 @@ class SourceDirectoryClient(
     }
 
     private companion object {
-        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        fun defaultClient(proxySelector: ProxySelector? = null): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .callTimeout(30, TimeUnit.SECONDS)
             .followRedirects(false)
             .followSslRedirects(false)
+            .apply { proxySelector?.let(::proxySelector) }
             .build()
     }
 }

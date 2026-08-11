@@ -94,6 +94,7 @@ object ServiceLocator {
                 patProvider = { secrets.getPat() },
                 logger = logger,
                 responseCache = FileGitHubResponseCache(appContext),
+                proxySelector = DynamicSocks5ProxySelector(settings::socks5ProxyConfig),
                 networkAvailable = {
                     val connectivity =
                         appContext.getSystemService(ConnectivityManager::class.java)
@@ -105,6 +106,7 @@ object ServiceLocator {
                 },
             )
             fdroidIndex = FdroidIndexClient(
+                proxySelector = DynamicSocks5ProxySelector(settings::socks5ProxyConfig),
                 networkAvailable = {
                     val connectivity =
                         appContext.getSystemService(ConnectivityManager::class.java)
@@ -115,8 +117,12 @@ object ServiceLocator {
                     ) == true
                 },
             )
-            sourceBranding = SourceBrandingClient()
-            sourceDirectory = SourceDirectoryClient()
+            sourceBranding = SourceBrandingClient(
+                proxySelector = DynamicSocks5ProxySelector(settings::socks5ProxyConfig),
+            )
+            sourceDirectory = SourceDirectoryClient(
+                proxySelector = DynamicSocks5ProxySelector(settings::socks5ProxyConfig),
+            )
             installer = PackageInstallerService(appContext, logger)
             audit = InstallAuditLog(appContext)
             appIdCache = AppIdCache(appContext)

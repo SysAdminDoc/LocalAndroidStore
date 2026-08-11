@@ -28,6 +28,7 @@ import java.util.Locale
 import kotlin.math.min
 import kotlin.random.Random
 import java.util.concurrent.TimeUnit
+import java.net.ProxySelector
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -218,7 +219,8 @@ class GitHubClient(
     private val patProvider: () -> String,
     private val logger: Logger?,
     private val responseCache: GitHubResponseCacheStore? = null,
-    private val client: OkHttpClient = defaultClient(),
+    private val proxySelector: ProxySelector? = null,
+    private val client: OkHttpClient = defaultClient(proxySelector),
     private val apiBaseUrl: String = "https://api.github.com",
     private val retryDelay: suspend (Long) -> Unit = { delay(it) },
     private val retryJitterMillis: () -> Long = { Random.nextLong(50L, 251L) },
@@ -843,10 +845,11 @@ class GitHubClient(
             "github-releases.githubusercontent.com",
         )
 
-        private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        private fun defaultClient(proxySelector: ProxySelector? = null): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .callTimeout(120, TimeUnit.SECONDS)
+            .apply { proxySelector?.let(::proxySelector) }
             .build()
     }
 }

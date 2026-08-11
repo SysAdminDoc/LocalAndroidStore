@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.net.ProxySelector
 
 fun interface FdroidIndexProvider {
     suspend fun fetch(indexUrl: String): String
@@ -17,7 +18,8 @@ fun interface FdroidIndexProvider {
 }
 
 class FdroidIndexClient(
-    private val client: OkHttpClient = defaultFdroidClient(),
+    private val proxySelector: ProxySelector? = null,
+    private val client: OkHttpClient = defaultFdroidClient(proxySelector),
     private val networkAvailable: () -> Boolean = { true },
     private val maxIndexBytes: Long = MAX_INDEX_BYTES,
 ) : FdroidIndexProvider {
@@ -94,10 +96,11 @@ class FdroidIndexClient(
         const val MAX_INDEX_BYTES = 32L * 1024L * 1024L
         const val MAX_ENTRY_JAR_BYTES = 8L * 1024L * 1024L
 
-        fun defaultFdroidClient(): OkHttpClient = OkHttpClient.Builder()
+        fun defaultFdroidClient(proxySelector: ProxySelector? = null): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .callTimeout(120, TimeUnit.SECONDS)
+            .apply { proxySelector?.let(::proxySelector) }
             .build()
     }
 }
