@@ -9,6 +9,7 @@ data class InstalledInfo(
     val versionName: String?,
     val versionCode: Long,
     val currentSignerSha256: String? = null,
+    val isArchived: Boolean = false,
 )
 
 /** A stored pin is a hard boundary: an unavailable or different current signer is not trusted. */
@@ -41,7 +42,12 @@ class InstallStateRepo(private val context: Context) {
                 pm.getPackageInfo(
                     applicationId,
                     PackageManager.PackageInfoFlags.of(
-                        PackageManager.GET_SIGNING_CERTIFICATES.toLong(),
+                        PackageManager.GET_SIGNING_CERTIFICATES.toLong() or
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                                PackageManager.MATCH_ARCHIVED_PACKAGES
+                            } else {
+                                0L
+                            },
                     ),
                 )
             } else {
@@ -71,6 +77,8 @@ class InstallStateRepo(private val context: Context) {
                 versionName = pkg.versionName,
                 versionCode = vc,
                 currentSignerSha256 = currentSigners.singleOrNull(),
+                isArchived = Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
+                    pkg.applicationInfo?.isArchived == true,
             )
         }.getOrNull()
     }

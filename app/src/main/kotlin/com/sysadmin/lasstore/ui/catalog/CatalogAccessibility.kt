@@ -118,6 +118,9 @@ internal fun cardAccessibilityAnnouncement(state: CardState): AccessibilityAnnou
         CardStatus.Installed -> AccessibilityAnnouncement(
             text = "$appName: installation completed successfully.",
         )
+        CardStatus.Archived -> AccessibilityAnnouncement(
+            text = "$appName: archived. Its data is retained; choose Restore app to download it again.",
+        )
         CardStatus.Error -> AccessibilityAnnouncement(
             text = "$appName: installation failed. ${state.message.orEmpty()} Review the error and retry.",
         )

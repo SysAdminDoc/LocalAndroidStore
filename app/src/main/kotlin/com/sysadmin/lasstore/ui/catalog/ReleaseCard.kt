@@ -109,6 +109,8 @@ fun ReleaseCard(
     onProceedPermissions: () -> Unit,
     onCancelPermissions: () -> Unit,
     onIgnore: () -> Unit,
+    onArchive: () -> Unit = {},
+    onUnarchive: () -> Unit = {},
     onSetUpdateCadence: (UpdateCadence) -> Unit = {},
     onSaveApk: () -> Unit,
     onReplacePublisherPin: (typedApplicationId: String, independentlyVerified: Boolean) -> Unit,
@@ -151,6 +153,9 @@ fun ReleaseCard(
         state.info.handle,
         state.unmanagedInstall?.installedSignerSha256,
     ) { mutableStateOf(false) }
+    var archiveVisible by rememberSaveable(state.info.handle, state.status) {
+        mutableStateOf(false)
+    }
     var historyVisible by rememberSaveable(state.info.handle) { mutableStateOf(false) }
     var sourceSelectionVisible by rememberSaveable(
         state.info.applicationId,
@@ -296,6 +301,27 @@ fun ReleaseCard(
                 },
             )
         }
+    }
+
+    if (archiveVisible) {
+        AlertDialog(
+            onDismissRequest = { archiveVisible = false },
+            title = { Text(stringResource(R.string.archive_app_title, state.info.displayName)) },
+            text = { Text(stringResource(R.string.archive_app_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        archiveVisible = false
+                        onArchive()
+                    },
+                ) { Text(stringResource(R.string.archive_app_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { archiveVisible = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
 
     if (historyVisible) {
@@ -645,6 +671,8 @@ fun ReleaseCard(
                         onSetUpdateCadence = onSetUpdateCadence,
                         onSaveApk = onSaveApk,
                         onUninstall = onUninstall,
+                        onArchive = { archiveVisible = true },
+                        onUnarchive = onUnarchive,
                         onManualInstall = onManualInstall,
                         onBrowseHistory = {
                             historyVisible = true
@@ -944,6 +972,7 @@ fun ReleaseCard(
                             { trustRecoveryVisible = true }
                         },
                         onRequestAdoption = { adoptionVisible = true },
+                        onUnarchive = onUnarchive,
                         assetSelectionRequired = state.info.assetChoices.size > 1,
                         onChooseAsset = { assetSelectionVisible = true },
                         resumeAvailable = state.resumableDownloadBytes > 0L,
@@ -1155,6 +1184,7 @@ private fun PrimaryReleaseAction(
     onProceedPermissions: () -> Unit,
     onReviewTrust: (() -> Unit)?,
     onRequestAdoption: () -> Unit,
+    onUnarchive: () -> Unit,
     assetSelectionRequired: Boolean,
     onChooseAsset: () -> Unit,
     resumeAvailable: Boolean,
@@ -1173,6 +1203,7 @@ private fun PrimaryReleaseAction(
         CardStatus.DowngradeAvailable,
         CardStatus.Error -> true
         CardStatus.Unmanaged,
+        CardStatus.Archived,
         CardStatus.Working,
         CardStatus.SignatureMismatch,
         CardStatus.PermissionReview -> false
@@ -1261,6 +1292,15 @@ private fun PrimaryReleaseAction(
                 icon = Icons.AutoMirrored.Filled.OpenInNew,
                 accent = Catppuccin.Mint,
                 onClick = onOpen,
+                modifier = modifier,
+            )
+        }
+        CardStatus.Archived -> {
+            AccentButton(
+                text = stringResource(R.string.unarchive_app),
+                icon = Icons.Default.Download,
+                accent = Catppuccin.Sapphire,
+                onClick = onUnarchive,
                 modifier = modifier,
             )
         }
@@ -1386,6 +1426,8 @@ private fun ReleaseOverflowMenu(
     onSetUpdateCadence: (UpdateCadence) -> Unit,
     onSaveApk: () -> Unit,
     onUninstall: () -> Unit,
+    onArchive: () -> Unit,
+    onUnarchive: () -> Unit,
     onManualInstall: () -> Unit,
     onBrowseHistory: () -> Unit,
     onChooseSource: () -> Unit,
@@ -1413,7 +1455,7 @@ private fun ReleaseOverflowMenu(
             containerColor = Catppuccin.PanelRaised,
             border = BorderStroke(1.dp, Catppuccin.Stroke),
         ) {
-            if (state.status.hasInstalledApp()) {
+            if (state.status.hasInstalledApp() && state.status != CardStatus.Archived) {
                 ReleaseMenuItem(
                     text = stringResource(R.string.open_app),
                     icon = Icons.Default.PlayArrow,
@@ -1429,6 +1471,30 @@ private fun ReleaseOverflowMenu(
                         expanded = false
                         onInspectTransparency()
                     },
+                )
+            }
+            if (state.status == CardStatus.Archived) {
+                ReleaseMenuItem(
+                    text = stringResource(R.string.unarchive_app),
+                    icon = Icons.Default.Download,
+                    onClick = {
+                        expanded = false
+                        onUnarchive()
+                    },
+                    tint = Catppuccin.Sapphire,
+                )
+            } else if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
+                state.status.hasManagedInstall()
+            ) {
+                ReleaseMenuItem(
+                    text = stringResource(R.string.archive_app),
+                    icon = Icons.Default.SaveAlt,
+                    onClick = {
+                        expanded = false
+                        onArchive()
+                    },
+                    tint = Catppuccin.Peach,
                 )
             }
             if (!state.historicalSelection &&
@@ -1701,6 +1767,7 @@ private const val WEEK_MILLIS = 7L * DAY_MILLIS
 private fun CardStatus.hasInstalledApp(): Boolean = this in setOf(
     CardStatus.Unmanaged,
     CardStatus.Installed,
+    CardStatus.Archived,
     CardStatus.ReleaseAvailable,
     CardStatus.UpdateAvailable,
     CardStatus.ReinstallAvailable,

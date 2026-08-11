@@ -8,6 +8,7 @@ import com.sysadmin.lasstore.install.BackgroundUpdateScheduler
 import com.sysadmin.lasstore.install.BatchUninstallStore
 import com.sysadmin.lasstore.install.DownloadQueueStore
 import com.sysadmin.lasstore.install.ForegroundInstallStore
+import com.sysadmin.lasstore.install.ArchiveRestoreStore
 import com.sysadmin.lasstore.install.PackageInstallerService
 import com.sysadmin.lasstore.install.QueuedUpdateStatusStore
 import com.sysadmin.lasstore.wear.WearUpdateMessenger
@@ -64,6 +65,8 @@ object ServiceLocator {
         private set
     lateinit var foregroundInstalls: ForegroundInstallStore
         private set
+    lateinit var archiveRestores: ArchiveRestoreStore
+        private set
     lateinit var wearUpdates: WearUpdateMessenger
         private set
 
@@ -118,6 +121,7 @@ object ServiceLocator {
             downloadQueue = DownloadQueueStore(appContext)
             batchUninstalls = BatchUninstallStore(appContext)
             foregroundInstalls = ForegroundInstallStore(appContext)
+            archiveRestores = ArchiveRestoreStore(appContext)
             wearUpdates = WearUpdateMessenger(appContext) { throwable ->
                 logger.warn("Wear", "Could not deliver update count: ${throwable.message}")
             }

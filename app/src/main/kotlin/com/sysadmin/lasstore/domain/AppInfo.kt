@@ -72,6 +72,7 @@ enum class CardStatus {
     NotInstalled,
     Unmanaged,
     Installed,
+    Archived,
     ReleaseAvailable,
     UpdateAvailable,
     ReinstallAvailable,

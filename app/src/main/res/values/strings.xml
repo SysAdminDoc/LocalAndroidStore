@@ -13,6 +13,11 @@
     <string name="uninstall">Uninstall</string>
     <string name="open">Open</string>
     <string name="app_language_settings">App language</string>
+    <string name="archive_app">Archive app</string>
+    <string name="unarchive_app">Restore app</string>
+    <string name="archive_app_title">Archive %1$s?</string>
+    <string name="archive_app_body">Android removes the APK and cache but keeps this app’s user data and launcher stub. Tapping the stub later lets LocalAndroidStore re-fetch and reinstall it.</string>
+    <string name="archive_app_confirm">Archive</string>
     <string name="cancel">Cancel</string>
     <string name="grant">Grant</string>
     <string name="continue_label">Continue</string>
@@ -352,6 +357,7 @@
 
     <string name="status_available">Available</string>
     <string name="status_installed">Installed</string>
+    <string name="status_archived">Archived</string>
     <string name="status_new_release">New release</string>
     <string name="status_update">Update</string>
     <string name="status_reinstall">Reinstall</string>

@@ -40,6 +40,7 @@ import com.sysadmin.lasstore.domain.SourceVerificationStatus
 import com.sysadmin.lasstore.domain.classifyReleaseVersion
 import com.sysadmin.lasstore.domain.sourceVerificationStatus
 import com.sysadmin.lasstore.install.InstallResult
+import com.sysadmin.lasstore.install.ArchiveRequestResult
 import com.sysadmin.lasstore.install.BatchUninstallEntry
 import com.sysadmin.lasstore.install.BundleArtifactPreparer
 import com.sysadmin.lasstore.install.ForegroundInstallFinalizer
@@ -63,6 +64,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,6 +75,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -278,6 +281,7 @@ class CatalogViewModel : ViewModel() {
     /** Publisher-pin recovery performs secret, audit, and cache I/O off the Compose path. */
     private val publisherPinJobs = ConcurrentHashMap<String, Job>()
     private val splitSelectionWaiters = ConcurrentHashMap<String, CompletableDeferred<Set<String>?>>()
+    @Volatile private var archiveRestoreJob: Job? = null
     @Volatile private var refreshJob: Job? = null
     @Volatile private var resumeReconcileJob: Job? = null
     @Volatile private var refreshGeneration = 0L
@@ -293,6 +297,7 @@ class CatalogViewModel : ViewModel() {
         val preapprovalSessionId: Int?,
         val referrerUri: android.net.Uri,
         val operationId: String,
+        val unarchiveId: Int? = null,
     )
     private val pendingInstalls = ConcurrentHashMap<String, PendingInstallData>()
 
@@ -368,6 +373,9 @@ class CatalogViewModel : ViewModel() {
                             preapprovalSessionId = operation.preapprovalSessionId,
                             referrerUri = android.net.Uri.parse(operation.referrerUrl),
                             operationId = operation.operationId,
+                            unarchiveId = sl.archiveRestores.pending()
+                                ?.takeIf { it.packageName == metadata.applicationId }
+                                ?.unarchiveId,
                         )
                     } else {
                         operation.preapprovalSessionId?.let(sl.installer::abandonSession)
@@ -419,6 +427,7 @@ class CatalogViewModel : ViewModel() {
     fun onActivityResumed() {
         refreshInstallPermission()
         reconcileBatchUninstall()
+        startPendingArchiveRestore()
         if (resumeReconcileJob?.isActive != true) {
             val job = viewModelScope.launch(Dispatchers.IO) {
                 val rebuilt = _state.value.cards.associateBy(
@@ -451,6 +460,108 @@ class CatalogViewModel : ViewModel() {
         }
         refreshIfIdle()
     }
+
+    /** Ask Android to archive a managed app while retaining its user data. */
+    fun archive(card: CardState) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            _state.update { it.copy(warning = "App archiving requires Android 15 or newer.") }
+            return
+        }
+        if (card.status !in setOf(
+                CardStatus.Installed,
+                CardStatus.ReleaseAvailable,
+                CardStatus.UpdateAvailable,
+                CardStatus.ReinstallAvailable,
+                CardStatus.DowngradeAvailable,
+            )
+        ) {
+            _state.update { it.copy(warning = "Only a managed installed app can be archived.") }
+            return
+        }
+        val applicationId = card.info.applicationId ?: sl.appIdCache.get(
+            card.info.sourceKey,
+            card.info.owner,
+            card.info.repo,
+        )?.applicationId
+        if (applicationId.isNullOrBlank()) {
+            _state.update { it.copy(warning = "Inspect the installed app before archiving it.") }
+            return
+        }
+        when (val result = sl.installer.requestArchive(applicationId)) {
+            ArchiveRequestResult.Requested -> _state.update {
+                it.copy(warning = "Archive requested. Android will retain the app's data.")
+            }
+            is ArchiveRequestResult.Failed -> _state.update { it.copy(warning = result.message) }
+        }
+    }
+
+    /** Request Android to route an archived app back through LocalAndroidStore's restore flow. */
+    fun unarchive(card: CardState) {
+        val applicationId = card.info.applicationId ?: sl.appIdCache.get(
+            card.info.sourceKey,
+            card.info.owner,
+            card.info.repo,
+        )?.applicationId
+        if (applicationId.isNullOrBlank()) {
+            _state.update { it.copy(warning = "The archived package id is unavailable.") }
+            return
+        }
+        when (val result = sl.installer.requestUnarchive(applicationId)) {
+            ArchiveRequestResult.Requested -> _state.update {
+                it.copy(warning = "Restore requested. LocalAndroidStore will re-fetch and reinstall it.")
+            }
+            is ArchiveRequestResult.Failed -> _state.update { it.copy(warning = result.message) }
+        }
+    }
+
+    private fun startPendingArchiveRestore() {
+        if (archiveRestoreJob?.isActive == true) return
+        val pending = sl.archiveRestores.pending() ?: return
+        val job = viewModelScope.launch(Dispatchers.IO) {
+            var card = findCardForArchivedPackage(pending.packageName)
+            if (card == null) {
+                _state.update {
+                    it.copy(warning = "Restoring ${pending.packageName}: loading its source…")
+                }
+                refresh()
+                card = withTimeoutOrNull<CardState?>(90_000L) {
+                    repeat(360) {
+                        findCardForArchivedPackage(pending.packageName)?.let {
+                            return@withTimeoutOrNull it
+                        }
+                        delay(250L)
+                    }
+                    null
+                }
+            }
+            if (card == null) {
+                sl.archiveRestores.clearIf(pending.packageName, pending.unarchiveId)
+                _state.update {
+                    it.copy(
+                        warning = "Could not find ${pending.packageName} in the enabled catalog sources.",
+                    )
+                }
+                return@launch
+            }
+            if (card.status == CardStatus.Unmanaged) {
+                sl.archiveRestores.clearIf(pending.packageName, pending.unarchiveId)
+                _state.update {
+                    it.copy(warning = "${pending.packageName} is not managed by LocalAndroidStore.")
+                }
+                return@launch
+            }
+            install(card)
+        }
+        archiveRestoreJob = job
+        job.invokeOnCompletion { if (archiveRestoreJob == job) archiveRestoreJob = null }
+    }
+
+    private fun findCardForArchivedPackage(packageName: String): CardState? =
+        _state.value.cards.firstOrNull { card ->
+            card.info.applicationId == packageName ||
+                sl.appIdCache.get(card.info.sourceKey, card.info.owner, card.info.repo)
+                    ?.applicationId == packageName
+        }
 
     fun openInstallPermissionSettings() {
         when (val result = sl.installer.openInstallPermissionSettings()) {
@@ -938,6 +1049,14 @@ class CatalogViewModel : ViewModel() {
             installed == null -> CardState(info = info, status = CardStatus.NotInstalled)
             reconciled?.provenance == InstallProvenance.EXTERNAL_UNMANAGED ->
                 unmanagedCardState(info, reconciled, installed)
+            installed.isArchived -> CardState(
+                info = info.copy(applicationId = applicationId),
+                status = CardStatus.Archived,
+                installedVersion = installed.versionName,
+                installedVersionCode = installed.versionCode,
+                isIgnored = isIgnored,
+                message = "Archived; app data is retained. Restore it to download the APK again.",
+            )
             info.assetChoices.size > 1 -> {
                 val pinnedSignerSha256 = sl.secrets.getPin(installed.applicationId)
                 if (!signerMatchesPin(installed.currentSignerSha256, pinnedSignerSha256)) {
@@ -1200,6 +1319,12 @@ class CatalogViewModel : ViewModel() {
             card.info.owner,
             card.info.repo,
         )?.applicationId
+        val pendingArchiveRestore = sl.archiveRestores.pending()
+            ?.takeIf { it.packageName == cachedApplicationId }
+        if (card.status == CardStatus.Archived && pendingArchiveRestore == null) {
+            _state.update { it.copy(warning = "Choose Restore to start the archived-app flow.") }
+            return
+        }
         val liveInstalled = cachedApplicationId?.let(sl.installState::info)
         if (
             liveInstalled != null &&
@@ -1480,6 +1605,7 @@ class CatalogViewModel : ViewModel() {
                     }
                     if (
                         card.status != classifiedStatus &&
+                        card.status != CardStatus.Archived &&
                         !(allowUnmanagedReplacement && card.status == CardStatus.Unmanaged)
                     ) {
                         preapprovalSessionId?.let { sl.installer.abandonSession(it) }
@@ -1526,6 +1652,7 @@ class CatalogViewModel : ViewModel() {
                             preapprovalSessionId = preapprovalSessionId,
                             referrerUri = referrerUri,
                             operationId = operationId,
+                            unarchiveId = pendingArchiveRestore?.unarchiveId,
                         )
                         sl.foregroundInstalls.markPermissionReview(
                             key = key,
@@ -1557,6 +1684,7 @@ class CatalogViewModel : ViewModel() {
                     installedAlready = installedAlready,
                     preapprovalSessionId = preapprovalSessionId,
                     referrerUri = referrerUri,
+                    unarchiveId = pendingArchiveRestore?.unarchiveId,
                     operationId = operationId,
                 )
             } catch (t: CancellationException) {
@@ -2047,6 +2175,7 @@ class CatalogViewModel : ViewModel() {
                     installedAlready = pending.installedAlready,
                     preapprovalSessionId = pending.preapprovalSessionId,
                     referrerUri = pending.referrerUri,
+                    unarchiveId = pending.unarchiveId,
                     operationId = pending.operationId,
                 )
             } catch (t: CancellationException) {
@@ -2651,6 +2780,7 @@ class CatalogViewModel : ViewModel() {
         private val INSTALLED_CARD_STATUSES = setOf(
             CardStatus.Unmanaged,
             CardStatus.Installed,
+            CardStatus.Archived,
             CardStatus.ReleaseAvailable,
             CardStatus.UpdateAvailable,
             CardStatus.ReinstallAvailable,
@@ -2670,6 +2800,7 @@ class CatalogViewModel : ViewModel() {
         installedAlready: Boolean,
         preapprovalSessionId: Int?,
         referrerUri: android.net.Uri,
+        unarchiveId: Int? = null,
         operationId: String,
     ) {
         val key = cardKey(card.info)
@@ -2708,6 +2839,7 @@ class CatalogViewModel : ViewModel() {
                 applicationId = meta.applicationId,
                 firstInstall = !installedAlready,
                 referrerUri = referrerUri,
+                unarchiveId = unarchiveId,
                 operationId = operationId,
                 onSessionCreated = { sessionId ->
                     checkNotNull(
@@ -2720,6 +2852,9 @@ class CatalogViewModel : ViewModel() {
                             installerSessionId = sessionId,
                         ),
                     ) { "Could not persist installer session" }
+                    unarchiveId?.let { restoreId ->
+                        sl.archiveRestores.clearIf(meta.applicationId, restoreId)
+                    }
                 },
             )
         }

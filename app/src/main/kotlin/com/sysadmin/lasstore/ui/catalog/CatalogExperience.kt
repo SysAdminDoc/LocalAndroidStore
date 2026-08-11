@@ -269,6 +269,8 @@ fun CatalogExperience(
                                 onQueueUpdate = { viewModel.stageBackgroundUpdate(card) },
                                 onCancelQueuedUpdate = { viewModel.cancelBackgroundUpdate(card) },
                                 onUninstall = { viewModel.uninstall(card) },
+                                onArchive = { viewModel.archive(card) },
+                                onUnarchive = { viewModel.unarchive(card) },
                                 onOpen = { viewModel.open(card) },
                                 onRepo = { viewModel.openRepo(card) },
                                 onCancel = { viewModel.cancelInstall(card) },
@@ -402,6 +404,7 @@ private val INSTALLABLE_BATCH_STATUSES = setOf(
 private val INSTALLED_BATCH_STATUSES = setOf(
     CardStatus.Unmanaged,
     CardStatus.Installed,
+    CardStatus.Archived,
     CardStatus.ReleaseAvailable,
     CardStatus.UpdateAvailable,
     CardStatus.ReinstallAvailable,

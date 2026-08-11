@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added Android 15 app archiving and launcher-triggered restore handling. Archived cards retain their managed-app state, and restore requests re-enter the verified foreground install flow with durable hand-off state.
 - Added bounded `.apks`, `.xapk`, `.apkm`, and `.apkset` installation. Each extracted split is
   independently verified for package, version, and publisher continuity, and a foreground checklist
   streams the selected set atomically through PackageInstaller.

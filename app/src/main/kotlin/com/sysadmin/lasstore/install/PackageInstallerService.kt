@@ -95,6 +95,63 @@ class PackageInstallerService(
         )
     }
 
+    /** Request Android 15+ to remove the APK while retaining the app's user data and launcher stub. */
+    fun requestArchive(applicationId: String): ArchiveRequestResult {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            return ArchiveRequestResult.Failed("App archiving requires Android 15 or newer.")
+        }
+        if (!PACKAGE_NAME_PATTERN.matches(applicationId)) {
+            return ArchiveRequestResult.Failed("Could not archive the app: the package id is invalid.")
+        }
+        return try {
+            context.packageManager.packageInstaller.requestArchive(
+                applicationId,
+                archiveOperationPendingIntent(applicationId, ACTION_ARCHIVE_RESULT).intentSender,
+            )
+            ArchiveRequestResult.Requested
+        } catch (throwable: Throwable) {
+            logger.warn("Installer", "Could not archive $applicationId: ${throwable.message}")
+            ArchiveRequestResult.Failed(
+                throwable.message ?: "Android could not archive this app.",
+            )
+        }
+    }
+
+    /** Ask Android to dispatch an archived-package restore request to LocalAndroidStore. */
+    fun requestUnarchive(applicationId: String): ArchiveRequestResult {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            return ArchiveRequestResult.Failed("App archiving requires Android 15 or newer.")
+        }
+        if (!PACKAGE_NAME_PATTERN.matches(applicationId)) {
+            return ArchiveRequestResult.Failed("Could not restore the app: the package id is invalid.")
+        }
+        return try {
+            context.packageManager.packageInstaller.requestUnarchive(
+                applicationId,
+                archiveOperationPendingIntent(applicationId, ACTION_UNARCHIVE_RESULT).intentSender,
+            )
+            ArchiveRequestResult.Requested
+        } catch (throwable: Throwable) {
+            logger.warn("Installer", "Could not request restore for $applicationId: ${throwable.message}")
+            ArchiveRequestResult.Failed(
+                throwable.message ?: "Android could not request this app's restore.",
+            )
+        }
+    }
+
+    /** Complete the system's short unarchive hand-off before network/install work begins. */
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    fun reportUnarchivalStatus(unarchiveId: Int, status: Int): Boolean = runCatching {
+        context.packageManager.packageInstaller.reportUnarchivalStatus(
+            unarchiveId,
+            status,
+            0L,
+            null,
+        )
+    }.onFailure { throwable ->
+        logger.warn("Installer", "Could not report unarchive status: ${throwable.message}")
+    }.isSuccess
+
     /** Open Android 13+'s per-app language page for an installed catalog app. */
     fun openAppLanguageSettings(applicationId: String): ExternalLaunchResult {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
@@ -171,6 +228,7 @@ class PackageInstallerService(
         applicationId: String,
         firstInstall: Boolean = true,
         referrerUri: Uri? = null,
+        unarchiveId: Int? = null,
         onSessionCreated: (Int) -> Unit = {},
         operationId: String? = null,
     ): InstallResult = suspendCancellableCoroutine { cont ->
@@ -181,6 +239,7 @@ class PackageInstallerService(
             referrerUri = referrerUri,
             applicationId = applicationId,
             silentInstall = installer.isSilent,
+            unarchiveId = unarchiveId,
         )
 
         val sessionId = try {
@@ -505,6 +564,17 @@ class PackageInstallerService(
 
     // ── Shared helpers ────────────────────────────────────────────────────────
 
+    private fun archiveOperationPendingIntent(applicationId: String, action: String): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            applicationId.hashCode() xor action.hashCode(),
+            Intent(context, ArchiveOperationReceiver::class.java)
+                .setAction(action)
+                .setPackage(context.packageName)
+                .putExtra(PackageInstaller.EXTRA_PACKAGE_NAME, applicationId),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+        )
+
     private fun newInstallerHandle(): InstallerHandle {
         if (shizukuSilentInstallEnabled()) {
             shizukuInstaller.createHandle()?.let { handle ->
@@ -551,6 +621,7 @@ class PackageInstallerService(
         referrerUri: Uri?,
         applicationId: String? = null,
         silentInstall: Boolean = false,
+        unarchiveId: Int? = null,
     ): PackageInstaller.SessionParams {
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         params.setAppPackageName(applicationId)
@@ -570,6 +641,9 @@ class PackageInstallerService(
         if (referrerUri != null) params.setReferrerUri(referrerUri)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             params.setPackageSource(PackageInstaller.PACKAGE_SOURCE_STORE)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM && unarchiveId != null) {
+            params.setUnarchiveId(unarchiveId)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && firstInstall && !silentInstall) {
             params.setRequestUpdateOwnership(true)
@@ -750,6 +824,11 @@ sealed interface InstallResult {
         val status: Int? = null,
         val auditPending: Boolean = false,
     ) : InstallResult
+}
+
+sealed interface ArchiveRequestResult {
+    data object Requested : ArchiveRequestResult
+    data class Failed(val message: String) : ArchiveRequestResult
 }
 
 sealed interface PreapprovalSessionResult {
