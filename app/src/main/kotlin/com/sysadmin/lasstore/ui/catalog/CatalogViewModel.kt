@@ -30,9 +30,11 @@ import com.sysadmin.lasstore.domain.classifyReleaseVersion
 import com.sysadmin.lasstore.install.InstallResult
 import com.sysadmin.lasstore.install.ForegroundInstallFinalizer
 import com.sysadmin.lasstore.install.ForegroundInstallPhase
+import com.sysadmin.lasstore.install.ExternalLaunchResult
 import com.sysadmin.lasstore.install.PermissionDiff
 import com.sysadmin.lasstore.install.PreapprovalSessionResult
 import com.sysadmin.lasstore.install.QueuedUpdateStatus
+import com.sysadmin.lasstore.install.safeLaunchExternalIntent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -128,6 +130,21 @@ data class CatalogUiState(
     val catalogNotice: String? = null,
     val warning: String? = null,
 )
+
+internal fun validatedGitHubRepositoryUri(rawUrl: String): android.net.Uri? {
+    val uri = runCatching { android.net.Uri.parse(rawUrl.trim()) }.getOrNull() ?: return null
+    val host = uri.host?.lowercase(Locale.US)
+    if (
+        !uri.scheme.equals("https", ignoreCase = true) ||
+        host !in setOf("github.com", "www.github.com") ||
+        uri.port != -1 ||
+        !uri.userInfo.isNullOrBlank() ||
+        uri.pathSegments.count { it.isNotBlank() } < 2
+    ) {
+        return null
+    }
+    return uri
+}
 
 internal fun preserveActivityResumeContext(previous: CardState, rebuilt: CardState): CardState =
     rebuilt.copy(
@@ -310,7 +327,12 @@ class CatalogViewModel : ViewModel() {
         refreshIfIdle()
     }
 
-    fun openInstallPermissionSettings() = sl.installer.openInstallPermissionSettings()
+    fun openInstallPermissionSettings() {
+        when (val result = sl.installer.openInstallPermissionSettings()) {
+            ExternalLaunchResult.Started -> Unit
+            is ExternalLaunchResult.Failed -> _state.update { it.copy(warning = result.message) }
+        }
+    }
 
     fun updateSearchQuery(query: String) {
         _state.update { it.copy(searchQuery = query) }
@@ -549,7 +571,7 @@ class CatalogViewModel : ViewModel() {
         }
         if (!sl.installer.canRequestInstalls()) {
             _state.update { it.copy(warning = "Grant 'Install unknown apps' first.") }
-            sl.installer.openInstallPermissionSettings()
+            openInstallPermissionSettings()
             return
         }
         val key = cardKey(card.info)
@@ -1175,7 +1197,7 @@ class CatalogViewModel : ViewModel() {
         }
         if (!sl.installer.canRequestInstalls()) {
             _state.update { it.copy(warning = "Grant 'Install unknown apps' first.") }
-            sl.installer.openInstallPermissionSettings()
+            openInstallPermissionSettings()
             return
         }
         val cached = sl.appIdCache.get(
@@ -1363,9 +1385,13 @@ class CatalogViewModel : ViewModel() {
 
     fun uninstall(card: CardState) {
         val applicationId = card.info.applicationId ?: return
-        sl.installer.openAppInfo(applicationId)
-        sl.audit.uninstallInitiated(applicationId, card.info.handle)
-        sl.logger.info("Uninstall", "Opened delete intent for $applicationId")
+        when (val result = sl.installer.openAppInfo(applicationId)) {
+            ExternalLaunchResult.Started -> {
+                sl.audit.uninstallInitiated(applicationId, card.info.handle)
+                sl.logger.info("Uninstall", "Opened delete intent for $applicationId")
+            }
+            is ExternalLaunchResult.Failed -> _state.update { it.copy(warning = result.message) }
+        }
     }
 
     fun open(card: CardState) {
@@ -1384,15 +1410,38 @@ class CatalogViewModel : ViewModel() {
             }
             return
         }
-        if (!sl.installer.launch(applicationId)) {
-            _state.update { it.copy(warning = "Couldn't launch $applicationId — no exported launcher activity?") }
+        when (val result = sl.installer.launch(applicationId)) {
+            ExternalLaunchResult.Started -> Unit
+            is ExternalLaunchResult.Failed -> {
+                if (sl.installState.info(applicationId) == null) resetCard(card)
+                _state.update { it.copy(warning = result.message) }
+            }
         }
     }
 
     fun openRepo(card: CardState) {
-        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(card.info.htmlUrl))
+        val uri = validatedGitHubRepositoryUri(card.info.htmlUrl)
+        if (uri == null) {
+            _state.update {
+                it.copy(warning = "Repository link rejected: only HTTPS GitHub repository links are allowed.")
+            }
+            return
+        }
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        sl.appContext.startActivity(intent)
+        when (
+            val result = safeLaunchExternalIntent(
+                intent = intent,
+                canResolve = { candidate ->
+                    candidate.resolveActivity(sl.appContext.packageManager) != null
+                },
+                start = { candidate -> sl.appContext.startActivity(candidate) },
+                failureMessage = "Couldn't open the GitHub repository.",
+            )
+        ) {
+            ExternalLaunchResult.Started -> Unit
+            is ExternalLaunchResult.Failed -> _state.update { it.copy(warning = result.message) }
+        }
     }
 
     /** Load a bounded, paged release history only after an explicit user request. */

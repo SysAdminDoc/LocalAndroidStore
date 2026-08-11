@@ -30,28 +30,59 @@ class PackageInstallerService(
     fun canRequestInstalls(): Boolean = context.packageManager.canRequestPackageInstalls()
 
     /** Open the system Settings page where the user grants "Install unknown apps". */
-    fun openInstallPermissionSettings() {
+    fun openInstallPermissionSettings(): ExternalLaunchResult {
         val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
             .setData(Uri.parse("package:${context.packageName}"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        return launchExternalIntent(
+            intent = intent,
+            failureMessage = "Could not open Android's install-permission settings.",
+        )
     }
 
     /** Open the system app-info screen so the user can hit Uninstall. */
-    fun openAppInfo(applicationId: String) {
+    fun openAppInfo(applicationId: String): ExternalLaunchResult {
+        if (!PACKAGE_NAME_PATTERN.matches(applicationId)) {
+            return ExternalLaunchResult.Failed(
+                "Could not open app settings: the package id is invalid.",
+            )
+        }
         val intent = Intent(Intent.ACTION_DELETE)
             .setData(Uri.parse("package:$applicationId"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        return launchExternalIntent(
+            intent = intent,
+            failureMessage = "Could not open Android's uninstall screen.",
+        )
     }
 
     /** Launch the installed app's main activity. */
-    fun launch(applicationId: String): Boolean {
+    fun launch(applicationId: String): ExternalLaunchResult {
         val intent = context.packageManager.getLaunchIntentForPackage(applicationId)
-            ?: return false
+            ?: return ExternalLaunchResult.Failed(
+                "Couldn't launch $applicationId — no exported launcher activity was found.",
+            )
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
-        return true
+        return launchExternalIntent(
+            intent = intent,
+            failureMessage = "Couldn't launch $applicationId.",
+        )
+    }
+
+    private fun launchExternalIntent(
+        intent: Intent,
+        failureMessage: String,
+    ): ExternalLaunchResult {
+        val result = safeLaunchExternalIntent(
+            intent = intent,
+            canResolve = { candidate -> candidate.resolveActivity(context.packageManager) != null },
+            start = { candidate -> context.startActivity(candidate) },
+            failureMessage = failureMessage,
+        )
+        if (result is ExternalLaunchResult.Failed) {
+            logger.warn("Installer", result.message)
+        }
+        return result
     }
 
     /**
@@ -433,7 +464,17 @@ class PackageInstallerService(
                     val confirm = intent.pendingUserActionIntent()
                     if (confirm != null) {
                         confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        ctx.startActivity(confirm)
+                        val result = safeLaunchExternalIntent(
+                            intent = confirm,
+                            canResolve = { candidate ->
+                                candidate.resolveActivity(ctx.packageManager) != null
+                            },
+                            start = { candidate -> ctx.startActivity(candidate) },
+                            failureMessage = "Could not open the Android install confirmation.",
+                        )
+                        if (result is ExternalLaunchResult.Failed) {
+                            logger.warn("Installer", result.message)
+                        }
                     }
                 }
                 PackageInstaller.STATUS_SUCCESS -> {
@@ -529,6 +570,9 @@ class PackageInstallerService(
     }
 
     private companion object {
+        private val PACKAGE_NAME_PATTERN = Regex(
+            "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$",
+        )
         val CONSTRAINT_TIMEOUT_MILLIS: Long = TimeUnit.HOURS.toMillis(24)
         const val STATUS_UNKNOWN = -999
     }
