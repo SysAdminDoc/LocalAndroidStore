@@ -129,6 +129,12 @@ data class CatalogUiState(
     val warning: String? = null,
 )
 
+internal fun preserveActivityResumeContext(previous: CardState, rebuilt: CardState): CardState =
+    rebuilt.copy(
+        releaseHistory = previous.releaseHistory,
+        historicalSelection = previous.historicalSelection,
+    )
+
 class CatalogViewModel : ViewModel() {
     private val sl = ServiceLocator
     private val discovery = DiscoveryUseCase(
@@ -149,6 +155,7 @@ class CatalogViewModel : ViewModel() {
     /** One explicit release-history request per catalog card. */
     private val historyJobs = ConcurrentHashMap<String, Job>()
     @Volatile private var refreshJob: Job? = null
+    @Volatile private var resumeReconcileJob: Job? = null
     @Volatile private var refreshGeneration = 0L
 
     /** APK + metadata held after inspection when waiting for permission review (Item 34). */
@@ -267,6 +274,42 @@ class CatalogViewModel : ViewModel() {
         _state.update { it.copy(canRequestInstalls = sl.installer.canRequestInstalls()) }
     }
 
+    /** Reconcile state after returning from Android Settings or an external uninstall flow. */
+    fun onActivityResumed() {
+        refreshInstallPermission()
+        if (resumeReconcileJob?.isActive != true) {
+            val job = viewModelScope.launch(Dispatchers.IO) {
+                val rebuilt = _state.value.cards.associateBy(
+                    keySelector = { cardKey(it.info) },
+                    valueTransform = { card ->
+                        buildCardState(
+                            card.info,
+                            sl.appIdCache.get(card.info.sourceKey, card.info.owner, card.info.repo),
+                        ).let { rebuiltCard ->
+                            preserveActivityResumeContext(card, rebuiltCard)
+                        }
+                    },
+                )
+                _state.update { current ->
+                    current.copy(
+                        cards = current.cards.map { card ->
+                            if (hasActiveOperation(card)) {
+                                card
+                            } else {
+                                rebuilt[cardKey(card.info)] ?: card
+                            }
+                        },
+                    )
+                }
+            }
+            resumeReconcileJob = job
+            job.invokeOnCompletion {
+                if (resumeReconcileJob == job) resumeReconcileJob = null
+            }
+        }
+        refreshIfIdle()
+    }
+
     fun openInstallPermissionSettings() = sl.installer.openInstallPermissionSettings()
 
     fun updateSearchQuery(query: String) {
@@ -347,6 +390,10 @@ class CatalogViewModel : ViewModel() {
         job.invokeOnCompletion {
             if (refreshGeneration == generation) refreshJob = null
         }
+    }
+
+    private fun refreshIfIdle() {
+        if (refreshJob?.isActive != true) refresh()
     }
 
     /** Derive card state from package metadata and an inspected release, never from a tag. */
@@ -1517,6 +1564,11 @@ class CatalogViewModel : ViewModel() {
     // region Private helpers
 
     private fun cardKey(info: AppInfo) = "${info.sourceKey}/${info.owner}/${info.repo}"
+
+    private fun hasActiveOperation(card: CardState): Boolean {
+        val key = cardKey(card.info)
+        return activeJobs[key] != null || sl.foregroundInstalls.get(key) != null
+    }
 
     private fun newActionId(): String = UUID.randomUUID().toString()
 

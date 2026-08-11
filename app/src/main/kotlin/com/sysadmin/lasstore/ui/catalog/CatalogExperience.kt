@@ -62,18 +62,25 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.LaunchedEffect
 import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.ui.theme.Catppuccin
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 @Composable
 fun CatalogExperience(
     viewModel: CatalogViewModel = viewModel(),
+    activityResumed: Flow<Unit> = emptyFlow(),
     onBeforeQueue: (CardState, (Boolean) -> Unit) -> Unit = { _, continueQueue ->
         continueQueue(true)
     },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(viewModel, activityResumed) {
+        activityResumed.collect { viewModel.onActivityResumed() }
+    }
     val visibleCards = remember(state.cards, state.searchQuery) {
         filterCards(state.cards, state.searchQuery)
     }

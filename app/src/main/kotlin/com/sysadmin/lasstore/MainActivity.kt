@@ -12,12 +12,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.flow.MutableSharedFlow
 import com.sysadmin.lasstore.ui.AppRoot
 import com.sysadmin.lasstore.ui.theme.LocalAndroidStoreTheme
 
 class MainActivity : ComponentActivity() {
 
     private var notificationPermissionResult: ((Boolean) -> Unit)? = null
+    private val activityResumed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     private val requestNotifications = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -38,9 +40,15 @@ class MainActivity : ComponentActivity() {
                 AppRoot(
                     requestNotificationPermission = ::requestNotificationPermission,
                     openNotificationSettings = ::openNotificationSettings,
+                    activityResumed = activityResumed,
                 )
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        activityResumed.tryEmit(Unit)
     }
 
     private fun requestNotificationPermission(callback: (Boolean) -> Unit) {

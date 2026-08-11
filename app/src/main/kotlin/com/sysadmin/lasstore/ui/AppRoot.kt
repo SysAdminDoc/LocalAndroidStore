@@ -37,6 +37,8 @@ import com.sysadmin.lasstore.ui.catalog.CatalogExperience
 import com.sysadmin.lasstore.ui.log.LogScreen
 import com.sysadmin.lasstore.ui.settings.SettingsScreen
 import com.sysadmin.lasstore.ui.theme.Catppuccin
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 private const val ROUTE_CATALOG = "catalog"
 private const val ROUTE_SETTINGS = "settings"
@@ -46,6 +48,7 @@ private const val ROUTE_LOG = "log"
 fun AppRoot(
     requestNotificationPermission: (((Boolean) -> Unit) -> Unit)? = null,
     openNotificationSettings: () -> Unit = {},
+    activityResumed: Flow<Unit> = emptyFlow(),
 ) {
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
@@ -80,6 +83,7 @@ fun AppRoot(
         ) {
             composable(ROUTE_CATALOG) {
                 CatalogExperience(
+                    activityResumed = activityResumed,
                     onBeforeQueue = { _, continueQueue ->
                         requestNotificationPermission?.invoke(continueQueue) ?: continueQueue(true)
                     },
