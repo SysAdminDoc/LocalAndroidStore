@@ -12,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -42,6 +43,29 @@ private data class PendingSettingsSave(
     val target: AppSettings,
 )
 
+enum class SourceRegistryPayloadState {
+    Missing,
+    Valid,
+    Malformed,
+}
+
+data class SourceRegistryInspection(
+    val settings: AppSettings,
+    val payloadState: SourceRegistryPayloadState,
+    val malformedPayload: String? = null,
+    val backupAvailable: Boolean = false,
+) {
+    val requiresRecovery: Boolean get() = payloadState == SourceRegistryPayloadState.Malformed
+}
+
+class MalformedSourceRegistryException(
+    val rawPayload: String,
+    val backupAvailable: Boolean,
+) : IllegalStateException(
+    "The saved GitHub source registry is malformed. A recovery copy was preserved; " +
+        "review the fallback entries and explicitly replace the saved registry.",
+)
+
 interface SettingsSecretStore {
     fun getPat(): String
     fun setPat(pat: String)
@@ -69,6 +93,10 @@ class SettingsStore(
         "settings_save_journal",
         Context.MODE_PRIVATE,
     ),
+    private val recoveryStore: SharedPreferences = context.getSharedPreferences(
+        "settings_recovery",
+        Context.MODE_PRIVATE,
+    ),
 ) {
     private val keyUser = stringPreferencesKey("github_user")
     private val keyTopic = stringPreferencesKey("topic")
@@ -85,20 +113,49 @@ class SettingsStore(
 
     val flow: Flow<AppSettings> = dataStore.data
         .onStart { recoverPendingTransaction() }
-        .map(::settingsFromPreferences)
+        .map(::inspectPreferences)
+        .onEach { persistMalformedPayload(it.malformedPayload) }
+        .map { it.settings }
 
     /** Recover an interrupted registry/PAT transaction before exposing settings to callers. */
     suspend fun recoverPendingTransaction() = transactionMutex.withLock {
         recoverPendingTransactionLocked()
     }
 
+    /** Inspect the persisted registry without replacing malformed data with a default. */
+    suspend fun inspectSourceRegistry(): SourceRegistryInspection = transactionMutex.withLock {
+        inspectSourceRegistryLocked()
+    }
+
+    fun malformedSourceRegistryBackup(): String? =
+        recoveryStore.getString(KEY_MALFORMED_SOURCES_BACKUP, null)
+
     /** Persist the source registry and source PATs as one recoverable transaction. */
     suspend fun saveSourceRegistry(
         settings: AppSettings,
         sourcePats: Map<String, String>,
+    ) = saveSourceRegistryInternal(settings, sourcePats, allowMalformedReplacement = false)
+
+    /** Explicitly replace a malformed persisted registry after the user reviews the fallback. */
+    suspend fun replaceMalformedSourceRegistry(
+        settings: AppSettings,
+        sourcePats: Map<String, String>,
+    ) = saveSourceRegistryInternal(settings, sourcePats, allowMalformedReplacement = true)
+
+    private suspend fun saveSourceRegistryInternal(
+        settings: AppSettings,
+        sourcePats: Map<String, String>,
+        allowMalformedReplacement: Boolean,
     ) = transactionMutex.withLock {
         recoverPendingTransactionLocked()
-        val previous = readSettingsLocked()
+        val inspection = inspectSourceRegistryLocked()
+        if (inspection.requiresRecovery && !allowMalformedReplacement) {
+            throw MalformedSourceRegistryException(
+                rawPayload = requireNotNull(inspection.malformedPayload),
+                backupAvailable = inspection.backupAvailable,
+            )
+        }
+        val previous = inspection.settings
         val target = canonicalSettings(settings)
         val targetSourcePats = sourcePats
             .filter { (key, value) ->
@@ -147,6 +204,13 @@ class SettingsStore(
     suspend fun update(settings: AppSettings) {
         transactionMutex.withLock {
             recoverPendingTransactionLocked()
+            val inspection = inspectSourceRegistryLocked()
+            if (inspection.requiresRecovery) {
+                throw MalformedSourceRegistryException(
+                    rawPayload = requireNotNull(inspection.malformedPayload),
+                    backupAvailable = inspection.backupAvailable,
+                )
+            }
             writeSettings(canonicalSettings(settings))
         }
     }
@@ -177,8 +241,17 @@ class SettingsStore(
         }
     }
 
+    private suspend fun inspectSourceRegistryLocked(): SourceRegistryInspection =
+        dataStore.data.first()
+            .let(::inspectPreferences)
+            .let { inspection ->
+                inspection.copy(
+                    backupAvailable = persistMalformedPayload(inspection.malformedPayload),
+                )
+            }
+
     private suspend fun readSettingsLocked(): AppSettings =
-        dataStore.data.first().let(::settingsFromPreferences)
+        inspectSourceRegistryLocked().settings
 
     private suspend fun writeSettings(settings: AppSettings) {
         val canonical = canonicalSettings(settings)
@@ -192,15 +265,20 @@ class SettingsStore(
         }
     }
 
-    private fun settingsFromPreferences(prefs: Preferences): AppSettings {
+    private fun inspectPreferences(prefs: Preferences): SourceRegistryInspection {
         val legacy = AppSettings(
             githubUser = prefs[keyUser] ?: DEFAULT_GITHUB_USER,
             topic = prefs[keyTopic] ?: DEFAULT_GITHUB_TOPIC,
             filterByTopic = prefs[keyFilterByTopic] ?: false,
             showPrereleases = prefs[keyPrereleases] ?: false,
         )
-        val sources = decodeSources(prefs[keySources]) ?: listOf(legacySource(legacy))
-        return legacy.copy(sources = normalizeSources(sources))
+        val decoded = decodeSources(prefs[keySources])
+        val sources = (decoded.sources ?: listOf(legacySource(legacy)))
+        return SourceRegistryInspection(
+            settings = legacy.copy(sources = normalizeSources(sources)),
+            payloadState = decoded.state,
+            malformedPayload = decoded.rawPayload,
+        )
     }
 
     private fun canonicalSettings(settings: AppSettings): AppSettings {
@@ -247,12 +325,55 @@ class SettingsStore(
     fun replaceSourcePats(sourcePats: Map<String, String>, activeSourceKeys: Set<String>) =
         secrets.replaceSourcePats(sourcePats, activeSourceKeys)
 
-    private fun decodeSources(raw: String?): List<GitHubSource>? {
-        if (raw.isNullOrBlank()) return null
-        return runCatching { json.decodeFromString(sourceListSerializer, raw) }.getOrNull()
+    private fun decodeSources(raw: String?): DecodedSources {
+        if (raw == null) return DecodedSources(SourceRegistryPayloadState.Missing)
+        val sources = runCatching {
+            json.decodeFromString(sourceListSerializer, raw)
+        }.getOrNull() ?: return DecodedSources(
+            state = SourceRegistryPayloadState.Malformed,
+            rawPayload = raw,
+        )
+        val keys = sources.map { it.key }
+        if (
+            sources.isEmpty() ||
+            sources.any { it.user.isBlank() } ||
+            keys.toSet().size != keys.size
+        ) {
+            return DecodedSources(
+                state = SourceRegistryPayloadState.Malformed,
+                rawPayload = raw,
+            )
+        }
+        return DecodedSources(
+            state = SourceRegistryPayloadState.Valid,
+            sources = sources,
+        )
+    }
+
+    private fun persistMalformedPayload(rawPayload: String?): Boolean {
+        if (rawPayload == null) return false
+        return runCatching {
+            if (recoveryStore.getString(KEY_MALFORMED_SOURCES_BACKUP, null) != rawPayload) {
+                check(
+                    recoveryStore.edit()
+                        .putString(KEY_MALFORMED_SOURCES_BACKUP, rawPayload)
+                        .putLong(KEY_MALFORMED_SOURCES_BACKUP_AT, System.currentTimeMillis())
+                        .commit(),
+                ) { "Could not preserve malformed source registry" }
+            }
+            recoveryStore.getString(KEY_MALFORMED_SOURCES_BACKUP, null) == rawPayload
+        }.getOrDefault(false)
     }
 
     private companion object {
         const val KEY_PENDING_TRANSACTION = "pending_source_registry_save"
+        const val KEY_MALFORMED_SOURCES_BACKUP = "malformed_github_sources_v1"
+        const val KEY_MALFORMED_SOURCES_BACKUP_AT = "malformed_github_sources_v1_at"
     }
 }
+
+private data class DecodedSources(
+    val state: SourceRegistryPayloadState,
+    val sources: List<GitHubSource>? = null,
+    val rawPayload: String? = null,
+)

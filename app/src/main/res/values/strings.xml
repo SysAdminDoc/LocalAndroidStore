@@ -132,6 +132,9 @@
     <string name="add_github_source">Add GitHub source</string>
     <string name="saving_source_registry">Saving source registry…</string>
     <string name="save_source_registry">Save source registry</string>
+    <string name="source_registry_recovery_required">The saved GitHub source registry could not be read. A recovery copy was preserved. Review the fallback entries, then replace the saved registry intentionally.</string>
+    <string name="source_registry_recovery_backup_failed">The saved GitHub source registry could not be read, and its recovery copy could not be verified. Do not replace it until storage is available again.</string>
+    <string name="replace_saved_registry">Replace saved registry</string>
     <plurals name="registry_saved">
         <item quantity="one">Registry saved · %1$d source ready to sync.</item>
         <item quantity="other">Registry saved · %1$d sources ready to sync.</item>

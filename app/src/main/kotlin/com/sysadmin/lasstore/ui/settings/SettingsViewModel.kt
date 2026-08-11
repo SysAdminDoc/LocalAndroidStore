@@ -6,6 +6,7 @@ import com.sysadmin.lasstore.data.AppSettings
 import com.sysadmin.lasstore.data.GitHubConnectionResult
 import com.sysadmin.lasstore.data.GitHubRequestException
 import com.sysadmin.lasstore.data.GitHubSource
+import com.sysadmin.lasstore.data.MalformedSourceRegistryException
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.sourceKey
 import com.sysadmin.lasstore.data.validateSources
@@ -32,6 +33,8 @@ data class SettingsUiState(
     val savedAt: Long = 0L,
     val saveError: String? = null,
     val saveStatus: SettingsSaveStatus = SettingsSaveStatus.Idle,
+    val registryRecoveryRequired: Boolean = false,
+    val registryRecoveryBackupAvailable: Boolean = false,
     val connectionChecks: Map<String, ConnectionCheckState> = emptyMap(),
 ) {
     val saving: Boolean get() = saveStatus == SettingsSaveStatus.Saving
@@ -57,6 +60,18 @@ class SettingsViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 sl.settings.recoverPendingTransaction()
+                val inspection = sl.settings.inspectSourceRegistry()
+                _state.update {
+                    it.copy(
+                        settings = inspection.settings,
+                        sourcePats = inspection.settings.sources.associate { source ->
+                            source.key to sl.settings.getSourcePat(source.key).orEmpty()
+                        },
+                        encryptedAtRest = sl.secrets.encrypted,
+                        registryRecoveryRequired = inspection.requiresRecovery,
+                        registryRecoveryBackupAvailable = inspection.backupAvailable,
+                    )
+                }
                 sl.settings.flow.collect { current ->
                     _state.update {
                         it.copy(
@@ -86,6 +101,22 @@ class SettingsViewModel : ViewModel() {
         sources: List<GitHubSource>,
         sourcePats: Map<String, String>,
     ) {
+        saveInternal(sources, sourcePats, replaceMalformedRegistry = false)
+    }
+
+    fun replaceMalformedRegistry(
+        sources: List<GitHubSource>,
+        sourcePats: Map<String, String>,
+    ) {
+        saveInternal(sources, sourcePats, replaceMalformedRegistry = true)
+    }
+
+    private fun saveInternal(
+        sources: List<GitHubSource>,
+        sourcePats: Map<String, String>,
+        replaceMalformedRegistry: Boolean,
+    ) {
+        if (_state.value.saveStatus == SettingsSaveStatus.Saving) return
         validateSources(sources)?.let { error ->
             _state.update {
                 it.copy(
@@ -95,7 +126,15 @@ class SettingsViewModel : ViewModel() {
             }
             return
         }
-        if (_state.value.saveStatus == SettingsSaveStatus.Saving) return
+        if (_state.value.registryRecoveryRequired && !replaceMalformedRegistry) {
+            _state.update {
+                it.copy(
+                    saveStatus = SettingsSaveStatus.Error,
+                    saveError = "The saved source registry needs recovery. Review the fallback entries and replace it intentionally.",
+                )
+            }
+            return
+        }
         val normalized = sources.map { source ->
             source.copy(
                 user = source.user.trim(),
@@ -113,10 +152,18 @@ class SettingsViewModel : ViewModel() {
                 val affectedSourceKeys = (
                     _state.value.settings.sources.map { it.key } + normalized.map { it.key }
                     ).toSet()
-                sl.settings.saveSourceRegistry(
-                    settings = AppSettings(sources = normalized),
-                    sourcePats = sourcePats,
-                )
+                val targetSettings = AppSettings(sources = normalized)
+                if (replaceMalformedRegistry) {
+                    sl.settings.replaceMalformedSourceRegistry(
+                        settings = targetSettings,
+                        sourcePats = sourcePats,
+                    )
+                } else {
+                    sl.settings.saveSourceRegistry(
+                        settings = targetSettings,
+                        sourcePats = sourcePats,
+                    )
+                }
                 affectedSourceKeys.forEach { sourceKey ->
                     runCatching { sl.github.purgeSourceCache(sourceKey) }
                         .onFailure {
@@ -141,6 +188,7 @@ class SettingsViewModel : ViewModel() {
                         sourcePats = sourcePats,
                         saveStatus = SettingsSaveStatus.Saved,
                         saveError = null,
+                        registryRecoveryRequired = false,
                     )
                 }
             } catch (cancellation: CancellationException) {
@@ -148,9 +196,13 @@ class SettingsViewModel : ViewModel() {
             } catch (throwable: Throwable) {
                 sl.logger.error("Settings", "Could not save source registry", throwable)
                 _state.update {
+                    val malformed = throwable as? MalformedSourceRegistryException
                     it.copy(
                         saveStatus = SettingsSaveStatus.Error,
                         saveError = throwable.message ?: "Could not save the source registry.",
+                        registryRecoveryRequired = it.registryRecoveryRequired || malformed != null,
+                        registryRecoveryBackupAvailable =
+                            it.registryRecoveryBackupAvailable || malformed?.backupAvailable == true,
                     )
                 }
             }

@@ -33,6 +33,7 @@
 - Added bounded, paged historical release browsing with explicit foreground selection; selected older releases retain available version/digest/signer evidence, use the normal inspection/trust/downgrade gates, are audit-recorded, and cannot enter the background queue.
 
 ### Fixed
+- Preserved malformed multi-source settings payloads in a recoverable backup, surfaced an actionable Settings recovery state, and blocked ordinary saves until the user explicitly replaces the unreadable registry.
 - Made source-registry and per-source PAT saves transaction-backed and restart-recoverable: concurrent saves are coalesced, failures roll back or remain explicitly retryable, cache invalidation follows verified persistence, and the UI distinguishes saving, saved, and error states.
 - Restricted split-config detection to strict APK asset names, so metadata such as `config.json` no longer hides an installable `base.apk` while real split APK sets remain blocked.
 - Partial catalog refreshes now retain only current repositories whose release lookup failed transiently, mark those saved cards stale, and discard snapshot entries older than seven days or outside the current repository/topic candidate set.

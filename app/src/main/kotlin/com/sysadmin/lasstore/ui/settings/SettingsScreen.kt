@@ -179,6 +179,34 @@ fun SettingsScreen(
             SettingsError(text = error)
         }
 
+        if (state.registryRecoveryRequired) {
+            SettingsError(
+                text = stringResource(
+                    if (state.registryRecoveryBackupAvailable) {
+                        R.string.source_registry_recovery_required
+                    } else {
+                        R.string.source_registry_recovery_backup_failed
+                    },
+                ),
+            )
+            OutlinedButton(
+                onClick = {
+                    viewModel.replaceMalformedRegistry(
+                        sources = draftSources,
+                        sourcePats = sourcePats,
+                    )
+                },
+                enabled = validationError == null && !state.saving &&
+                    state.registryRecoveryBackupAvailable,
+                modifier = Modifier.fillMaxWidth(),
+                border = BorderStroke(1.dp, Catppuccin.Red.copy(alpha = 0.45f)),
+                contentPadding = PaddingValues(vertical = 13.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Catppuccin.Red),
+            ) {
+                Text(stringResource(R.string.replace_saved_registry))
+            }
+        }
+
         Button(
             onClick = {
                 viewModel.save(
@@ -186,7 +214,7 @@ fun SettingsScreen(
                     sourcePats = sourcePats,
                 )
             },
-            enabled = validationError == null && !state.saving,
+            enabled = validationError == null && !state.saving && !state.registryRecoveryRequired,
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(vertical = 14.dp),
             colors = ButtonDefaults.buttonColors(
