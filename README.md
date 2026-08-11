@@ -1,7 +1,7 @@
 <h1 align="center">LocalAndroidStore</h1>
 
 <p align="center">
-  <a href="https://github.com/SysAdminDoc/LocalAndroidStore/releases"><img src="https://img.shields.io/badge/version-0.2.2-cba6f7?style=for-the-badge" alt="Version" /></a>
+  <a href="https://github.com/SysAdminDoc/LocalAndroidStore/releases"><img src="https://img.shields.io/badge/version-0.2.3-cba6f7?style=for-the-badge" alt="Version" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a6e3a1?style=for-the-badge" alt="License" /></a>
   <a href="https://developer.android.com/about/versions/oreo"><img src="https://img.shields.io/badge/Android-8.0%2B-74c7ec?style=for-the-badge" alt="Android 8.0+" /></a>
   <a href="https://kotlinlang.org/"><img src="https://img.shields.io/badge/Kotlin-2.1-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin" /></a>
@@ -248,6 +248,9 @@ a clean checkout without that file must not be distributed as a release. Run:
 ```bash
 # Build the non-debug release with the locally configured keystore
 ./gradlew assembleRelease
+
+# Check README, Gradle, changelog, and working-note release metadata agree
+powershell -NoProfile -File scripts/verify-version.ps1
 
 # Verify the exact artifact before publishing it
 apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
