@@ -217,12 +217,22 @@ class DiscoveryUseCase(
                         "Discovery",
                         "${repo.owner.login}/${repo.name}: ${throwable.message}",
                     )
-                    ReleaseLookup.Failed(CatalogFailureClassifier.classify(source, throwable))
+                    ReleaseLookup.Failed(
+                        repoKey = repoKey(repo.owner.login, repo.name),
+                        issue = CatalogFailureClassifier.classify(source, throwable),
+                    )
                 }
             }
         }.awaitAll()
 
         val liveApps = lookups.mapNotNull { (it as? ReleaseLookup.Found)?.app }
+        val transientFailedKeys = lookups
+            .mapNotNull { lookup ->
+                (lookup as? ReleaseLookup.Failed)
+                    ?.takeIf { it.issue.kind.isTransientLookupFailure() }
+                    ?.repoKey
+            }
+            .toSet()
         val releaseIssue = lookups
             .mapNotNull { (it as? ReleaseLookup.Failed)?.issue }
             .minByOrNull { issuePriority(it.kind) }
@@ -246,7 +256,12 @@ class DiscoveryUseCase(
             }
             SourceDiscovery(apps = liveApps)
         } else {
-            mergeWithSnapshot(source, liveApps, releaseIssue)
+            mergeWithSnapshot(
+                source = source,
+                liveApps = liveApps,
+                issue = releaseIssue,
+                retainKeys = transientFailedKeys,
+            )
         }
     }
 
@@ -270,12 +285,18 @@ class DiscoveryUseCase(
     private fun recoverFromSnapshot(
         source: GitHubSource,
         issue: CatalogSourceIssue,
-    ): SourceDiscovery = mergeWithSnapshot(source, emptyList(), issue)
+    ): SourceDiscovery = mergeWithSnapshot(
+        source = source,
+        liveApps = emptyList(),
+        issue = issue,
+        retainKeys = null,
+    )
 
     private fun mergeWithSnapshot(
         source: GitHubSource,
         liveApps: List<AppInfo>,
         issue: CatalogSourceIssue,
+        retainKeys: Set<String>?,
     ): SourceDiscovery {
         val snapshot = snapshots.read(source.key)
         if (snapshot == null && liveApps.isNotEmpty()) {
@@ -299,14 +320,16 @@ class DiscoveryUseCase(
                 issue = issue,
             )
         }
-        val liveKeys = liveApps
-            .map { "${it.owner}/${it.repo}".lowercase(Locale.US) }
-            .toSet()
-        val cachedRemainder = snapshot?.apps.orEmpty().filter {
-            "${it.owner}/${it.repo}".lowercase(Locale.US) !in liveKeys
-        }
         val age = snapshot
             ?.let { (nowEpochMillis() - it.refreshedAtEpochMillis).coerceAtLeast(0L) }
+        val cachedRemainder = snapshot
+            ?.takeIf { age != null && age <= MAX_PARTIAL_SNAPSHOT_AGE_MILLIS }
+            ?.apps
+            .orEmpty()
+            .filter { app ->
+                retainKeys == null || repoKey(app.owner, app.repo) in retainKeys
+            }
+            .map { it.copy(isStale = true) }
         return SourceDiscovery(
             apps = liveApps + cachedRemainder,
             issue = issue.copy(snapshotAgeMillis = age),
@@ -326,6 +349,18 @@ class DiscoveryUseCase(
         CatalogFailureKind.Unknown -> 8
     }
 
+    private fun CatalogFailureKind.isTransientLookupFailure(): Boolean = when (this) {
+        CatalogFailureKind.Tls,
+        CatalogFailureKind.RateLimited,
+        CatalogFailureKind.Network,
+        CatalogFailureKind.Server -> true
+        CatalogFailureKind.Authentication,
+        CatalogFailureKind.Authorization,
+        CatalogFailureKind.Truncated,
+        CatalogFailureKind.InvalidResponse,
+        CatalogFailureKind.Unknown -> false
+    }
+
     private data class SourceDiscovery(
         val apps: List<AppInfo>,
         val issue: CatalogSourceIssue? = null,
@@ -334,12 +369,16 @@ class DiscoveryUseCase(
 
     private sealed interface ReleaseLookup {
         data class Found(val app: AppInfo) : ReleaseLookup
-        data class Failed(val issue: CatalogSourceIssue) : ReleaseLookup
+        data class Failed(val repoKey: String, val issue: CatalogSourceIssue) : ReleaseLookup
         data object Missing : ReleaseLookup
     }
 
     private companion object {
         const val MAX_CONCURRENT_RELEASE_LOOKUPS = 4
+        const val MAX_PARTIAL_SNAPSHOT_AGE_MILLIS = 7L * 24L * 60L * 60L * 1_000L
+
+        fun repoKey(owner: String, repo: String): String =
+            "$owner/$repo".lowercase(Locale.US)
     }
 }
 

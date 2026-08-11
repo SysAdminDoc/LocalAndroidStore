@@ -22,6 +22,8 @@ data class AppInfo(
     val prerelease: Boolean,
     val releaseBody: String? = null,
     val assetChoices: List<GhAsset> = emptyList(),
+    /** True when this card came from a bounded, stale snapshot after a transient lookup failure. */
+    val isStale: Boolean = false,
 ) {
     val handle: String get() = "$owner/$repo"
 

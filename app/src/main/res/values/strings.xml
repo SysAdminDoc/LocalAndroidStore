@@ -76,6 +76,7 @@
     <string name="adopt_installed_app_body">This package was installed outside LocalAndroidStore. Adoption records its current signer and this source, then permits managed and background updates. A different signer remains blocked.</string>
     <string name="manual_install_release">Install release manually</string>
     <string name="status_unmanaged">Unmanaged</string>
+    <string name="stale_catalog_release">Saved release · latest lookup failed</string>
     <string name="no_release_past_year">No release in the past year</string>
     <string name="update_alerts_muted">Update alerts muted</string>
     <string name="choose_apk">Choose APK</string>

@@ -183,8 +183,111 @@ class DiscoveryUseCaseTest {
         )
 
         assertEquals(setOf("live", "cached"), result.apps.map { it.repo }.toSet())
+        assertTrue(result.apps.single { it.repo == "cached" }.isStale)
         assertEquals(CatalogFailureKind.Network, result.issues.single().kind)
         assertEquals(1_000_000L, result.snapshotAgeMillis)
+    }
+
+    @Test
+    fun partialRefreshRetainsOnlyCurrentTransientCandidates() = runBlocking {
+        val snapshots = MemorySnapshots().apply {
+            write(
+                CatalogSnapshot(
+                    sourceKey = "alice",
+                    sourceLabel = "alice",
+                    refreshedAtEpochMillis = 1_000_000L,
+                    apps = listOf(
+                        app("alice", "live"),
+                        app("alice", "failed"),
+                        app("alice", "retired"),
+                        app("alice", "excluded"),
+                    ),
+                ),
+            )
+        }
+        val gateway = object : GitHubGateway {
+            override suspend fun listUserRepos(
+                user: String,
+                patOverride: String?,
+                sourceKey: String,
+            ): List<GhRepo> = listOf(
+                repo(user, "live", topics = listOf("keep")),
+                repo(user, "failed", topics = listOf("keep")),
+                repo(user, "excluded", topics = listOf("other")),
+            )
+
+            override suspend fun latestRelease(
+                owner: String,
+                repo: String,
+                includePrereleases: Boolean,
+                patOverride: String?,
+                sourceKey: String,
+            ): GhRelease {
+                if (repo == "failed") throw UnknownHostException("offline")
+                return release(repo)
+            }
+        }
+
+        val result = DiscoveryUseCase(
+            github = gateway,
+            logger = null,
+            snapshots = snapshots,
+            nowEpochMillis = { 2_000_000L },
+        ).discover(
+            listOf(
+                GitHubSource(
+                    user = "alice",
+                    filterByTopic = true,
+                    topic = "keep",
+                ),
+            ),
+        )
+
+        assertEquals(setOf("live", "failed"), result.apps.map { it.repo }.toSet())
+        assertFalse(result.apps.single { it.repo == "live" }.isStale)
+        assertTrue(result.apps.single { it.repo == "failed" }.isStale)
+        assertEquals(CatalogFailureKind.Network, result.issues.single().kind)
+    }
+
+    @Test
+    fun partialSnapshotOlderThanSevenDaysIsNotResurrected() = runBlocking {
+        val now = 8L * 24L * 60L * 60L * 1_000L
+        val snapshots = MemorySnapshots().apply {
+            write(
+                CatalogSnapshot(
+                    sourceKey = "alice",
+                    sourceLabel = "alice",
+                    refreshedAtEpochMillis = 0L,
+                    apps = listOf(app("alice", "failed")),
+                ),
+            )
+        }
+        val gateway = object : GitHubGateway {
+            override suspend fun listUserRepos(
+                user: String,
+                patOverride: String?,
+                sourceKey: String,
+            ): List<GhRepo> = listOf(repo(user, "failed"))
+
+            override suspend fun latestRelease(
+                owner: String,
+                repo: String,
+                includePrereleases: Boolean,
+                patOverride: String?,
+                sourceKey: String,
+            ): GhRelease = throw UnknownHostException("offline")
+        }
+
+        val result = DiscoveryUseCase(
+            github = gateway,
+            logger = null,
+            snapshots = snapshots,
+            nowEpochMillis = { now },
+        ).discover(listOf(GitHubSource(user = "alice")))
+
+        assertTrue(result.apps.isEmpty())
+        assertEquals(now, result.snapshotAgeMillis)
+        assertEquals(CatalogFailureKind.Network, result.issues.single().kind)
     }
 
     @Test
@@ -463,10 +566,11 @@ class DiscoveryUseCaseTest {
     }
 
     private companion object {
-        fun repo(owner: String, name: String) = GhRepo(
+        fun repo(owner: String, name: String, topics: List<String> = emptyList()) = GhRepo(
             name = name,
             fullName = "$owner/$name",
             htmlUrl = "https://github.com/$owner/$name",
+            topics = topics,
             owner = GhOwner(owner),
         )
 

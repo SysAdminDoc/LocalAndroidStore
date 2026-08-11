@@ -103,7 +103,7 @@ fun ReleaseCard(
     onSelectHistoricalRelease: (HistoricalRelease) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val isStale = remember(state.info.publishedAt) {
+    val isReleaseStale = remember(state.info.publishedAt) {
         val publishedAt = state.info.publishedAt ?: return@remember false
         val published = runCatching { Instant.parse(publishedAt).toEpochMilli() }.getOrNull()
             ?: return@remember false
@@ -684,7 +684,14 @@ fun ReleaseCard(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        if (isStale) {
+                        if (state.info.isStale) {
+                            Text(
+                                text = stringResource(R.string.stale_catalog_release),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Catppuccin.Peach,
+                                maxLines = 1,
+                            )
+                        } else if (isReleaseStale) {
                             Text(
                                 text = stringResource(R.string.no_release_past_year),
                                 style = MaterialTheme.typography.bodySmall,
