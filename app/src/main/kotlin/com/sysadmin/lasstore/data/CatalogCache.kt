@@ -6,6 +6,8 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -116,23 +118,35 @@ class CatalogSnapshotStore(context: Context) : CatalogSnapshotRepository {
 
 private fun writeAtomically(target: File, content: String) {
     target.parentFile?.mkdirs()
-    val temporary = File(target.parentFile, "${target.name}.tmp")
-    temporary.writeText(content)
-    runCatching {
-        Files.move(
-            temporary.toPath(),
-            target.toPath(),
-            StandardCopyOption.ATOMIC_MOVE,
-            StandardCopyOption.REPLACE_EXISTING,
+    val lock = WRITE_LOCKS.computeIfAbsent(target.absolutePath) { Any() }
+    synchronized(lock) {
+        val temporary = File(
+            target.parentFile,
+            "${target.name}.${UUID.randomUUID()}.tmp",
         )
-    }.getOrElse {
-        Files.move(
-            temporary.toPath(),
-            target.toPath(),
-            StandardCopyOption.REPLACE_EXISTING,
-        )
+        try {
+            temporary.writeText(content)
+            runCatching {
+                Files.move(
+                    temporary.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            }.getOrElse {
+                Files.move(
+                    temporary.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            }
+        } finally {
+            temporary.delete()
+        }
     }
 }
+
+private val WRITE_LOCKS = ConcurrentHashMap<String, Any>()
 
 private fun sha256(value: String): String =
     MessageDigest.getInstance("SHA-256")
