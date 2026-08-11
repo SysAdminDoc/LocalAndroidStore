@@ -52,40 +52,47 @@ internal object QueuedInstallReconciler {
             )
             val info = payload.toAppInfo().copy(applicationId = applicationId)
             val finalized = sl.queuedUpdateStatus.ifCurrent(payload) {
-                if (!sl.audit.installSuccessPending(info, metadata)) {
+                val verification = runCatching {
+                    verifyInstallArtifact(
+                        expectedApplicationId = applicationId,
+                        installedInfo = installed,
+                        metadata = metadata,
+                        pinnedSignerSha256 = sl.secrets.getPin(applicationId),
+                    )
+                }
+                if (verification.isFailure) {
+                    sl.logger.error(
+                        "QueuedUpdate",
+                        "Could not verify reconciled install trust state",
+                        verification.exceptionOrNull(),
+                    )
                     sl.queuedUpdateStatus.markAuditPending(
                         payload,
                         status.attempt,
                         "Install completed, but durable audit evidence is pending.",
                     )
                     false
+                } else if (verification.getOrThrow() is ArtifactVerificationResult.Rejected) {
+                    val rejection = verification.getOrThrow() as ArtifactVerificationResult.Rejected
+                    sl.logger.error(
+                        "QueuedUpdate",
+                        "Reconciled install trust state was rejected: ${rejection.message}",
+                    )
+                    sl.queuedUpdateStatus.markAuditPending(
+                        payload,
+                        status.attempt,
+                        "Install completed, but durable trust state is pending.",
+                    )
+                    false
                 } else {
-                    val stateUpdate = runCatching {
-                        val pinned = sl.secrets.getPin(applicationId)
-                        check(pinned.isNullOrBlank() || pinned == targetSignerSha256) {
-                            "Installed signer does not match the stored publisher pin"
-                        }
-                        if (pinned.isNullOrBlank() && metadata.isEligibleForPinEnrollment) {
-                            sl.secrets.setPin(applicationId, targetSignerSha256)
-                            check(sl.secrets.getPin(applicationId) == targetSignerSha256) {
-                                "Signer pin enrollment did not persist"
-                            }
-                        }
-                        sl.appIdCache.recordInstalled(info, metadata)
-                        check(sl.audit.installSucceeded(info, metadata)) {
-                            "Install success audit completion is pending"
-                        }
-                        sl.queuedUpdateStatus.markInstalled(
-                            payload,
-                            "Background update reconciled after process restart.",
+                    val accepted = verification.getOrThrow() as ArtifactVerificationResult.Accepted
+                    if (!InstallTrustStateFinalizer.finalizeSuccessfulInstall(
+                            info = info,
+                            metadata = metadata,
+                            previousPinnedSignerSha256 = accepted.pinnedSignerSha256,
+                            logger = sl.logger,
                         )
-                    }
-                    if (stateUpdate.isFailure) {
-                        sl.logger.error(
-                            "QueuedUpdate",
-                            "Could not reconcile installed queued update",
-                            stateUpdate.exceptionOrNull(),
-                        )
+                    ) {
                         sl.queuedUpdateStatus.markAuditPending(
                             payload,
                             status.attempt,
@@ -93,6 +100,10 @@ internal object QueuedInstallReconciler {
                         )
                         false
                     } else {
+                        sl.queuedUpdateStatus.markInstalled(
+                            payload,
+                            "Background update reconciled after process restart.",
+                        )
                         true
                     }
                 }

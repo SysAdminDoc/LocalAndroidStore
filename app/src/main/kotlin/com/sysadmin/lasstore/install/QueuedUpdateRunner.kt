@@ -12,7 +12,6 @@ import com.sysadmin.lasstore.data.InvalidReleaseAssetDigestException
 import com.sysadmin.lasstore.data.ReleaseAssetDigestMismatchException
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.normalizeSha256Digest
-import com.sysadmin.lasstore.data.signerMatchesArtifactOrLineage
 import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.IOException
@@ -171,38 +170,39 @@ object QueuedUpdateRunner {
             }
             if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
             val hydratedInfo = info.copy(applicationId = meta.applicationId)
-            if (meta.applicationId != applicationId) {
+            val verification = verifyInstallArtifact(
+                expectedApplicationId = applicationId,
+                installedInfo = installedInfo,
+                metadata = meta,
+                pinnedSignerSha256 = sl.secrets.getPin(meta.applicationId),
+            )
+            if (verification is ArtifactVerificationResult.Rejected) {
                 if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
-                sl.audit.installBlocked(hydratedInfo, meta, "application_id_changed")
+                val reason = when (verification.reason) {
+                    ArtifactVerificationRejection.PackageIdentity -> "application_id_changed"
+                    ArtifactVerificationRejection.InstalledSigner -> "installed_signer_mismatch"
+                    ArtifactVerificationRejection.PublisherPin -> "signature_pin_mismatch"
+                }
+                sl.audit.installBlocked(hydratedInfo, meta, reason)
+                sl.logger.warn("QueuedUpdate", verification.message)
                 return QueuedUpdateResult.Failed(
-                    "Downloaded APK package changed from $applicationId to ${meta.applicationId}",
-                    QueuedUpdateFailureKind.PackageIdentity,
+                    verification.message,
+                    when (verification.reason) {
+                        ArtifactVerificationRejection.PackageIdentity -> QueuedUpdateFailureKind.PackageIdentity
+                        ArtifactVerificationRejection.InstalledSigner,
+                        ArtifactVerificationRejection.PublisherPin -> QueuedUpdateFailureKind.Signature
+                    },
                 )
             }
-
-            if (
-                !signerMatchesArtifactOrLineage(
-                    currentSignerSha256 = installedInfo.currentSignerSha256,
-                    expectedSignerSha256 = meta.signingSha256,
-                    lineageSha256 = meta.lineageSha256,
+            val accepted = verification as ArtifactVerificationResult.Accepted
+            val pinned = accepted.pinnedSignerSha256
+            val lineageRotationAccepted = accepted.lineageRotationAccepted
+            if (lineageRotationAccepted) {
+                sl.logger.info(
+                    "QueuedUpdate",
+                    "Pinned cert $pinned appears in v3 lineage of ${meta.applicationId}; " +
+                        "accepting legitimate key rotation to ${meta.signingSha256}",
                 )
-            ) {
-                sl.audit.installBlocked(hydratedInfo, meta, "installed_signer_mismatch")
-                return QueuedUpdateResult.Failed(
-                    "Queued update blocked; installed publisher key does not match the verified release",
-                    QueuedUpdateFailureKind.Signature,
-                )
-            }
-
-            val pinned = sl.secrets.getPin(meta.applicationId)
-            val lineageRotationAccepted = pinned != null && pinned != meta.signingSha256 && pinned in meta.lineageSha256
-            val pinAccepted = pinned.isNullOrEmpty() || pinned == meta.signingSha256 || lineageRotationAccepted
-            if (!pinAccepted) {
-                if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
-                sl.audit.installBlocked(hydratedInfo, meta, "signature_pin_mismatch")
-                val message = "Publisher key changed for ${meta.applicationId}; queued update blocked"
-                sl.logger.warn("QueuedUpdate", message)
-                return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.Signature)
             }
 
             if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
@@ -294,7 +294,6 @@ object QueuedUpdateRunner {
                             info = hydratedInfo,
                             meta = meta,
                             pinned = pinned,
-                            lineageRotationAccepted = lineageRotationAccepted,
                         )
                     ) {
                         sl.logger.info("QueuedUpdate", "Installed ${meta.applicationId} ${meta.versionName.orEmpty()}")
@@ -345,44 +344,21 @@ object QueuedUpdateRunner {
         info: com.sysadmin.lasstore.domain.AppInfo,
         meta: com.sysadmin.lasstore.data.ApkMetadata,
         pinned: String?,
-        lineageRotationAccepted: Boolean,
     ): Boolean {
         val sl = ServiceLocator
         return sl.queuedUpdateStatus.ifCurrent(payload) {
-            if (!sl.audit.installSuccessPending(info, meta)) {
-                sl.logger.error("QueuedUpdate", "Could not write install-success pending audit evidence")
-                return@ifCurrent false
-            }
-            val stateUpdate = runCatching {
-                if (!meta.isEligibleForPinEnrollment) {
-                    sl.logger.error(
-                        "QueuedUpdate",
-                        "Installed ${meta.applicationId}, but refused unverified signer-pin enrollment",
-                    )
-                } else if (pinned.isNullOrEmpty()) {
-                    sl.secrets.setPin(meta.applicationId, meta.signingSha256)
-                    check(sl.secrets.getPin(meta.applicationId) == meta.signingSha256) {
-                        "Signer pin enrollment did not persist"
-                    }
-                } else if (pinned != meta.signingSha256 && lineageRotationAccepted) {
-                    sl.secrets.setPin(meta.applicationId, meta.signingSha256)
-                    check(sl.secrets.getPin(meta.applicationId) == meta.signingSha256) {
-                        "Signer pin rotation did not persist"
-                    }
-                    sl.logger.info("QueuedUpdate", "Rolled pin forward for ${meta.applicationId}: $pinned -> ${meta.signingSha256}")
+            InstallTrustStateFinalizer.finalizeSuccessfulInstall(
+                info = info,
+                metadata = meta,
+                previousPinnedSignerSha256 = pinned,
+                logger = sl.logger,
+            ).also { finalized ->
+                if (finalized) {
+                    sl.queuedUpdateStatus.markInstalled(payload)
+                } else {
+                    sl.logger.error("QueuedUpdate", "Install success audit completion is pending")
                 }
-                sl.appIdCache.recordInstalled(info, meta)
             }
-            if (stateUpdate.isFailure) {
-                sl.logger.error("QueuedUpdate", "Could not commit installed trust/cache state", stateUpdate.exceptionOrNull())
-                return@ifCurrent false
-            }
-            if (!sl.audit.installSucceeded(info, meta)) {
-                sl.logger.error("QueuedUpdate", "Install success audit completion is pending")
-                return@ifCurrent false
-            }
-            sl.queuedUpdateStatus.markInstalled(payload)
-            true
         } ?: false
     }
 }

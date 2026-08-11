@@ -31,6 +31,9 @@ import com.sysadmin.lasstore.install.InstallResult
 import com.sysadmin.lasstore.install.ForegroundInstallFinalizer
 import com.sysadmin.lasstore.install.ForegroundInstallPhase
 import com.sysadmin.lasstore.install.ExternalLaunchResult
+import com.sysadmin.lasstore.install.ArtifactVerificationRejection
+import com.sysadmin.lasstore.install.ArtifactVerificationResult
+import com.sysadmin.lasstore.install.verifyInstallArtifact
 import com.sysadmin.lasstore.install.PermissionDiff
 import com.sysadmin.lasstore.install.PreapprovalSessionResult
 import com.sysadmin.lasstore.install.QueuedUpdateStatus
@@ -719,106 +722,77 @@ class CatalogViewModel : ViewModel() {
 
                 val expectedInstalled = cached?.applicationId
                     ?.let { sl.installState.info(it) }
-                if (
-                    expectedInstalled != null &&
-                    meta.applicationId != expectedInstalled.applicationId
-                ) {
+                val installedInfo = sl.installState.info(meta.applicationId)
+                val installedAlready = installedInfo != null
+                val verification = verifyInstallArtifact(
+                    expectedApplicationId = expectedInstalled?.applicationId,
+                    installedInfo = installedInfo,
+                    metadata = meta,
+                    pinnedSignerSha256 = sl.secrets.getPin(meta.applicationId),
+                )
+                if (verification is ArtifactVerificationResult.Rejected) {
                     preapprovalSessionId?.let { sl.installer.abandonSession(it) }
                     sl.foregroundInstalls.removeIfCurrent(key, operationId)
+                    val reason = when (verification.reason) {
+                        ArtifactVerificationRejection.PackageIdentity -> "application_id_changed"
+                        ArtifactVerificationRejection.InstalledSigner -> "installed_signer_mismatch"
+                        ArtifactVerificationRejection.PublisherPin -> "signature_pin_mismatch"
+                    }
                     sl.audit.installBlocked(
                         card.info.copy(applicationId = meta.applicationId),
                         meta,
-                        reason = "application_id_changed",
+                        reason = reason,
                     )
-                    updateCardForAction(card.info, operationId) {
-                        it.copy(
-                            status = CardStatus.Error,
-                            message = "Release package ${meta.applicationId} does not match " +
-                                "${expectedInstalled.applicationId}.",
-                        )
-                    }
-                    return@launch
-                }
-
-                // Signature pinning — block silent publisher swap.
-                val pinned = sl.secrets.getPin(meta.applicationId)
-                val installedInfo = sl.installState.info(meta.applicationId)
-                val installedAlready = installedInfo != null
-                val pinAccepted = when {
-                    pinned.isNullOrEmpty() -> true
-                    pinned == meta.signingSha256 -> true
-                    pinned in meta.lineageSha256 -> {
-                        sl.logger.info(
-                            "Install",
-                            "Pinned cert $pinned appears in v3 lineage of ${meta.applicationId}; " +
-                                "accepting legitimate key rotation to ${meta.signingSha256}"
-                        )
-                        true
-                    }
-                    else -> false
-                }
-                if (!pinAccepted) {
-                    val installedSigner = sl.installState.info(meta.applicationId)
-                        ?.currentSignerSha256
-                    preapprovalSessionId?.let { sl.installer.abandonSession(it) }
-                    sl.foregroundInstalls.removeIfCurrent(key, operationId)
-                    sl.logger.error(
-                        "Install",
-                        "Signature pin mismatch for ${meta.applicationId}: pinned=$pinned " +
-                            "actual=${meta.signingSha256} lineage=${meta.lineageSha256}"
-                    )
-                    sl.audit.installBlocked(card.info, meta, reason = "signature_pin_mismatch")
-                    updateCardForAction(card.info, operationId) {
-                        it.copy(
-                            status = CardStatus.SignatureMismatch,
-                            message = "Publisher key changed — install blocked. " +
-                                "Possible compromise or legitimate key loss. Review trust details.",
-                            publisherTrustDetails = PublisherTrustDetails(
-                                source = if (card.info.sourceLabel == card.info.owner) {
-                                    card.info.handle
-                                } else {
-                                    "${card.info.sourceLabel} · ${card.info.handle}"
-                                },
-                                installedSignerSha256 = installedSigner,
-                                storedPinSha256 = requireNotNull(pinned),
-                                downloadedMetadata = meta,
-                            ),
-                        )
-                    }
-                    return@launch
-                }
-
-                if (
-                    installedInfo != null &&
-                    !signerMatchesArtifactOrLineage(
-                        currentSignerSha256 = installedInfo.currentSignerSha256,
-                        expectedSignerSha256 = meta.signingSha256,
-                        lineageSha256 = meta.lineageSha256,
-                    )
-                ) {
-                    preapprovalSessionId?.let { sl.installer.abandonSession(it) }
-                    sl.foregroundInstalls.removeIfCurrent(key, operationId)
-                    sl.audit.installBlocked(card.info, meta, reason = "installed_signer_mismatch")
-                    updateCardForAction(card.info, operationId) {
-                        it.copy(
-                            status = CardStatus.SignatureMismatch,
-                            message = "Installed publisher key does not match the verified release; " +
-                                "the update is blocked.",
-                            publisherTrustDetails = pinned?.let { storedPin ->
-                                PublisherTrustDetails(
-                                    source = if (card.info.sourceLabel == card.info.owner) {
-                                        card.info.handle
-                                    } else {
-                                        "${card.info.sourceLabel} · ${card.info.handle}"
-                                    },
-                                    installedSignerSha256 = installedInfo.currentSignerSha256,
-                                    storedPinSha256 = storedPin,
-                                    downloadedMetadata = meta,
-                                )
+                    sl.logger.error("Install", verification.message)
+                    val trustDetails = when (verification.reason) {
+                        ArtifactVerificationRejection.PublisherPin -> PublisherTrustDetails(
+                            source = if (card.info.sourceLabel == card.info.owner) {
+                                card.info.handle
+                            } else {
+                                "${card.info.sourceLabel} · ${card.info.handle}"
                             },
+                            installedSignerSha256 = verification.installedSignerSha256,
+                            storedPinSha256 = requireNotNull(verification.pinnedSignerSha256),
+                            downloadedMetadata = meta,
+                        )
+                        ArtifactVerificationRejection.InstalledSigner ->
+                            verification.pinnedSignerSha256
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let { storedPin ->
+                                    PublisherTrustDetails(
+                                        source = if (card.info.sourceLabel == card.info.owner) {
+                                            card.info.handle
+                                        } else {
+                                            "${card.info.sourceLabel} · ${card.info.handle}"
+                                        },
+                                        installedSignerSha256 = verification.installedSignerSha256,
+                                        storedPinSha256 = storedPin,
+                                        downloadedMetadata = meta,
+                                    )
+                                }
+                        ArtifactVerificationRejection.PackageIdentity -> null
+                    }
+                    updateCardForAction(card.info, operationId) {
+                        it.copy(
+                            status = if (verification.reason == ArtifactVerificationRejection.PackageIdentity) {
+                                CardStatus.Error
+                            } else {
+                                CardStatus.SignatureMismatch
+                            },
+                            message = verification.message,
+                            publisherTrustDetails = trustDetails,
                         )
                     }
                     return@launch
+                }
+                val accepted = verification as ArtifactVerificationResult.Accepted
+                val pinned = accepted.pinnedSignerSha256
+                if (accepted.lineageRotationAccepted) {
+                    sl.logger.info(
+                        "Install",
+                        "Pinned cert $pinned appears in v3 lineage of ${meta.applicationId}; " +
+                            "accepting legitimate key rotation to ${meta.signingSha256}",
+                    )
                 }
 
                 val externalObservation = installedInfo?.takeIf {

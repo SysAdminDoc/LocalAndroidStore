@@ -110,39 +110,13 @@ internal object QueuedInstallResultHandler {
     ): Boolean {
         val sl = ServiceLocator
         return sl.queuedUpdateStatus.ifCurrent(payload) {
-            if (!sl.audit.installSuccessPending(info, apkMetadata)) {
-                sl.logger.error("QueuedUpdate", "Could not write install-success pending audit evidence")
-                return@ifCurrent false
-            }
-            val previousPin = metadata.previousPinnedSha256
-            val stateUpdate = runCatching {
-                if (!apkMetadata.isEligibleForPinEnrollment) {
-                    sl.logger.error(
-                        "QueuedUpdate",
-                        "Installed ${metadata.applicationId}, but refused unverified signer-pin enrollment",
-                    )
-                } else if (previousPin.isNullOrBlank()) {
-                    sl.secrets.setPin(metadata.applicationId, metadata.signingSha256)
-                    check(sl.secrets.getPin(metadata.applicationId) == metadata.signingSha256) {
-                        "Signer pin enrollment did not persist"
-                    }
-                } else if (previousPin != metadata.signingSha256 && metadata.lineageRotationAccepted) {
-                    sl.secrets.setPin(metadata.applicationId, metadata.signingSha256)
-                    check(sl.secrets.getPin(metadata.applicationId) == metadata.signingSha256) {
-                        "Signer pin rotation did not persist"
-                    }
-                    sl.logger.info("QueuedUpdate", "Rolled pin forward for ${metadata.applicationId}: $previousPin -> ${metadata.signingSha256}")
-                }
-                sl.appIdCache.recordInstalled(payload.toAppInfo(), apkMetadata)
-            }
-            if (stateUpdate.isFailure) {
-                sl.logger.error("QueuedUpdate", "Could not commit installed trust/cache state", stateUpdate.exceptionOrNull())
-                return@ifCurrent false
-            }
-            sl.audit.installSucceeded(info, apkMetadata).also { written ->
-                if (written) {
-                    sl.queuedUpdateStatus.markInstalled(payload)
-                } else {
+            InstallTrustStateFinalizer.finalizeSuccessfulInstall(
+                info = info,
+                metadata = apkMetadata,
+                previousPinnedSignerSha256 = metadata.previousPinnedSha256,
+                logger = sl.logger,
+            ).also { finalized ->
+                if (!finalized) {
                     sl.logger.error("QueuedUpdate", "Install success audit completion is pending")
                 }
             }

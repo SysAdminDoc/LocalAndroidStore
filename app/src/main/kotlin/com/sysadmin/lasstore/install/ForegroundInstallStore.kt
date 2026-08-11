@@ -356,46 +356,13 @@ internal object ForegroundInstallFinalizer {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, Int.MIN_VALUE)
         val systemMessage = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE).orEmpty()
         if (status == PackageInstaller.STATUS_SUCCESS) {
-            if (!sl.audit.installSuccessPending(operation.info, metadata)) {
-                logger.error("Install", "Could not write install-success pending audit evidence")
-                return false
-            }
-            val stateUpdate = runCatching {
-                val previousPin = operation.pinnedSignerSha256
-                if (!metadata.isEligibleForPinEnrollment) {
-                    logger.error(
-                        "Install",
-                        "Installed ${metadata.applicationId}, but refused unverified signer-pin enrollment",
-                    )
-                } else if (previousPin.isNullOrBlank()) {
-                    sl.secrets.setPin(metadata.applicationId, metadata.signingSha256)
-                    check(sl.secrets.getPin(metadata.applicationId) == metadata.signingSha256) {
-                        "Signer pin enrollment did not persist"
-                    }
-                } else if (
-                    previousPin != metadata.signingSha256 &&
-                    previousPin in metadata.lineageSha256
-                ) {
-                    sl.secrets.setPin(metadata.applicationId, metadata.signingSha256)
-                    check(sl.secrets.getPin(metadata.applicationId) == metadata.signingSha256) {
-                        "Signer pin rotation did not persist"
-                    }
-                    logger.info(
-                        "Install",
-                        "Rolled pin forward for ${metadata.applicationId}: " +
-                            "$previousPin -> ${metadata.signingSha256}",
-                    )
-                }
-                sl.appIdCache.recordInstalled(operation.info, metadata)
-            }
-            if (stateUpdate.isFailure) {
-                logger.error("Install", "Could not commit installed trust/cache state", stateUpdate.exceptionOrNull())
-                return false
-            }
-            if (!sl.audit.installSucceeded(operation.info, metadata)) {
-                logger.error("Install", "Install success audit completion is pending; durable operation retained")
-                return false
-            }
+            if (!InstallTrustStateFinalizer.finalizeSuccessfulInstall(
+                    info = operation.info,
+                    metadata = metadata,
+                    previousPinnedSignerSha256 = operation.pinnedSignerSha256,
+                    logger = logger,
+                )
+            ) return false
             logger.info(
                 "Install",
                 "Installed ${metadata.applicationId} ${metadata.versionName.orEmpty()}",
