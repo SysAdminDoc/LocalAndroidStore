@@ -26,6 +26,7 @@ data class LogEntry(
     val tag: String,
     val message: String,
     val id: String = "",
+    val highRisk: Boolean = false,
 )
 
 class Logger(

@@ -33,6 +33,7 @@
 - Added bounded, paged historical release browsing with explicit foreground selection; selected older releases retain available version/digest/signer evidence, use the normal inspection/trust/downgrade gates, are audit-recorded, and cannot enter the background queue.
 
 ### Fixed
+- Publisher-pin replacements now render as high-risk red warnings with explicit accessibility labeling and signer-continuity review copy in the activity log.
 - Failed UIDT/WorkManager scheduling now cleans up best-effort transport state, records a typed storage failure, and returns actionable failure to the catalog; cancellation failures remain retryable instead of falsely reporting success.
 - Bounded queued-update status persistence to 500 recent terminal records plus all active work, moved initial load and catalog queue/cancel scheduling off the main path, and added a 10,000-status Robolectric stress check.
 - Added persisted IDs to diagnostics and install-audit events, migrated legacy entries to deterministic IDs, and removed timestamp/hash-based Compose keys so identical activity rows remain distinct and stable.

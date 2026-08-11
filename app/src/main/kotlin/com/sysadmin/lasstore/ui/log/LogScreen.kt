@@ -1,5 +1,6 @@
 package com.sysadmin.lasstore.ui.log
 
+import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -116,7 +117,7 @@ fun LogScreen() {
     val unknownError = stringResource(R.string.unknown)
     val entries = when (category) {
         JournalCategory.Diagnostics -> diagnostics
-        JournalCategory.InstallAudit -> auditEntries.map(InstallAuditLog.Entry::asLogEntry)
+        JournalCategory.InstallAudit -> auditEntries.map { it.asLogEntry(context) }
         JournalCategory.CrashEvidence -> crashEntries
     }
     val counts = mapOf(
@@ -503,20 +504,28 @@ private fun ActivityEntry(
     formattedTime: String,
 ) {
     var expanded by rememberSaveable(entry.ts, entry.tag) { mutableStateOf(false) }
-    val accent = when (entry.level) {
-        LogLevel.Info -> Catppuccin.Sapphire
-        LogLevel.Warn -> Catppuccin.Yellow
-        LogLevel.Error -> Catppuccin.Red
+    val accent = when {
+        entry.highRisk -> Catppuccin.Red
+        entry.level == LogLevel.Info -> Catppuccin.Sapphire
+        entry.level == LogLevel.Warn -> Catppuccin.Yellow
+        else -> Catppuccin.Red
     }
-    val icon = when (entry.level) {
-        LogLevel.Info -> Icons.Default.CheckCircle
-        LogLevel.Warn -> Icons.Default.Warning
-        LogLevel.Error -> Icons.Default.Error
+    val icon = when {
+        entry.highRisk || entry.level == LogLevel.Warn -> Icons.Default.Warning
+        entry.level == LogLevel.Info -> Icons.Default.CheckCircle
+        else -> Icons.Default.Error
     }
-    val levelLabel = when (entry.level) {
-        LogLevel.Info -> stringResource(R.string.log_level_info)
-        LogLevel.Warn -> stringResource(R.string.log_level_warn)
-        LogLevel.Error -> stringResource(R.string.log_level_error)
+    val levelLabel = when {
+        entry.highRisk -> stringResource(R.string.log_level_high_risk)
+        entry.level == LogLevel.Info -> stringResource(R.string.log_level_info)
+        entry.level == LogLevel.Warn -> stringResource(R.string.log_level_warn)
+        else -> stringResource(R.string.log_level_error)
+    }
+    val iconContentDescription = when {
+        entry.highRisk -> stringResource(R.string.log_high_risk_warning)
+        entry.level == LogLevel.Warn -> stringResource(R.string.log_level_warn)
+        entry.level == LogLevel.Error -> stringResource(R.string.log_level_error)
+        else -> null
     }
 
     Surface(
@@ -537,7 +546,7 @@ private fun ActivityEntry(
             ) {
                 Icon(
                     imageVector = icon,
-                    contentDescription = null,
+                    contentDescription = iconContentDescription,
                     tint = accent,
                     modifier = Modifier.size(19.dp),
                 )
@@ -619,7 +628,7 @@ private fun ActivityEntry(
 internal fun diagnosticEntryKey(category: String, entry: LogEntry): String =
     "$category-${entry.id}"
 
-private fun InstallAuditLog.Entry.asLogEntry(): LogEntry = LogEntry(
+internal fun InstallAuditLog.Entry.asLogEntry(context: Context): LogEntry = LogEntry(
     id = id,
     ts = ts,
     level = when (event) {
@@ -627,12 +636,20 @@ private fun InstallAuditLog.Entry.asLogEntry(): LogEntry = LogEntry(
         "install_blocked",
         "developer_verification_warned",
         "publisher_pin_recovery_authorized",
+        "publisher_pin_replaced",
         -> LogLevel.Warn
         else -> LogLevel.Info
     },
+    highRisk = event == "publisher_pin_replaced",
     tag = applicationId.ifBlank { source.ifBlank { "Install" } },
     message = buildString {
-        append(event.replace('_', ' '))
+        append(
+            if (event == "publisher_pin_replaced") {
+                context.getString(R.string.audit_publisher_pin_replaced)
+            } else {
+                event.replace('_', ' ')
+            },
+        )
         if (source.isNotBlank()) append("\nSource: $source")
         if (tagName.isNotBlank()) append("\nRelease: $tagName")
         if (!versionName.isNullOrBlank() || versionCode != null) {

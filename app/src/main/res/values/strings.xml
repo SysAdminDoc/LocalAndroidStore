@@ -191,6 +191,9 @@
     <string name="log_level_info">Info</string>
     <string name="log_level_warn">Warning</string>
     <string name="log_level_error">Error</string>
+    <string name="log_level_high_risk">High risk</string>
+    <string name="log_high_risk_warning">High-risk security decision</string>
+    <string name="audit_publisher_pin_replaced">High-risk security decision: publisher trust pin replaced. Review signer continuity before installing.</string>
     <string name="no_diagnostics_recorded">No diagnostics recorded</string>
     <string name="no_install_decisions_recorded">No install decisions recorded</string>
     <string name="no_crash_evidence_recorded">No crash evidence recorded</string>
