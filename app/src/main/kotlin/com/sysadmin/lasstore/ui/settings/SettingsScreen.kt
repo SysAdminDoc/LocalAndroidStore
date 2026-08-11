@@ -77,6 +77,7 @@ import com.sysadmin.lasstore.data.normalizeFdroidSources
 import com.sysadmin.lasstore.data.normalizeSources
 import com.sysadmin.lasstore.data.validateFdroidSources
 import com.sysadmin.lasstore.data.validateSources
+import com.sysadmin.lasstore.BuildConfig
 import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.install.ShizukuStatus
 import com.sysadmin.lasstore.install.ExternalLaunchResult
@@ -914,6 +915,15 @@ private fun SettingsHeader() {
         Text(
             text = stringResource(R.string.choose_release_shelves),
             style = MaterialTheme.typography.bodyMedium,
+            color = Catppuccin.Subtext,
+        )
+        Text(
+            text = stringResource(
+                R.string.app_version,
+                BuildConfig.VERSION_NAME,
+                BuildConfig.VERSION_CODE,
+            ),
+            style = MaterialTheme.typography.labelSmall,
             color = Catppuccin.Subtext,
         )
     }

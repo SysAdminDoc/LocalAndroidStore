@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.2.4 — 2026-08-11
+
+> **v0.2.4 status** — Released 2026-08-11 (`tag: v0.2.4`, `versionCode = 6`, `versionName = "0.2.4"`). This release drains the locally actionable roadmap items; external publication and paired-device work remains documented in `Roadmap_Blocked.md`.
 
 ### Added
 - Added bounded per-source threat-model documentation for GitHub and F-Droid definitions. Settings supplies an editable paragraph, validates its contents, and generates a conservative default for legacy or blank entries; exports retain the documentation without credentials.
