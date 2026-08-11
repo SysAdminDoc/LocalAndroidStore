@@ -110,6 +110,7 @@ class SettingsStore(
     private val keyAccentColor = stringPreferencesKey("accent_color")
     private val keyDynamicColor = booleanPreferencesKey("dynamic_color")
     private val keyDailyUpdateCap = intPreferencesKey("daily_update_cap")
+    private val keySourceDirectoryUrl = stringPreferencesKey("source_directory_url")
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -294,6 +295,7 @@ class SettingsStore(
             prefs[keyAccentColor] = canonical.accentColor.name
             prefs[keyDynamicColor] = canonical.dynamicColor
             prefs[keyDailyUpdateCap] = canonical.dailyUpdateCap
+            prefs[keySourceDirectoryUrl] = canonical.sourceDirectoryUrl
         }
     }
 
@@ -319,6 +321,7 @@ class SettingsStore(
                     ?: AccentColor.Mauve,
                 dynamicColor = prefs[keyDynamicColor] ?: false,
                 dailyUpdateCap = (prefs[keyDailyUpdateCap] ?: 3).coerceIn(0, MAX_DAILY_UPDATE_CAP),
+                sourceDirectoryUrl = prefs[keySourceDirectoryUrl].orEmpty(),
             ),
             payloadState = decoded.state,
             malformedPayload = decoded.rawPayload,
@@ -340,6 +343,7 @@ class SettingsStore(
             accentColor = settings.accentColor,
             dynamicColor = settings.dynamicColor,
             dailyUpdateCap = settings.dailyUpdateCap.coerceIn(0, MAX_DAILY_UPDATE_CAP),
+            sourceDirectoryUrl = settings.sourceDirectoryUrl.trim(),
         )
     }
 

@@ -65,6 +65,14 @@
     <string name="library_restore_catalog_hint">Locked release matches are downloaded through the normal foreground install flow.</string>
     <string name="restore_library">Restore</string>
     <string name="restoring_library">Starting…</string>
+    <string name="source_directory_title">Curated source directory</string>
+    <string name="source_directory_body">Add a trusted HTTPS JSON feed of source definitions. LAS only shows the feed; it never auto-enables entries or imports credentials. Select a source to add it to the registry.</string>
+    <string name="source_directory_url">Source directory URL</string>
+    <string name="source_directory_url_hint">HTTPS only; for example a hosted sources-of-sources.json file.</string>
+    <string name="load_source_directory">Load directory</string>
+    <string name="loading_source_directory">Loading…</string>
+    <string name="add_curated_source">Add</string>
+    <string name="source_directory_added">Added</string>
     <string name="checking_private_releases">Checking private releases…</string>
     <string name="no_releases_on_shelf">No releases on the shelf</string>
     <string name="catalog_unavailable">Catalog unavailable</string>

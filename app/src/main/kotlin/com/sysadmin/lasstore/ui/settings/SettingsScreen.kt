@@ -72,6 +72,7 @@ import com.sysadmin.lasstore.data.AppThemeMode
 import com.sysadmin.lasstore.data.FdroidSource
 import com.sysadmin.lasstore.data.GitHubSource
 import com.sysadmin.lasstore.data.ServiceLocator
+import com.sysadmin.lasstore.data.SourceDirectoryEntry
 import com.sysadmin.lasstore.data.normalizeFdroidSources
 import com.sysadmin.lasstore.data.normalizeSources
 import com.sysadmin.lasstore.data.validateFdroidSources
@@ -162,6 +163,9 @@ fun SettingsScreen(
     var dailyUpdateCap by remember(state.settings.dailyUpdateCap) {
         mutableStateOf(state.settings.dailyUpdateCap)
     }
+    var sourceDirectoryUrl by remember(state.settings.sourceDirectoryUrl) {
+        mutableStateOf(state.settings.sourceDirectoryUrl)
+    }
     val draftFdroidSources = fdroidDrafts.map(FdroidSourceDraft::toSource)
     val fdroidValidationError = validateFdroidSources(draftFdroidSources)
     val normalizedFdroidSources = normalizeFdroidSources(draftFdroidSources)
@@ -203,6 +207,18 @@ fun SettingsScreen(
                 )
             },
             onClearRestore = viewModel::clearPendingLibraryRestore,
+        )
+
+        SourceDirectorySettings(
+            url = sourceDirectoryUrl,
+            entries = state.sourceDirectoryEntries,
+            addedKeys = state.sourceDirectoryAddedKeys,
+            busy = state.sourceDirectoryBusy,
+            error = state.sourceDirectoryError,
+            message = state.sourceDirectoryMessage,
+            onUrlChange = { sourceDirectoryUrl = it },
+            onFetch = { viewModel.fetchSourceDirectory(sourceDirectoryUrl) },
+            onAdd = viewModel::addSourceDirectoryEntry,
         )
 
         AppearanceSettings(
@@ -618,6 +634,138 @@ private fun LibraryBackupSettings(
                     style = MaterialTheme.typography.bodySmall,
                     color = Catppuccin.Red,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceDirectorySettings(
+    url: String,
+    entries: List<SourceDirectoryEntry>,
+    addedKeys: Set<String>,
+    busy: Boolean,
+    error: String?,
+    message: String?,
+    onUrlChange: (String) -> Unit,
+    onFetch: () -> Unit,
+    onAdd: (SourceDirectoryEntry) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = Catppuccin.Surface1,
+        border = BorderStroke(1.dp, Catppuccin.Stroke),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.source_directory_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = Catppuccin.TextStrong,
+            )
+            Text(
+                text = stringResource(R.string.source_directory_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Subtext,
+            )
+            OutlinedTextField(
+                value = url,
+                onValueChange = onUrlChange,
+                label = { Text(stringResource(R.string.source_directory_url)) },
+                supportingText = { Text(stringResource(R.string.source_directory_url_hint)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+            )
+            Button(
+                onClick = onFetch,
+                enabled = !busy && url.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(vertical = 12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Catppuccin.MauveStrong,
+                    contentColor = Catppuccin.Crust,
+                ),
+            ) {
+                Text(stringResource(if (busy) R.string.loading_source_directory else R.string.load_source_directory))
+            }
+            message?.let { text ->
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.Mint,
+                )
+            }
+            error?.let { text ->
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.Red,
+                )
+            }
+            entries.forEach { entry ->
+                val added = entry.sourceKey in addedKeys
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Catppuccin.Surface0,
+                    border = BorderStroke(1.dp, Catppuccin.Stroke),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(11.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = entry.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = Catppuccin.TextStrong,
+                                )
+                                Text(
+                                    text = entry.github?.displayName
+                                        ?: entry.fdroid?.displayName
+                                        ?: entry.sourceKey,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Catppuccin.Subtext,
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { onAdd(entry) },
+                                enabled = !added,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (added) Catppuccin.Mint.copy(alpha = 0.35f)
+                                    else Catppuccin.StrokeBright,
+                                ),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = if (added) Catppuccin.Mint else Catppuccin.MauveStrong,
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
+                            ) {
+                                Text(
+                                    stringResource(
+                                        if (added) R.string.source_directory_added
+                                        else R.string.add_curated_source,
+                                    ),
+                                )
+                            }
+                        }
+                        entry.description?.takeIf { it.isNotBlank() }?.let { description ->
+                            Text(
+                                text = description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Catppuccin.Subtext,
+                            )
+                        }
+                    }
+                }
             }
         }
     }

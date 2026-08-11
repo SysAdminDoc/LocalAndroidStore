@@ -37,6 +37,8 @@ object ServiceLocator {
         private set
     lateinit var sourceBranding: SourceBrandingClient
         private set
+    lateinit var sourceDirectory: SourceDirectoryClient
+        private set
     lateinit var installer: PackageInstallerService
         private set
     lateinit var audit: InstallAuditLog
@@ -114,6 +116,7 @@ object ServiceLocator {
                 },
             )
             sourceBranding = SourceBrandingClient()
+            sourceDirectory = SourceDirectoryClient()
             installer = PackageInstallerService(appContext, logger)
             audit = InstallAuditLog(appContext)
             appIdCache = AppIdCache(appContext)

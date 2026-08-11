@@ -66,6 +66,7 @@ data class AppSettings(
     val accentColor: AccentColor = AccentColor.Mauve,
     val dynamicColor: Boolean = false,
     val dailyUpdateCap: Int = 3,
+    val sourceDirectoryUrl: String = "",
 )
 
 const val DEFAULT_GITHUB_USER = "SysAdminDoc"

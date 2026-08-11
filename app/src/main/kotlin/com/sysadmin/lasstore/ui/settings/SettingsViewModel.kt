@@ -12,11 +12,13 @@ import com.sysadmin.lasstore.data.GitHubRequestException
 import com.sysadmin.lasstore.data.GitHubSource
 import com.sysadmin.lasstore.data.MalformedSourceRegistryException
 import com.sysadmin.lasstore.data.ServiceLocator
+import com.sysadmin.lasstore.data.SourceDirectoryEntry
 import com.sysadmin.lasstore.data.normalizeSources
 import com.sysadmin.lasstore.data.sourceKey
 import com.sysadmin.lasstore.data.validateSources
 import com.sysadmin.lasstore.data.normalizeFdroidSources
 import com.sysadmin.lasstore.data.validateFdroidSources
+import com.sysadmin.lasstore.data.validateSourceDirectoryUrl
 import com.sysadmin.lasstore.install.ExternalLaunchResult
 import com.sysadmin.lasstore.install.ShizukuStatus
 import kotlinx.coroutines.CancellationException
@@ -55,6 +57,11 @@ data class SettingsUiState(
     val libraryMessage: String? = null,
     val libraryError: String? = null,
     val pendingLibraryRestoreCount: Int = 0,
+    val sourceDirectoryEntries: List<SourceDirectoryEntry> = emptyList(),
+    val sourceDirectoryAddedKeys: Set<String> = emptySet(),
+    val sourceDirectoryBusy: Boolean = false,
+    val sourceDirectoryError: String? = null,
+    val sourceDirectoryMessage: String? = null,
 ) {
     val saving: Boolean get() = saveStatus == SettingsSaveStatus.Saving
 }
@@ -92,6 +99,7 @@ class SettingsViewModel : ViewModel() {
                         shizukuSilentInstallEnabled = sl.installer.shizukuSilentInstallEnabled(),
                         shizukuStatus = sl.installer.shizukuStatus(),
                         pendingLibraryRestoreCount = sl.libraryRestore.pending().size,
+                        sourceDirectoryAddedKeys = configuredSourceKeys(inspection.settings),
                     )
                 }
                 sl.settings.flow.collect { current ->
@@ -102,6 +110,7 @@ class SettingsViewModel : ViewModel() {
                                 source.key to sl.settings.getSourcePat(source.key).orEmpty()
                             },
                             encryptedAtRest = sl.secrets.encrypted,
+                            sourceDirectoryAddedKeys = configuredSourceKeys(current),
                         )
                     }
                 }
@@ -254,6 +263,7 @@ class SettingsViewModel : ViewModel() {
                     accentColor = accentColor,
                     dynamicColor = dynamicColor,
                     dailyUpdateCap = dailyUpdateCap,
+                    sourceDirectoryUrl = _state.value.settings.sourceDirectoryUrl,
                 )
                 val persistedSourcePats = sourcePats
                     .filter { (key, value) ->
@@ -505,4 +515,83 @@ class SettingsViewModel : ViewModel() {
             )
         }
     }
+
+    fun fetchSourceDirectory(url: String) {
+        val normalizedUrl = url.trim()
+        validateSourceDirectoryUrl(normalizedUrl)?.let { error ->
+            _state.update {
+                it.copy(sourceDirectoryError = error, sourceDirectoryMessage = null)
+            }
+            return
+        }
+        if (_state.value.sourceDirectoryBusy) return
+        _state.update {
+            it.copy(
+                sourceDirectoryBusy = true,
+                sourceDirectoryError = null,
+                sourceDirectoryMessage = null,
+                sourceDirectoryEntries = emptyList(),
+            )
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val feed = sl.sourceDirectory.fetch(normalizedUrl)
+                val current = sl.settings.flow.first()
+                if (current.sourceDirectoryUrl != normalizedUrl) {
+                    sl.settings.update(current.copy(sourceDirectoryUrl = normalizedUrl))
+                }
+                _state.update {
+                    it.copy(
+                        sourceDirectoryBusy = false,
+                        sourceDirectoryEntries = feed.sources,
+                        sourceDirectoryAddedKeys = configuredSourceKeys(current),
+                        sourceDirectoryMessage = "Loaded ${feed.sources.size} curated source(s). Select one to add it.",
+                    )
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                _state.update {
+                    it.copy(
+                        sourceDirectoryBusy = false,
+                        sourceDirectoryError = throwable.message ?: "Could not load the source directory.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun addSourceDirectoryEntry(entry: SourceDirectoryEntry) {
+        if (_state.value.sourceDirectoryBusy) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val github = entry.github?.copy(enabled = true)
+                val fdroid = entry.fdroid?.copy(enabled = true)
+                check(github != null || fdroid != null) { "The source definition is empty." }
+                val settings = sl.settings.mergeExportedSources(
+                    githubSources = github?.let(::listOf).orEmpty(),
+                    fdroidSources = fdroid?.let(::listOf).orEmpty(),
+                )
+                _state.update {
+                    it.copy(
+                        sourceDirectoryAddedKeys = configuredSourceKeys(settings),
+                        sourceDirectoryMessage = "Added ${entry.name.trim()} to the source registry.",
+                        sourceDirectoryError = null,
+                    )
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                _state.update {
+                    it.copy(
+                        sourceDirectoryError = throwable.message
+                            ?: "Could not add the curated source.",
+                    )
+                }
+            }
+        }
+    }
+
+    private fun configuredSourceKeys(settings: AppSettings): Set<String> =
+        (settings.sources.map { it.key } + settings.fdroidSources.map { it.key }).toSet()
 }
