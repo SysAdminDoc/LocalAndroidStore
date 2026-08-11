@@ -108,8 +108,10 @@ fun LogScreen() {
     var category by rememberSaveable { mutableStateOf(JournalCategory.Diagnostics) }
     var showClearConfirmation by rememberSaveable { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
-    var exportStatus by remember { mutableStateOf<String?>(null) }
-    var exportFailed by remember { mutableStateOf(false) }
+    var exportReady by remember { mutableStateOf(false) }
+    var exportError by remember { mutableStateOf<String?>(null) }
+    val shareSupportBundleTitle = stringResource(R.string.share_redacted_support_bundle)
+    val unknownError = stringResource(R.string.unknown)
     val entries = when (category) {
         JournalCategory.Diagnostics -> diagnostics
         JournalCategory.InstallAudit -> auditEntries.map(InstallAuditLog.Entry::asLogEntry)
@@ -135,8 +137,8 @@ fun LogScreen() {
             onExport = {
                 if (!exporting) {
                     exporting = true
-                    exportStatus = null
-                    exportFailed = false
+                    exportReady = false
+                    exportError = null
                     scope.launch {
                         runCatching {
                             withContext(Dispatchers.IO) {
@@ -144,18 +146,14 @@ fun LogScreen() {
                                 val bundle = exporter.create()
                                 Intent.createChooser(
                                     exporter.shareIntent(bundle),
-                                    context.getString(R.string.share_redacted_support_bundle),
+                                    shareSupportBundleTitle,
                                 )
                             }
                         }.onSuccess { chooser ->
                             context.startActivity(chooser)
-                            exportStatus = context.getString(R.string.support_bundle_ready)
+                            exportReady = true
                         }.onFailure {
-                            exportFailed = true
-                            exportStatus = context.getString(
-                                R.string.support_export_failed,
-                                it.message ?: context.getString(R.string.unknown),
-                            )
+                            exportError = it.message ?: unknownError
                         }
                         exporting = false
                     }
@@ -169,8 +167,8 @@ fun LogScreen() {
             counts = counts,
             onSelected = {
                 category = it
-                exportStatus = null
-                exportFailed = false
+                exportReady = false
+                exportError = null
             },
         )
 
@@ -181,15 +179,22 @@ fun LogScreen() {
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
         )
 
-        exportStatus?.let { status ->
+        exportError?.let { error ->
             Text(
-                text = status,
+                text = stringResource(
+                    R.string.support_export_failed,
+                    error.ifBlank { unknownError },
+                ),
                 style = MaterialTheme.typography.bodySmall,
-                color = if (exportFailed) {
-                    Catppuccin.Red
-                } else {
-                    Catppuccin.Green
-                },
+                color = Catppuccin.Red,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            )
+        }
+        if (exportReady) {
+            Text(
+                text = stringResource(R.string.support_bundle_ready),
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Green,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
             )
         }

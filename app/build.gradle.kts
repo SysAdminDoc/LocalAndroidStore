@@ -99,8 +99,10 @@ kotlin {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+    val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
+    val okhttpBom = platform("com.squareup.okhttp3:okhttp-bom:5.4.0")
     implementation(composeBom)
+    implementation(okhttpBom)
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -110,27 +112,28 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
-    implementation("androidx.activity:activity-compose:1.9.3")
-    implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.navigation:navigation-compose:2.9.8")
 
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
 
-    implementation("com.google.crypto.tink:tink-android:1.21.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("com.google.crypto.tink:tink-android:1.23.0")
+    implementation("com.squareup.okhttp3:okhttp")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     // apksig for lineage-aware signature verification (handles APK Signature
     // Scheme v3 / v3.1 key rotation). Plain Java library, fine on Android.
-    implementation("com.android.tools.build:apksig:8.7.3")
+    implementation("com.android.tools.build:apksig:9.1.1")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation(okhttpBom)
+    testImplementation("com.squareup.okhttp3:mockwebserver")
     testImplementation("androidx.test:core-ktx:1.7.0")
     testImplementation("org.robolectric:robolectric:4.16")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
@@ -141,12 +144,6 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 }
 
-// Item 17: Prevent transitive downgrade of OkHttp below the pinned safe version.
-configurations.all {
-    resolutionStrategy.eachDependency {
-        if (requested.group == "com.squareup.okhttp3") {
-            useVersion("4.12.0")
-            because("Pin OkHttp to minimum safe version; prevent transitive downgrade")
-        }
-    }
+dependencyLocking {
+    lockAllConfigurations()
 }

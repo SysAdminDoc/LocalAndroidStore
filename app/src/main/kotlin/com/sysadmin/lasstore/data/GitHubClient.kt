@@ -334,8 +334,8 @@ class GitHubClient(
                 val call = downloadClient.newCall(nextRequest)
                 activeCall.set(call)
                 call.enqueue(object : Callback {
-                    override fun onFailure(call: Call, exception: IOException) {
-                        fail(exception)
+                    override fun onFailure(call: Call, e: IOException) {
+                        fail(e)
                     }
 
                     override fun onResponse(call: Call, response: Response) {
@@ -365,7 +365,6 @@ class GitHubClient(
                                     throw responseFailure(current, "downloading release asset")
                                 }
                                 val body: ResponseBody = current.body
-                                    ?: throw IOException("Empty body for $initialUrl")
                                 val total = body.contentLength()
                                 if (total > maxDownloadBytes) {
                                     throw IOException(
@@ -496,7 +495,7 @@ class GitHubClient(
                 logger?.warn("GitHub", "GitHub metadata request -> HTTP ${resp.code}")
                 throw responseFailure(resp, "requesting GitHub metadata")
             }
-            val body = resp.body?.string() ?: "[]"
+            val body = resp.body.string()
             resp.header("ETag")?.takeIf { it.isNotBlank() }?.let { etag ->
                 responseCache?.write(
                     CachedGitHubResponse(
@@ -525,7 +524,7 @@ class GitHubClient(
                 throw responseFailure(response, "testing GitHub connection")
             }
             return GitHubConnectionResponse(
-                body = response.body?.string() ?: "{}",
+                body = response.body.string(),
                 oauthScopes = parseScopes(response.header("X-OAuth-Scopes")),
                 acceptedScopes = parseScopes(response.header("X-Accepted-OAuth-Scopes")),
                 rateLimitRemaining = response.header("X-RateLimit-Remaining")?.toLongOrNull(),
