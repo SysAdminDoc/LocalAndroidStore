@@ -410,6 +410,7 @@
     <string name="clear_crash_evidence_body">Delete handled and uncaught failure evidence from local crash files. Diagnostics and install audit stay.</string>
 
     <string name="status_available">Available</string>
+    <string name="status_badge_description">Status: %1$s</string>
     <string name="status_installed">Installed</string>
     <string name="status_archived">Archived</string>
     <string name="status_new_release">New release</string>

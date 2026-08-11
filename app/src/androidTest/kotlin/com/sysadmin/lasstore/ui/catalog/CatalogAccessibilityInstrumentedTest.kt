@@ -40,6 +40,7 @@ class CatalogAccessibilityInstrumentedTest {
 
         composeRule.onNodeWithText("Example").assertIsDisplayed()
         composeRule.onNodeWithText("UPDATE").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Status: Update").assertIsDisplayed()
         composeRule.onNodeWithText("Update")
             .assertIsEnabled()
             .assertHasClickAction()

@@ -9,6 +9,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.domain.CardStatus
@@ -30,15 +32,19 @@ fun StatusBadge(status: CardStatus, modifier: Modifier = Modifier) {
         CardStatus.SignatureMismatch -> R.string.status_key_mismatch to Catppuccin.Red
         CardStatus.PermissionReview -> R.string.status_review to Catppuccin.Peach
     }
+    val label = stringResource(labelRes)
+    val accessibilityLabel = stringResource(R.string.status_badge_description, label)
 
     Surface(
-        modifier = modifier,
+        modifier = modifier.semantics(mergeDescendants = true) {
+            contentDescription = accessibilityLabel
+        },
         shape = RoundedCornerShape(50),
         color = color.copy(alpha = 0.1f),
         border = BorderStroke(1.dp, color.copy(alpha = 0.48f)),
     ) {
         Text(
-            text = stringResource(labelRes),
+            text = label,
             style = MaterialTheme.typography.labelSmall,
             color = color,
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
