@@ -52,6 +52,11 @@ class BackgroundUpdateScheduler(
         return enqueueInternal(info, useUserInitiatedTransport = true)
     }
 
+    /** Enqueue a previously persisted payload without changing its generation identity. */
+    suspend fun enqueue(payload: QueuedUpdatePayload): Boolean {
+        return enqueueInternal(payload, useUserInitiatedTransport = true)
+    }
+
     /**
      * Queue a candidate discovered by the periodic checker.
      *
@@ -63,11 +68,22 @@ class BackgroundUpdateScheduler(
         return enqueueInternal(info, useUserInitiatedTransport = false)
     }
 
+    suspend fun enqueuePeriodic(payload: QueuedUpdatePayload): Boolean {
+        return enqueueInternal(payload, useUserInitiatedTransport = false)
+    }
+
     private suspend fun enqueueInternal(
         info: AppInfo,
         useUserInitiatedTransport: Boolean,
+    ): Boolean = enqueueInternal(
+        payload = QueuedUpdatePayload.from(info),
+        useUserInitiatedTransport = useUserInitiatedTransport,
+    )
+
+    private suspend fun enqueueInternal(
+        payload: QueuedUpdatePayload,
+        useUserInitiatedTransport: Boolean,
     ): Boolean {
-        val payload = QueuedUpdatePayload.from(info)
         val statusStore = com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus
         statusStore.awaitLoaded()
         try {

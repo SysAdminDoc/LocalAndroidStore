@@ -144,6 +144,30 @@ class BackgroundUpdateSchedulerTest {
         }
     }
 
+    @Test
+    fun persistedPayloadEnqueueKeepsItsGenerationForProcessDeathReconciliation() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        ServiceLocator.init(context)
+        clearStatuses(context)
+        val payload = QueuedUpdatePayload.from(appInfo("persisted"), generationId = "staged-generation")
+        val scheduler = BackgroundUpdateScheduler(
+            context = context,
+            logger = ServiceLocator.logger,
+            enqueueWorkerOverride = {},
+            cancelWorkOverride = {},
+        )
+
+        try {
+            assertTrue(scheduler.enqueue(payload))
+            assertEquals(
+                "staged-generation",
+                ServiceLocator.queuedUpdateStatus.get(payload)?.generationId,
+            )
+        } finally {
+            clearStatuses(context)
+        }
+    }
+
     private fun clearStatuses(context: Context) {
         context.getSharedPreferences("queued_update_status", Context.MODE_PRIVATE)
             .edit()

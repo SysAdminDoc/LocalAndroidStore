@@ -71,6 +71,7 @@ import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.domain.SourceVerificationStatus
 import com.sysadmin.lasstore.domain.antiFeatureBadge
+import com.sysadmin.lasstore.install.QueuedUpdatePayload
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -80,8 +81,8 @@ fun CatalogExperience(
     viewModel: CatalogViewModel = viewModel(),
     activityResumed: Flow<Unit> = emptyFlow(),
     onOpenSettings: () -> Unit = {},
-    onBeforeQueue: (CardState, (Boolean) -> Unit) -> Unit = { _, continueQueue ->
-        continueQueue(true)
+    onBeforeBatchConfirm: (((Boolean) -> Unit) -> Unit) = { continueBatch ->
+        continueBatch(true)
     },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -161,6 +162,19 @@ fun CatalogExperience(
             onToggleAntiFeature = viewModel::toggleAntiFeature,
         )
 
+        if (state.stagedUpdates.isNotEmpty()) {
+            StagedUpdateBar(
+                stagedUpdates = state.stagedUpdates,
+                busy = state.batchQueueBusy,
+                onConfirm = {
+                    onBeforeBatchConfirm { notificationsGranted ->
+                        viewModel.confirmStagedUpdates(notificationsGranted)
+                    }
+                },
+                onClear = viewModel::clearStagedUpdates,
+            )
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -210,11 +224,7 @@ fun CatalogExperience(
                                 state = card,
                                 onInstall = { viewModel.install(card) },
                                 onUpdate = { viewModel.install(card) },
-                                onQueueUpdate = {
-                                    onBeforeQueue(card) { notificationsGranted ->
-                                        viewModel.queueBackgroundUpdate(card, notificationsGranted)
-                                    }
-                                },
+                                onQueueUpdate = { viewModel.stageBackgroundUpdate(card) },
                                 onCancelQueuedUpdate = { viewModel.cancelBackgroundUpdate(card) },
                                 onUninstall = { viewModel.uninstall(card) },
                                 onOpen = { viewModel.open(card) },
@@ -258,6 +268,92 @@ fun CatalogExperience(
                                 onOpenAdvancedSideloading = viewModel::openAdvancedSideloadingFlow,
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StagedUpdateBar(
+    stagedUpdates: List<QueuedUpdatePayload>,
+    busy: Boolean,
+    onConfirm: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = Catppuccin.Surface1,
+        border = BorderStroke(1.dp, Catppuccin.Mauve.copy(alpha = 0.5f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.staged_updates_count,
+                            stagedUpdates.size,
+                            stagedUpdates.size,
+                        ),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Catppuccin.TextStrong,
+                    )
+                    Text(
+                        text = stringResource(R.string.staged_updates_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Subtext,
+                    )
+                }
+                Button(
+                    onClick = onConfirm,
+                    enabled = !busy,
+                    contentPadding = PaddingValues(horizontal = 13.dp, vertical = 8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Catppuccin.MauveStrong,
+                        contentColor = Catppuccin.Crust,
+                    ),
+                ) {
+                    Text(stringResource(if (busy) R.string.confirming_batch else R.string.confirm_batch))
+                }
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = onClear, enabled = !busy) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = stringResource(R.string.clear_staged_updates),
+                        tint = Catppuccin.Subtext,
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                stagedUpdates.forEach { payload ->
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = Catppuccin.Mauve.copy(alpha = 0.11f),
+                        border = BorderStroke(1.dp, Catppuccin.Mauve.copy(alpha = 0.35f)),
+                    ) {
+                        Text(
+                            text = payload.displayName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Catppuccin.MauveStrong,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        )
                     }
                 }
             }

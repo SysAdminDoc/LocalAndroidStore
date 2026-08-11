@@ -115,6 +115,15 @@
     <string name="more_actions_for">More actions for %1$s</string>
     <string name="open_app">Open app</string>
     <string name="queue_update">Queue update</string>
+    <string name="add_to_batch_queue">Add to update batch</string>
+    <string name="confirm_batch">Confirm batch</string>
+    <string name="confirming_batch">Confirming…</string>
+    <string name="clear_staged_updates">Clear staged updates</string>
+    <string name="staged_updates_body">Nothing downloads until you confirm this batch.</string>
+    <plurals name="staged_updates_count">
+        <item quantity="one">1 update staged</item>
+        <item quantity="other">%1$d updates staged</item>
+    </plurals>
     <string name="cancel_queued_update">Cancel queued update</string>
     <string name="unmute_update_alerts">Unmute update alerts</string>
     <string name="mute_update">Mute this update</string>

@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.sysadmin.lasstore.install.BackgroundUpdateScheduler
+import com.sysadmin.lasstore.install.DownloadQueueStore
 import com.sysadmin.lasstore.install.ForegroundInstallStore
 import com.sysadmin.lasstore.install.PackageInstallerService
 import com.sysadmin.lasstore.install.QueuedUpdateStatusStore
@@ -51,6 +52,8 @@ object ServiceLocator {
     lateinit var channelPreferences: ChannelPreferenceStore
         private set
     lateinit var backgroundUpdates: BackgroundUpdateScheduler
+        private set
+    lateinit var downloadQueue: DownloadQueueStore
         private set
     lateinit var queuedUpdateStatus: QueuedUpdateStatusStore
         private set
@@ -109,6 +112,7 @@ object ServiceLocator {
             channelPreferences = ChannelPreferenceStore(appContext)
             queuedUpdateStatus = QueuedUpdateStatusStore(appContext)
             backgroundUpdates = BackgroundUpdateScheduler(appContext, logger)
+            downloadQueue = DownloadQueueStore(appContext)
             foregroundInstalls = ForegroundInstallStore(appContext)
             wearUpdates = WearUpdateMessenger(appContext) { throwable ->
                 logger.warn("Wear", "Could not deliver update count: ${throwable.message}")

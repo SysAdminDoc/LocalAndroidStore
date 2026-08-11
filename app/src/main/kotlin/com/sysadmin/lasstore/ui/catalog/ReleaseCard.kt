@@ -1269,7 +1269,7 @@ private fun ReleaseOverflowMenu(
                 state.queuedUpdateStatus?.isPending != true
             ) {
                 ReleaseMenuItem(
-                    text = stringResource(R.string.queue_update),
+                    text = stringResource(R.string.add_to_batch_queue),
                     icon = Icons.Default.Schedule,
                     onClick = {
                         expanded = false

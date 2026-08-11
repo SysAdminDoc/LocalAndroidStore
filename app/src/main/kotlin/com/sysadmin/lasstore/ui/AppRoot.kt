@@ -87,8 +87,8 @@ fun AppRoot(
                     onOpenSettings = {
                         nav.navigate(ROUTE_SETTINGS) { launchSingleTop = true }
                     },
-                    onBeforeQueue = { _, continueQueue ->
-                        requestNotificationPermission?.invoke(continueQueue) ?: continueQueue(true)
+                    onBeforeBatchConfirm = { continueBatch ->
+                        requestNotificationPermission?.invoke(continueBatch) ?: continueBatch(true)
                     },
                 )
             }

@@ -322,6 +322,9 @@ verification command fails, treat the binary as untrusted and do not distribute 
   packages remain foreground-only.
 - Automatic update policy is configurable: choose a daily cap in Settings, then set individual
   managed apps to auto, notify-only, pinned priority, or a dated hold from the card actions menu.
+- Update actions can be staged into a durable batch from card menus. Confirming the batch submits
+  each persisted generation through the normal background-install safeguards; a process restart
+  preserves unconfirmed actions and reconciles actions already submitted.
 - GitHub Releases and pinned F-Droid index-v2 repositories are supported today. GitLab and HTML source plugins remain adapter-level work rather than configured catalog sources.
 
 ---

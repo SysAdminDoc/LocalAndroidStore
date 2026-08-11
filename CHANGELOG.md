@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- Added a bounded, process-death-safe staged update batch. Card actions can add managed updates
+  without starting transport work; Confirm submits persisted generations sequentially, recovers
+  already-submitted actions after restart, and leaves scheduling failures staged for retry.
 - Added durable per-app update cadence controls: auto (daily-cap eligible), notify-only, pinned
   priority (cap bypass), and dated holds. Settings now exposes the global daily automatic-update
   cap, and failed automatic queue reservations are released safely.

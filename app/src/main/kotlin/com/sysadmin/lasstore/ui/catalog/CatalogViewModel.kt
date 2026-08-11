@@ -46,6 +46,8 @@ import com.sysadmin.lasstore.install.verifyInstallArtifact
 import com.sysadmin.lasstore.install.PermissionDiff
 import com.sysadmin.lasstore.install.PreapprovalSessionResult
 import com.sysadmin.lasstore.install.QueuedUpdateStatus
+import com.sysadmin.lasstore.install.QueuedUpdatePayload
+import com.sysadmin.lasstore.install.QueuedUpdatePhase
 import com.sysadmin.lasstore.install.safeLaunchExternalIntent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -164,6 +166,8 @@ data class CatalogUiState(
     val selectedAntiFeatures: Set<String> = emptySet(),
     val hideUnverifiedSources: Boolean = false,
     val sourceBrandings: List<CatalogSourceBranding> = emptyList(),
+    val stagedUpdates: List<QueuedUpdatePayload> = emptyList(),
+    val batchQueueBusy: Boolean = false,
 )
 
 internal fun validatedGitHubRepositoryUri(rawUrl: String): android.net.Uri? {
@@ -217,7 +221,9 @@ class CatalogViewModel : ViewModel() {
         },
     )
 
-    private val _state = MutableStateFlow(CatalogUiState())
+    private val _state = MutableStateFlow(
+        CatalogUiState(stagedUpdates = sl.downloadQueue.payloads()),
+    )
     val state: StateFlow<CatalogUiState> = _state.asStateFlow()
 
     /** Active install jobs keyed by sourceKey/owner/repo. Used for cancellation. */
@@ -228,6 +234,8 @@ class CatalogViewModel : ViewModel() {
     private val historyJobs = ConcurrentHashMap<String, Job>()
     /** Queue/cancel scheduling runs off the click dispatcher and is serialized per card. */
     private val queueJobs = ConcurrentHashMap<String, Job>()
+    /** One serialized confirmation pass for the durable staged-update batch. */
+    @Volatile private var batchQueueJob: Job? = null
     /** Publisher-pin recovery performs secret, audit, and cache I/O off the Compose path. */
     private val publisherPinJobs = ConcurrentHashMap<String, Job>()
     @Volatile private var refreshJob: Job? = null
@@ -451,6 +459,124 @@ class CatalogViewModel : ViewModel() {
         sl.channelPreferences.set(card.info, channel)
         updateCard(card.info) { current -> current.copy(channelPreference = channel) }
         refresh()
+    }
+
+    /** Stage a safe installed update without scheduling transport work yet. */
+    fun stageBackgroundUpdate(card: CardState) {
+        if (card.historicalSelection) {
+            _state.update { it.copy(warning = "Historical releases require an explicit foreground install.") }
+            return
+        }
+        if (card.info.assetChoices.size > 1) {
+            _state.update { it.copy(warning = "Choose an APK variant before adding it to the batch.") }
+            return
+        }
+        if (card.status != CardStatus.UpdateAvailable) {
+            _state.update { it.copy(warning = "Inspect the release and confirm it is a higher version first.") }
+            return
+        }
+        if (card.queuedUpdateStatus?.isPending == true) {
+            _state.update { it.copy(warning = "This update is already queued for background work.") }
+            return
+        }
+        val cached = sl.appIdCache.get(card.info.sourceKey, card.info.owner, card.info.repo)
+        val applicationId = card.info.applicationId ?: cached?.applicationId
+        val installed = applicationId?.let(sl.installState::info)
+        if (applicationId == null || installed == null) {
+            _state.update { it.copy(warning = "Only installed managed apps can be staged for a batch.") }
+            return
+        }
+        if (!signerMatchesPin(installed.currentSignerSha256, sl.secrets.getPin(applicationId))) {
+            _state.update {
+                it.copy(warning = "Batch staging blocked: the installed publisher key does not match the trust pin.")
+            }
+            return
+        }
+        val payload = QueuedUpdatePayload.from(card.info.copy(applicationId = applicationId))
+        try {
+            val added = sl.downloadQueue.stage(payload)
+            _state.update {
+                it.copy(
+                    stagedUpdates = sl.downloadQueue.payloads(),
+                    warning = if (added) {
+                        "Staged ${card.info.displayName}. Confirm the batch when ready."
+                    } else {
+                        "${card.info.displayName} is already staged."
+                    },
+                )
+            }
+        } catch (throwable: Throwable) {
+            sl.logger.warn("DownloadQueue", "Could not stage ${card.info.displayName}: ${throwable.message}")
+            _state.update { it.copy(warning = "Could not stage ${card.info.displayName} for the batch.") }
+        }
+    }
+
+    fun removeStagedUpdate(payload: QueuedUpdatePayload) {
+        sl.downloadQueue.remove(payload.workName)
+        _state.update { it.copy(stagedUpdates = sl.downloadQueue.payloads()) }
+    }
+
+    fun clearStagedUpdates() {
+        sl.downloadQueue.clear()
+        _state.update { it.copy(stagedUpdates = emptyList()) }
+    }
+
+    /** Confirm the durable staged batch and enqueue each payload with its persisted generation. */
+    fun confirmStagedUpdates(notificationsGranted: Boolean = true) {
+        val staged = sl.downloadQueue.payloads()
+        if (staged.isEmpty()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsGranted) {
+            _state.update {
+                it.copy(
+                    warning = "Batch background updates need notifications. Enable them in Settings first.",
+                )
+            }
+            return
+        }
+        if (!sl.installer.canRequestInstalls()) {
+            _state.update { it.copy(warning = "Grant 'Install unknown apps' before confirming the batch.") }
+            openInstallPermissionSettings()
+            return
+        }
+        batchQueueJob?.cancel()
+        _state.update { it.copy(batchQueueBusy = true, warning = "Confirming ${staged.size} staged updates…") }
+        val job = viewModelScope.launch(Dispatchers.IO) {
+            var enqueued = 0
+            var skipped = 0
+            var failed = 0
+            staged.forEach { payload ->
+                val existing = sl.queuedUpdateStatus.get(payload)
+                val alreadySubmitted = existing?.generationId == payload.generationId &&
+                    existing.phase != QueuedUpdatePhase.Failed &&
+                    existing.phase != QueuedUpdatePhase.Cancelled
+                if (alreadySubmitted) {
+                    sl.downloadQueue.remove(payload.workName)
+                    skipped += 1
+                    return@forEach
+                }
+                if (sl.backgroundUpdates.enqueue(payload)) {
+                    sl.downloadQueue.remove(payload.workName)
+                    enqueued += 1
+                } else {
+                    failed += 1
+                }
+            }
+            withContext(Dispatchers.Main) {
+                _state.update {
+                    it.copy(
+                        stagedUpdates = sl.downloadQueue.payloads(),
+                        batchQueueBusy = false,
+                        warning = buildString {
+                            if (enqueued > 0) append("Queued $enqueued staged update(s). ")
+                            if (skipped > 0) append("Recovered $skipped already-submitted update(s). ")
+                            if (failed > 0) append("$failed update(s) remain staged for retry.")
+                        }.trim().ifBlank { "No staged updates were submitted." },
+                    )
+                }
+            }
+        }
+        batchQueueJob = job
+        job.invokeOnCompletion { if (batchQueueJob == job) batchQueueJob = null }
     }
 
     fun refresh() {
