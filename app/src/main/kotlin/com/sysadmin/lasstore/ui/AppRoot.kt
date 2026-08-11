@@ -84,6 +84,9 @@ fun AppRoot(
             composable(ROUTE_CATALOG) {
                 CatalogExperience(
                     activityResumed = activityResumed,
+                    onOpenSettings = {
+                        nav.navigate(ROUTE_SETTINGS) { launchSingleTop = true }
+                    },
                     onBeforeQueue = { _, continueQueue ->
                         requestNotificationPermission?.invoke(continueQueue) ?: continueQueue(true)
                     },

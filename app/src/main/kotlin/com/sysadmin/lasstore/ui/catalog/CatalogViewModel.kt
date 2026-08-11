@@ -134,6 +134,7 @@ data class CatalogUiState(
     val canRequestInstalls: Boolean = true,
     val errorMessage: String? = null,
     val catalogNotice: String? = null,
+    val noEnabledSources: Boolean = false,
     val warning: String? = null,
 )
 
@@ -368,7 +369,13 @@ class CatalogViewModel : ViewModel() {
         refreshJob?.cancel()
         val generation = ++refreshGeneration
         val job = viewModelScope.launch(Dispatchers.IO) {
-            _state.update { it.copy(refreshing = true, errorMessage = null) }
+            _state.update {
+                it.copy(
+                    refreshing = true,
+                    errorMessage = null,
+                    noEnabledSources = false,
+                )
+            }
             try {
                 val settings = sl.settings.flow.first()
                 ensureActive()
@@ -414,6 +421,7 @@ class CatalogViewModel : ViewModel() {
                         current.copy(
                             refreshing = false,
                             cards = cards,
+                            noEnabledSources = enabledSources.isEmpty(),
                             errorMessage = catalogNotice.takeIf {
                                 cards.isEmpty() && discoveryResult.issues.isNotEmpty()
                             },

@@ -28,6 +28,9 @@
     <string name="no_releases_on_shelf">No releases on the shelf</string>
     <string name="catalog_unavailable">Catalog unavailable</string>
     <string name="catalog_default_empty_body">Check your GitHub sources in Settings, then refresh the catalog.</string>
+    <string name="no_enabled_sources">No sources enabled</string>
+    <string name="no_enabled_sources_body">Enable at least one GitHub source in Settings to fill the catalog with releases.</string>
+    <string name="open_source_settings">Open source Settings</string>
     <string name="nothing_matches_query">Nothing matches “%1$s”</string>
     <string name="search_empty_body">Try an app name, repository, version, or package ID.</string>
     <plurals name="catalog_app_count">

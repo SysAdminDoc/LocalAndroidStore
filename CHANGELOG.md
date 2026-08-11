@@ -33,6 +33,7 @@
 - Added bounded, paged historical release browsing with explicit foreground selection; selected older releases retain available version/digest/signer evidence, use the normal inspection/trust/downgrade gates, are audit-recorded, and cannot enter the background queue.
 
 ### Fixed
+- Catalog empty states now distinguish zero enabled sources from a successful no-release result and provide a direct Settings action plus refresh path.
 - Extracted shared APK package/signing/publisher-pin verification and durable trust/cache/audit finalization services used by foreground installs, queued workers, installer callbacks, and restart reconciliation.
 - Moved Settings source-PAT hydration and publisher-pin recovery secret/audit/cache work onto IO, with review revalidation, per-card busy state, duplicate-action suppression, and post-operation UI results.
 - Publisher-pin replacements now render as high-risk red warnings with explicit accessibility labeling and signer-continuity review copy in the activity log.

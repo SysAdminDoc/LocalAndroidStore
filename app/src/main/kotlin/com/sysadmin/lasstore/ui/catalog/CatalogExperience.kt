@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Inbox
@@ -73,6 +74,7 @@ import kotlinx.coroutines.flow.emptyFlow
 fun CatalogExperience(
     viewModel: CatalogViewModel = viewModel(),
     activityResumed: Flow<Unit> = emptyFlow(),
+    onOpenSettings: () -> Unit = {},
     onBeforeQueue: (CardState, (Boolean) -> Unit) -> Unit = { _, continueQueue ->
         continueQueue(true)
     },
@@ -137,7 +139,9 @@ fun CatalogExperience(
                 state.refreshing && state.cards.isEmpty() -> CatalogLoading()
                 state.cards.isEmpty() -> {
                     CatalogEmpty(
+                        noEnabledSources = state.noEnabledSources,
                         errorMessage = state.errorMessage,
+                        onOpenSettings = onOpenSettings,
                         onRefresh = {
                             viewModel.refreshInstallPermission()
                             viewModel.refresh()
@@ -567,7 +571,9 @@ private fun CatalogLoading() {
 
 @Composable
 private fun CatalogEmpty(
+    noEnabledSources: Boolean,
     errorMessage: String?,
+    onOpenSettings: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     Box(
@@ -591,10 +597,12 @@ private fun CatalogEmpty(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = if (errorMessage == null) {
-                        Icons.Outlined.Inbox
-                    } else {
-                        Icons.Default.Warning
+                    imageVector = when {
+                        noEnabledSources -> Icons.Default.Settings
+                        errorMessage == null -> {
+                            Icons.Outlined.Inbox
+                        }
+                        else -> Icons.Default.Warning
                     },
                     contentDescription = null,
                     tint = Catppuccin.MauveStrong,
@@ -602,35 +610,65 @@ private fun CatalogEmpty(
                 )
             }
             Text(
-                text = if (errorMessage == null) {
-                    stringResource(R.string.no_releases_on_shelf)
-                } else {
-                    stringResource(R.string.catalog_unavailable)
+                text = when {
+                    noEnabledSources -> stringResource(R.string.no_enabled_sources)
+                    errorMessage == null -> stringResource(R.string.no_releases_on_shelf)
+                    else -> stringResource(R.string.catalog_unavailable)
                 },
                 style = MaterialTheme.typography.titleLarge,
                 color = Catppuccin.TextStrong,
             )
             Text(
-                text = errorMessage
-                    ?: stringResource(R.string.catalog_default_empty_body),
+                text = when {
+                    noEnabledSources -> stringResource(R.string.no_enabled_sources_body)
+                    errorMessage != null -> errorMessage
+                    else -> stringResource(R.string.catalog_default_empty_body)
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = Catppuccin.Subtext,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
-            Button(
-                onClick = onRefresh,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Catppuccin.MauveStrong,
-                    contentColor = Catppuccin.Crust,
-                ),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.refresh_catalog))
+            if (noEnabledSources) {
+                Button(
+                    onClick = onOpenSettings,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Catppuccin.MauveStrong,
+                        contentColor = Catppuccin.Crust,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.open_source_settings))
+                }
+                OutlinedButton(onClick = onRefresh) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.refresh_catalog))
+                }
+            } else {
+                Button(
+                    onClick = onRefresh,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Catppuccin.MauveStrong,
+                        contentColor = Catppuccin.Crust,
+                    ),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.refresh_catalog))
+                }
             }
         }
     }
