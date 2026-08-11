@@ -1,5 +1,6 @@
 package com.sysadmin.lasstore.ui.settings
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sysadmin.lasstore.data.AppSettings
@@ -23,9 +24,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 enum class SettingsSaveStatus {
     Idle,
@@ -45,6 +49,12 @@ data class SettingsUiState(
     val connectionChecks: Map<String, ConnectionCheckState> = emptyMap(),
     val shizukuSilentInstallEnabled: Boolean = false,
     val shizukuStatus: ShizukuStatus = ShizukuStatus.Unavailable,
+    val libraryExportBusy: Boolean = false,
+    val libraryExportFile: File? = null,
+    val libraryImportBusy: Boolean = false,
+    val libraryMessage: String? = null,
+    val libraryError: String? = null,
+    val pendingLibraryRestoreCount: Int = 0,
 ) {
     val saving: Boolean get() = saveStatus == SettingsSaveStatus.Saving
 }
@@ -81,6 +91,7 @@ class SettingsViewModel : ViewModel() {
                         registryRecoveryBackupAvailable = inspection.backupAvailable,
                         shizukuSilentInstallEnabled = sl.installer.shizukuSilentInstallEnabled(),
                         shizukuStatus = sl.installer.shizukuStatus(),
+                        pendingLibraryRestoreCount = sl.libraryRestore.pending().size,
                     )
                 }
                 sl.settings.flow.collect { current ->
@@ -403,6 +414,95 @@ class SettingsViewModel : ViewModel() {
         when (val result: ExternalLaunchResult = sl.installer.openShizukuManager()) {
             is ExternalLaunchResult.Failed -> _state.update { it.copy(saveError = result.message) }
             ExternalLaunchResult.Started -> Unit
+        }
+    }
+
+    fun exportLibrary() {
+        if (_state.value.libraryExportBusy || _state.value.libraryImportBusy) return
+        _state.update {
+            it.copy(
+                libraryExportBusy = true,
+                libraryExportFile = null,
+                libraryMessage = null,
+                libraryError = null,
+            )
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val settings = sl.settings.flow.first()
+                val file = sl.libraryExport.create(settings)
+                withContext(Dispatchers.Main) {
+                    _state.update {
+                        it.copy(libraryExportBusy = false, libraryExportFile = file)
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                _state.update {
+                    it.copy(
+                        libraryExportBusy = false,
+                        libraryError = throwable.message ?: "Could not export the library.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearLibraryExportFile() {
+        _state.update { it.copy(libraryExportFile = null) }
+    }
+
+    fun reportLibraryError(message: String) {
+        _state.update { it.copy(libraryError = message) }
+    }
+
+    fun importLibrary(uri: Uri) {
+        if (_state.value.libraryExportBusy || _state.value.libraryImportBusy) return
+        _state.update {
+            it.copy(
+                libraryImportBusy = true,
+                libraryMessage = null,
+                libraryError = null,
+            )
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val imported = sl.libraryExport.read(uri)
+                sl.settings.mergeExportedSources(
+                    githubSources = imported.sources.github,
+                    fdroidSources = imported.sources.fdroid,
+                )
+                val merge = sl.library.merge(imported.library)
+                sl.libraryRestore.replace(imported.installs)
+                _state.update {
+                    it.copy(
+                        libraryImportBusy = false,
+                        pendingLibraryRestoreCount = sl.libraryRestore.pending().size,
+                        libraryMessage = "Imported ${merge.entriesMerged} library entries and " +
+                            "${imported.installs.size} managed install(s). Open Catalog and choose Restore.",
+                    )
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                _state.update {
+                    it.copy(
+                        libraryImportBusy = false,
+                        libraryError = throwable.message ?: "Could not import the library.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun clearPendingLibraryRestore() {
+        sl.libraryRestore.clear()
+        _state.update {
+            it.copy(
+                pendingLibraryRestoreCount = 0,
+                libraryMessage = "The pending restore plan was cleared.",
+            )
         }
     }
 }

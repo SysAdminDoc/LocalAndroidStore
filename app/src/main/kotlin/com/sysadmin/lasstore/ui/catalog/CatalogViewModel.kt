@@ -20,6 +20,7 @@ import com.sysadmin.lasstore.data.InstallProvenance
 import com.sysadmin.lasstore.data.InstalledInfo
 import com.sysadmin.lasstore.data.InstallArtifactKind
 import com.sysadmin.lasstore.data.LibraryCollection
+import com.sysadmin.lasstore.data.LibraryRestoreEntry
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.SourceBranding
 import com.sysadmin.lasstore.data.UpdateCadence
@@ -211,6 +212,8 @@ data class CatalogUiState(
     val favoritesOnly: Boolean = false,
     val selectedCollectionId: String? = null,
     val libraryCollections: List<LibraryCollection> = emptyList(),
+    val pendingLibraryRestoreCount: Int = 0,
+    val restoringLibrary: Boolean = false,
     val hideUnverifiedSources: Boolean = false,
     val sourceBrandings: List<CatalogSourceBranding> = emptyList(),
     val stagedUpdates: List<QueuedUpdatePayload> = emptyList(),
@@ -235,6 +238,30 @@ internal fun validatedGitHubRepositoryUri(rawUrl: String): android.net.Uri? {
         return null
     }
     return uri
+}
+
+internal fun restoreEntryMatchesCard(
+    entry: LibraryRestoreEntry,
+    info: AppInfo,
+    cachedApplicationId: String?,
+): Boolean {
+    val sourceMatches = entry.sourceKey.isBlank() ||
+        entry.sourceKey.equals(info.sourceKey, ignoreCase = true)
+    val repositoryMatches = entry.owner.isBlank() ||
+        (
+            entry.owner.equals(info.owner, ignoreCase = true) &&
+                (entry.repo.isBlank() || entry.repo.equals(info.repo, ignoreCase = true))
+            )
+    val packageMatches = entry.applicationId.equals(
+        info.applicationId ?: cachedApplicationId,
+        ignoreCase = true,
+    )
+    val urlMatches = entry.sourceUrl.isNotBlank() &&
+        entry.sourceUrl == info.asset.browserDownloadUrl
+    val releaseMatches = (entry.tagName.isBlank() ||
+        entry.tagName.equals(info.tagName, ignoreCase = true)) &&
+        (entry.assetName.isBlank() || entry.assetName.equals(info.asset.name, ignoreCase = true))
+    return releaseMatches && ((sourceMatches && repositoryMatches) || packageMatches || urlMatches)
 }
 
 internal fun preserveActivityResumeContext(previous: CardState, rebuilt: CardState): CardState =
@@ -286,6 +313,7 @@ class CatalogViewModel : ViewModel() {
         CatalogUiState(
             stagedUpdates = sl.downloadQueue.payloads(),
             libraryCollections = sl.library.collections(),
+            pendingLibraryRestoreCount = sl.libraryRestore.pending().size,
         ),
     )
     val state: StateFlow<CatalogUiState> = _state.asStateFlow()
@@ -304,6 +332,7 @@ class CatalogViewModel : ViewModel() {
     private val publisherPinJobs = ConcurrentHashMap<String, Job>()
     private val splitSelectionWaiters = ConcurrentHashMap<String, CompletableDeferred<Set<String>?>>()
     @Volatile private var archiveRestoreJob: Job? = null
+    @Volatile private var restoreLibraryJob: Job? = null
     @Volatile private var refreshJob: Job? = null
     @Volatile private var resumeReconcileJob: Job? = null
     @Volatile private var refreshGeneration = 0L
@@ -975,6 +1004,64 @@ class CatalogViewModel : ViewModel() {
         job.invokeOnCompletion { if (batchQueueJob == job) batchQueueJob = null }
     }
 
+    /** Start foreground restores for entries that still resolve to the locked source release. */
+    fun restoreLibrary() {
+        if (restoreLibraryJob?.isActive == true) return
+        val pending = sl.libraryRestore.pending()
+        if (pending.isEmpty()) {
+            _state.update { it.copy(pendingLibraryRestoreCount = 0) }
+            return
+        }
+        val cards = _state.value.cards
+        val matches = pending.mapNotNull { entry ->
+            cards.firstOrNull { card ->
+                restoreEntryMatchesCard(
+                    entry = entry,
+                    info = card.info,
+                    cachedApplicationId = sl.appIdCache.get(
+                        card.info.sourceKey,
+                        card.info.owner,
+                        card.info.repo,
+                    )?.applicationId,
+                )
+            }?.let { card -> entry to card }
+        }
+        val installable = matches.filter { (_, card) ->
+            card.status in setOf(
+                CardStatus.NotInstalled,
+                CardStatus.ReleaseAvailable,
+                CardStatus.UpdateAvailable,
+                CardStatus.ReinstallAvailable,
+                CardStatus.DowngradeAvailable,
+            )
+        }
+        if (installable.isEmpty()) {
+            _state.update {
+                it.copy(
+                    warning = "No pending library entries match the current catalog release. Refresh " +
+                        "sources or inspect the locked release history.",
+                )
+            }
+            return
+        }
+        val job = viewModelScope.launch(Dispatchers.Main.immediate) {
+            _state.update { it.copy(restoringLibrary = true) }
+            installable.distinctBy { (_, card) -> cardKey(card.info) }.forEach { (entry, card) ->
+                install(card)
+            }
+            _state.update {
+                it.copy(
+                    restoringLibrary = false,
+                    pendingLibraryRestoreCount = sl.libraryRestore.pending().size,
+                    warning = "Started restore for ${installable.size} managed app(s). " +
+                        "Each app still uses the normal verification and permission gates.",
+                )
+            }
+        }
+        restoreLibraryJob = job
+        job.invokeOnCompletion { if (restoreLibraryJob == job) restoreLibraryJob = null }
+    }
+
     fun refresh() {
         refreshJob?.cancel()
         val generation = ++refreshGeneration
@@ -1087,6 +1174,7 @@ class CatalogViewModel : ViewModel() {
                             hideUnverifiedSources = settings.hideUnverifiedSources,
                             sourceBrandings = sourceBrandings,
                             libraryCollections = sl.library.collections(),
+                            pendingLibraryRestoreCount = sl.libraryRestore.pending().size,
                             noEnabledSources = enabledSources.isEmpty() && enabledFdroidSources.isEmpty(),
                             errorMessage = catalogNotice.takeIf {
                                 cards.isEmpty() && discoveryResult.issues.isNotEmpty()

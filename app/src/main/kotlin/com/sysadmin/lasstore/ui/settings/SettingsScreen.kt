@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -59,6 +60,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import android.os.Build
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import java.text.DateFormat
 import java.util.Date
 import com.sysadmin.lasstore.data.DEFAULT_GITHUB_TOPIC
@@ -67,12 +71,15 @@ import com.sysadmin.lasstore.data.AccentColor
 import com.sysadmin.lasstore.data.AppThemeMode
 import com.sysadmin.lasstore.data.FdroidSource
 import com.sysadmin.lasstore.data.GitHubSource
+import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.normalizeFdroidSources
 import com.sysadmin.lasstore.data.normalizeSources
 import com.sysadmin.lasstore.data.validateFdroidSources
 import com.sysadmin.lasstore.data.validateSources
 import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.install.ShizukuStatus
+import com.sysadmin.lasstore.install.ExternalLaunchResult
+import com.sysadmin.lasstore.install.safeLaunchExternalIntent
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -84,6 +91,34 @@ fun SettingsScreen(
     activityResumed: Flow<Unit> = emptyFlow(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val libraryShareTitle = stringResource(R.string.share_library_export)
+    val libraryShareFailure = stringResource(R.string.library_export_share_failed)
+    val importLibrary = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let(viewModel::importLibrary) }
+
+    LaunchedEffect(state.libraryExportFile) {
+        val file = state.libraryExportFile ?: return@LaunchedEffect
+        val chooser = Intent.createChooser(
+            ServiceLocator.libraryExport.shareIntent(file),
+            libraryShareTitle,
+        )
+        when (
+            val result = safeLaunchExternalIntent(
+                intent = chooser,
+                canResolve = { candidate ->
+                    candidate.resolveActivity(context.packageManager) != null
+                },
+                start = { candidate -> context.startActivity(candidate) },
+                failureMessage = libraryShareFailure,
+            )
+        ) {
+            ExternalLaunchResult.Started -> Unit
+            is ExternalLaunchResult.Failed -> viewModel.reportLibraryError(result.message)
+        }
+        viewModel.clearLibraryExportFile()
+    }
 
     LaunchedEffect(activityResumed) {
         viewModel.refreshShizuku()
@@ -158,6 +193,17 @@ fun SettingsScreen(
         SettingsHeader()
 
         SecurityPosture(encryptedAtRest = state.encryptedAtRest)
+
+        LibraryBackupSettings(
+            state = state,
+            onExport = viewModel::exportLibrary,
+            onImport = {
+                importLibrary.launch(
+                    arrayOf("application/octet-stream", "application/zip", "*/*"),
+                )
+            },
+            onClearRestore = viewModel::clearPendingLibraryRestore,
+        )
 
         AppearanceSettings(
             themeMode = themeMode,
@@ -455,6 +501,125 @@ private fun SettingsError(text: String) {
             color = Catppuccin.Red,
             modifier = Modifier.padding(13.dp),
         )
+    }
+}
+
+@Composable
+private fun LibraryBackupSettings(
+    state: SettingsUiState,
+    onExport: () -> Unit,
+    onImport: () -> Unit,
+    onClearRestore: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = Catppuccin.Surface1,
+        border = BorderStroke(1.dp, Catppuccin.Stroke),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.library_backup_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = Catppuccin.TextStrong,
+            )
+            Text(
+                text = stringResource(R.string.library_backup_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Subtext,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onExport,
+                    enabled = !state.libraryExportBusy && !state.libraryImportBusy,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 11.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Catppuccin.MauveStrong,
+                        contentColor = Catppuccin.Crust,
+                    ),
+                ) {
+                    Text(
+                        stringResource(
+                            if (state.libraryExportBusy) {
+                                R.string.exporting_library
+                            } else {
+                                R.string.export_library
+                            },
+                        ),
+                    )
+                }
+                OutlinedButton(
+                    onClick = onImport,
+                    enabled = !state.libraryExportBusy && !state.libraryImportBusy,
+                    modifier = Modifier.weight(1f),
+                    border = BorderStroke(1.dp, Catppuccin.StrokeBright),
+                    contentPadding = PaddingValues(vertical = 11.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Catppuccin.MauveStrong,
+                    ),
+                ) {
+                    Text(
+                        stringResource(
+                            if (state.libraryImportBusy) {
+                                R.string.importing_library
+                            } else {
+                                R.string.import_library
+                            },
+                        ),
+                    )
+                }
+            }
+            state.pendingLibraryRestoreCount.takeIf { it > 0 }?.let { count ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(15.dp),
+                    color = Catppuccin.Peach.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, Catppuccin.Peach.copy(alpha = 0.28f)),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(11.dp),
+                        verticalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.library_restore_pending, count),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Catppuccin.Peach,
+                        )
+                        OutlinedButton(
+                            onClick = onClearRestore,
+                            border = BorderStroke(1.dp, Catppuccin.Peach.copy(alpha = 0.45f)),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = Catppuccin.Peach,
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
+                        ) {
+                            Text(stringResource(R.string.clear_library_restore))
+                        }
+                    }
+                }
+            }
+            state.libraryMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.Mint,
+                )
+            }
+            state.libraryError?.let { error ->
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.Red,
+                )
+            }
+        }
     }
 }
 

@@ -51,4 +51,34 @@ class LibraryStoreRobolectricTest {
         assertTrue(store.collectionIds(key).isEmpty())
         assertTrue(store.collections().isEmpty())
     }
+
+    @Test
+    fun importedLibraryMergesCollectionsByNameAndPreservesLocalFavorites() {
+        val local = store.createCollection("Watch later")!!
+        val localKey = libraryKeysFor("com.example.local", "source", "owner", "local")
+        store.toggleFavorite(localKey)
+
+        val importedKey = libraryKeysFor("com.example.imported", "source", "owner", "imported")
+        val result = store.merge(
+            LibrarySnapshot(
+                collections = listOf(
+                    LibraryCollectionSnapshot("other-id", "Watch later"),
+                    LibraryCollectionSnapshot("new-id", "Read later"),
+                ),
+                entries = listOf(
+                    LibraryEntrySnapshot(
+                        key = importedKey.first(),
+                        favorite = true,
+                        collectionIds = setOf("other-id", "new-id"),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(1, result.collectionsAdded)
+        assertTrue(store.isFavorite(localKey))
+        assertTrue(store.isFavorite(importedKey))
+        assertEquals(2, store.collections().size)
+        assertTrue(store.collectionIds(importedKey).contains(local.id))
+    }
 }

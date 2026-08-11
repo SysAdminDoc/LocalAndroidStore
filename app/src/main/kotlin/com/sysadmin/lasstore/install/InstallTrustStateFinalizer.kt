@@ -53,6 +53,14 @@ internal object InstallTrustStateFinalizer {
                     logger.warn(
                         "Install",
                         "Could not update APK lockfile for ${metadata.applicationId}: " +
+                        (failure.message ?: "write failed"),
+                    )
+                }
+            runCatching { sl.libraryRestore.removeInstalled(info, metadata) }
+                .onFailure { failure ->
+                    logger.warn(
+                        "Install",
+                        "Could not complete the imported library restore entry: " +
                             (failure.message ?: "write failed"),
                     )
                 }

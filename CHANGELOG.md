@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added portable library export and restore. A bounded `.las-library` archive contains favorites, collections, source definitions without credentials, and source-routed APK lock entries; importing merges local state and exposes a Catalog restore action that retains the normal digest, signer, package, permission, and installer gates.
 - Added GitHub repository lifecycle warnings. Archived repositories remain discoverable when they publish an APK, while repositories without push activity for 12+ months receive a review warning before installation or updates.
 - Added bounded Markdown release-note rendering and cumulative “What’s new since installed” views. F-Droid index-v2 `whatsNew` entries are validated and retained across the published version history; GitHub notes use the existing paged release-history budget.
 - Added durable favorites, source-namespaced GitHub/F-Droid category tags, and user-defined collections. The library preference file is the only app data eligible for encrypted Android backup/device transfer.

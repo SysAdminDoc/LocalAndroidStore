@@ -11,6 +11,29 @@ data class LibraryCollection(
     val name: String,
 )
 
+@Serializable
+data class LibraryCollectionSnapshot(
+    val id: String,
+    val name: String,
+)
+
+@Serializable
+data class LibraryEntrySnapshot(
+    val key: String,
+    val favorite: Boolean = false,
+    val collectionIds: Set<String> = emptySet(),
+)
+
+data class LibrarySnapshot(
+    val collections: List<LibraryCollectionSnapshot> = emptyList(),
+    val entries: List<LibraryEntrySnapshot> = emptyList(),
+)
+
+data class LibraryMergeResult(
+    val collectionsAdded: Int,
+    val entriesMerged: Int,
+)
+
 fun libraryKeysFor(
     applicationId: String?,
     sourceKey: String,
@@ -39,6 +62,86 @@ class LibraryStore(context: Context) {
     @Synchronized
     fun collections(): List<LibraryCollection> = readState().collections
         .map { LibraryCollection(it.id, it.name) }
+
+    @Synchronized
+    fun snapshot(): LibrarySnapshot = readState().let { state ->
+        LibrarySnapshot(
+            collections = state.collections.map { collection ->
+                LibraryCollectionSnapshot(collection.id, collection.name)
+            },
+            entries = state.entries.map { entry ->
+                LibraryEntrySnapshot(
+                    key = entry.key,
+                    favorite = entry.favorite,
+                    collectionIds = entry.collectionIds,
+                )
+            },
+        )
+    }
+
+    /** Merge an imported library without replacing local favorites or collections. */
+    @Synchronized
+    fun merge(snapshot: LibrarySnapshot): LibraryMergeResult {
+        val current = readState()
+        val importedCollections = snapshot.collections
+            .mapNotNull { collection ->
+                val id = collection.id.trim().takeIf { it.isNotBlank() }
+                val name = normalizeCollectionName(collection.name)
+                if (id == null || name == null) null else StoredCollection(id, name)
+            }
+            .distinctBy(StoredCollection::id)
+        val collections = current.collections.toMutableList()
+        val collectionIdMap = mutableMapOf<String, String>()
+        var addedCollections = 0
+        importedCollections.forEach { imported ->
+            val existingByName = collections.firstOrNull {
+                it.name.equals(imported.name, ignoreCase = true)
+            }
+            val existingById = collections.firstOrNull { it.id == imported.id }
+            val target = when {
+                existingByName != null -> existingByName
+                existingById == null -> imported
+                existingById.name.equals(imported.name, ignoreCase = true) -> existingById
+                else -> imported.copy(id = UUID.randomUUID().toString())
+            }
+            collectionIdMap[imported.id] = target.id
+            if (collections.none { it.id == target.id }) {
+                collections += target
+                addedCollections += 1
+            }
+        }
+        val knownCollectionIds = collections.map(StoredCollection::id).toSet()
+        val mergedEntries = current.entries.associateBy { it.key }.toMutableMap()
+        var entriesMerged = 0
+        snapshot.entries.forEach { imported ->
+            val key = imported.key.trim().lowercase(Locale.US)
+                .takeIf { it.isNotBlank() && it.length <= MAX_KEY_LENGTH }
+                ?: return@forEach
+            val collectionIds = imported.collectionIds
+                .mapNotNull { collectionIdMap[it] ?: it.takeIf(knownCollectionIds::contains) }
+                .toSet()
+            val existing = mergedEntries[key]
+            val merged = StoredEntry(
+                key = key,
+                favorite = imported.favorite || existing?.favorite == true,
+                collectionIds = collectionIds + existing.orEmptyCollectionIds(),
+            ).takeIf { it.favorite || it.collectionIds.isNotEmpty() }
+            if (merged != null) {
+                mergedEntries[key] = merged
+                entriesMerged += 1
+            }
+        }
+        writeState(
+            StoredLibraryState(
+                collections = collections,
+                entries = mergedEntries.values.toList(),
+            ),
+        )
+        return LibraryMergeResult(
+            collectionsAdded = addedCollections,
+            entriesMerged = entriesMerged,
+        )
+    }
 
     @Synchronized
     fun isFavorite(keys: Collection<String>): Boolean = matchingEntry(readState(), keys)
@@ -205,6 +308,8 @@ class LibraryStore(context: Context) {
             }
         return StoredLibraryState(cleanCollections, cleanEntries)
     }
+
+    private fun StoredEntry?.orEmptyCollectionIds(): Set<String> = this?.collectionIds.orEmpty()
 
     private companion object {
         const val PREFERENCES_NAME = "las_library_v1"

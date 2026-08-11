@@ -150,6 +150,21 @@ class SettingsStore(
         sourcePats: Map<String, String>,
     ) = saveSourceRegistryInternal(settings, sourcePats, allowMalformedReplacement = true)
 
+    /** Add source definitions from a portable library export without importing credentials. */
+    suspend fun mergeExportedSources(
+        githubSources: List<GitHubSource>,
+        fdroidSources: List<FdroidSource>,
+    ): AppSettings {
+        val current = flow.first()
+        val merged = current.copy(
+            sources = normalizeSources(current.sources + githubSources),
+            fdroidSources = normalizeFdroidSources(current.fdroidSources + fdroidSources),
+        )
+        if (merged == current) return current
+        saveSourceRegistry(merged, secrets.sourcePats())
+        return merged
+    }
+
     private suspend fun saveSourceRegistryInternal(
         settings: AppSettings,
         sourcePats: Map<String, String>,

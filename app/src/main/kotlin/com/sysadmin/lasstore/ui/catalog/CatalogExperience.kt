@@ -183,6 +183,14 @@ fun CatalogExperience(
             PermissionStrip(onClick = viewModel::openInstallPermissionSettings)
         }
 
+        if (state.pendingLibraryRestoreCount > 0) {
+            LibraryRestoreStrip(
+                count = state.pendingLibraryRestoreCount,
+                busy = state.restoringLibrary,
+                onRestore = viewModel::restoreLibrary,
+            )
+        }
+
         state.warning?.let { warning ->
             WarningStrip(text = warning, onDismiss = viewModel::dismissWarning)
         }
@@ -811,6 +819,52 @@ private fun WarningStrip(
                     contentDescription = stringResource(R.string.dismiss_message),
                     tint = Catppuccin.Red,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryRestoreStrip(
+    count: Int,
+    busy: Boolean,
+    onRestore: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 5.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = Catppuccin.Mauve.copy(alpha = 0.09f),
+        border = BorderStroke(1.dp, Catppuccin.Mauve.copy(alpha = 0.32f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 14.dp, top = 8.dp, end = 9.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.library_restore_pending, count),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.TextStrong,
+                )
+                Text(
+                    text = stringResource(R.string.library_restore_catalog_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Catppuccin.Subtext,
+                )
+            }
+            Button(
+                onClick = onRestore,
+                enabled = !busy,
+                contentPadding = PaddingValues(horizontal = 13.dp, vertical = 8.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Catppuccin.MauveStrong,
+                    contentColor = Catppuccin.Crust,
+                ),
+            ) {
+                Text(stringResource(if (busy) R.string.restoring_library else R.string.restore_library))
             }
         }
     }

@@ -19,6 +19,12 @@ data class ApkLockfileEntry(
     val certSha256: String,
     val sourceUrl: String,
     val manifestSha256: String,
+    val sourceKey: String = "",
+    val owner: String = "",
+    val repo: String = "",
+    val tagName: String = "",
+    val assetName: String = "",
+    val versionName: String? = null,
 )
 
 @Serializable
@@ -48,6 +54,12 @@ class ApkLockfileStore(context: Context) {
             certSha256 = metadata.signingSha256,
             sourceUrl = info.asset.browserDownloadUrl,
             manifestSha256 = digests.manifestSha256.orEmpty(),
+            sourceKey = info.sourceKey,
+            owner = info.owner,
+            repo = info.repo,
+            tagName = info.tagName,
+            assetName = info.asset.name,
+            versionName = metadata.versionName ?: info.versionName,
         )
         val previous = read()
         val document = previous.copy(
