@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,7 +77,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -107,6 +111,7 @@ fun ReleaseCard(
     state: CardState,
     onInstall: () -> Unit,
     onUpdate: () -> Unit,
+    onPrimaryAction: () -> Unit = {},
     onQueueUpdate: () -> Unit,
     onCancelQueuedUpdate: () -> Unit,
     onUninstall: () -> Unit,
@@ -183,10 +188,16 @@ fun ReleaseCard(
         mutableStateOf(false)
     }
     var transparencyVisible by rememberSaveable(state.info.handle) { mutableStateOf(false) }
+    var cardFocused by remember(state.info.handle) { mutableStateOf(false) }
     val antiFeatureBadges = remember(state.info.antiFeatures) {
         antiFeatureBadges(state.info.antiFeatures)
     }
     val cardShape = RoundedCornerShape(24.dp)
+    val cardDpadDescription = stringResource(
+        R.string.catalog_card_dpad_description,
+        state.info.displayName,
+        sourceDisplayName(state.info),
+    )
 
     if (assetSelectionVisible) {
         val densityDpi = LocalContext.current.resources.displayMetrics.densityDpi
@@ -621,16 +632,26 @@ fun ReleaseCard(
     Surface(
         modifier = modifier
             .fillMaxWidth()
+            .onFocusChanged { cardFocused = it.hasFocus }
+            .focusable()
             .combinedClickable(
-                onClick = { if (selectionMode) onToggleSelection() },
+                onClick = {
+                    if (selectionMode) onToggleSelection() else onPrimaryAction()
+                },
                 onLongClick = onLongPress,
-            ),
+            )
+            .semantics {
+                role = Role.Button
+                contentDescription = cardDpadDescription
+            },
         shape = cardShape,
         color = Catppuccin.Panel,
         border = BorderStroke(
-            1.dp,
-            if (selectionMode && selected) Catppuccin.MauveStrong else {
-                Catppuccin.StrokeBright.copy(alpha = 0.75f)
+            if (cardFocused) 2.dp else 1.dp,
+            when {
+                cardFocused -> sourceAccent
+                selectionMode && selected -> Catppuccin.MauveStrong
+                else -> Catppuccin.StrokeBright.copy(alpha = 0.75f)
             },
         ),
     ) {

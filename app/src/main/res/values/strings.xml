@@ -32,6 +32,7 @@
     <string name="clear_search">Clear search</string>
     <string name="catalog_release_count">%1$d of %2$d releases</string>
     <string name="catalog_categories_title">Categories and source tags</string>
+    <string name="catalog_card_dpad_description">%1$s. %2$s. Press select to run the primary card action.</string>
     <string name="favorites_filter">Favorites</string>
     <string name="manage_collections">Manage collections</string>
     <string name="collections_body">Collections and favorites are stored locally by package identity, then by source repository until an APK identifies the package.</string>

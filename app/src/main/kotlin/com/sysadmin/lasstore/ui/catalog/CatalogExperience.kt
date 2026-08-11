@@ -1,7 +1,9 @@
 package com.sysadmin.lasstore.ui.catalog
 
+import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,6 +66,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
@@ -96,6 +99,8 @@ fun CatalogExperience(
     },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val isTelevision = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK ==
+        Configuration.UI_MODE_TYPE_TELEVISION
     var libraryManagerVisible by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(viewModel, activityResumed) {
         activityResumed.collect { viewModel.onActivityResumed() }
@@ -297,16 +302,24 @@ fun CatalogExperience(
                 }
                 else -> {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 332.dp),
-                        modifier = Modifier.fillMaxSize(),
+                        columns = GridCells.Adaptive(
+                            minSize = if (isTelevision) 360.dp else 332.dp,
+                        ),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .focusGroup(),
                         contentPadding = PaddingValues(
-                            start = 16.dp,
+                            start = if (isTelevision) 32.dp else 16.dp,
                             top = 6.dp,
-                            end = 16.dp,
+                            end = if (isTelevision) 32.dp else 16.dp,
                             bottom = 20.dp,
                         ),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(
+                            if (isTelevision) 20.dp else 14.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(
+                            if (isTelevision) 20.dp else 14.dp,
+                        ),
                     ) {
                         items(
                             items = visibleCards,
@@ -320,6 +333,25 @@ fun CatalogExperience(
                                 onLongPress = { viewModel.enterSelectionMode(card) },
                                 onInstall = { viewModel.install(card) },
                                 onUpdate = { viewModel.install(card) },
+                                onPrimaryAction = {
+                                    when (card.status) {
+                                        CardStatus.NotInstalled,
+                                        CardStatus.ReleaseAvailable,
+                                        CardStatus.UpdateAvailable,
+                                        CardStatus.ReinstallAvailable,
+                                        CardStatus.DowngradeAvailable,
+                                        CardStatus.Error,
+                                        -> viewModel.install(card)
+                                        CardStatus.Unmanaged -> viewModel.adopt(card)
+                                        CardStatus.Installed -> viewModel.open(card)
+                                        CardStatus.Archived -> viewModel.unarchive(card)
+                                        CardStatus.Working -> viewModel.cancelInstall(card)
+                                        CardStatus.PermissionReview -> {
+                                            viewModel.proceedFromPermissionReview(card)
+                                        }
+                                        CardStatus.SignatureMismatch -> Unit
+                                    }
+                                },
                                 onQueueUpdate = { viewModel.stageBackgroundUpdate(card) },
                                 onCancelQueuedUpdate = { viewModel.cancelBackgroundUpdate(card) },
                                 onUninstall = { viewModel.uninstall(card) },

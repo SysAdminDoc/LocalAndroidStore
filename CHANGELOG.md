@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added Android TV / D-pad catalog navigation. The responsive card grid is a focus group with visible focus rings, predictable leanback spacing, accessible card descriptions, and a safe primary action for the remote select button.
 - Added opt-in SOCKS5/Orbot proxy routing for GitHub, F-Droid, branding, and source-directory HTTP clients. Settings validates the endpoint, keeps it off by default, and uses a dynamic proxy selector so changes apply without rebuilding clients.
 - Documented fine-grained GitHub PAT support and least-privilege read permissions. The existing Bearer API path accepts `github_pat_…` tokens without importing OAuth client credentials or requesting write access.
 - Added a curated source-of-sources directory. Settings loads a bounded HTTPS JSON feed, validates unique GitHub/F-Droid definitions, and adds only explicitly selected sources without importing credentials or silently enabling the rest.

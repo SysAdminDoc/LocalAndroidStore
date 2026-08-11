@@ -17,6 +17,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -25,6 +26,7 @@ import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.domain.AppInfo
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.ui.theme.LocalAndroidStoreTheme
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -44,6 +46,21 @@ class CatalogAccessibilityInstrumentedTest {
         composeRule.onNodeWithContentDescription("More actions for Example")
             .assertIsDisplayed()
             .assertHasClickAction()
+    }
+
+    @Test
+    fun cardBodyExposesDpadPrimaryAction() {
+        var invoked = false
+        renderCard(onPrimaryAction = { invoked = true })
+
+        composeRule.onNodeWithContentDescription(
+            "Example. Personal · owner/repo. Press select to run the primary card action.",
+        )
+            .assertIsDisplayed()
+            .assertHasClickAction()
+            .performClick()
+
+        composeRule.runOnIdle { assertTrue(invoked) }
     }
 
     @Test
@@ -170,6 +187,7 @@ class CatalogAccessibilityInstrumentedTest {
         state: CardState = cardState(),
         fontScale: Float = 1f,
         layoutDirection: LayoutDirection = LayoutDirection.Ltr,
+        onPrimaryAction: () -> Unit = {},
     ) {
         composeRule.setContent {
             val density = LocalDensity.current
@@ -187,6 +205,7 @@ class CatalogAccessibilityInstrumentedTest {
                             state = state,
                             onInstall = {},
                             onUpdate = {},
+                            onPrimaryAction = onPrimaryAction,
                             onQueueUpdate = {},
                             onCancelQueuedUpdate = {},
                             onUninstall = {},

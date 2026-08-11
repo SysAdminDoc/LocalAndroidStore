@@ -50,6 +50,7 @@ That's what this is.
 - **Android app archiving** — on Android 15+, archive managed apps to remove their APK and cache while retaining user data. A launcher-stub restore request returns to LocalAndroidStore, which re-fetches the selected release and reinstalls it through the normal verification and PackageInstaller flow.
 - **Rate-aware offline catalog** — repository discovery continues through a bounded 50-page policy, release lookups are capped at four concurrent requests, GitHub ETags reuse unchanged responses, partial sources retain only current candidates whose release lookup failed transiently, and a dated on-device snapshot remains usable offline for up to seven days. Retained cards are marked stale; removed, archived, topic-excluded, missing-release, and non-transiently failed repositories are not resurrected. A source that exceeds the repository bound is marked truncated with fetched/omitted evidence instead of appearing complete; use a topic filter to narrow it. TLS, token, authorization, rate-limit, network, server, malformed-response, truncation, and valid-empty outcomes are shown distinctly.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black or Catppuccin Latte light. Repo handle, star count, version tag, status badge, two-line description.
+- **Android TV / D-pad navigation** — the catalog uses a responsive, focus-grouped card grid. Cards expose a visible focus ring and a select-button primary action, while directional navigation moves predictably across the leanback-friendly layout.
 - **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
 - **One-tap install** — APK is downloaded to app cache, then driven through `PackageInstaller.Session`. The system shows its install dialog, the user confirms once, done.
 - **Optional Shizuku installer** — Settings can opt foreground and queued installs into a shell-privileged `IPackageInstaller` bridge. Shizuku must be running and approved for LocalAndroidStore; otherwise the normal installer is used. APK digest, package identity, signer, version, and audit gates still run before the session is created.
@@ -106,6 +107,8 @@ attested release artifacts; release signing is a deliberate local release-owner 
 7. Tap **Save settings**, hop back to **Catalog**, hit **Refresh**.
 
 Every qualifying repo appears as a card. Tap **Install** — the APK downloads, then uses the selected installer path. With the default path, the system install dialog appears and you confirm; with an active Shizuku path, Android may complete the shell-owned session without that dialog. Tap **Open** to launch. Tap **Uninstall** to land on the system uninstall confirmation.
+
+On Android TV, use the directional pad to move between cards and nested actions. Select a focused card to run its primary action; the same grid remains touch-friendly on phones and tablets.
 
 For an installed card, open the overflow menu and choose **Inspect APK transparency**. The report
 shows the verified package/version/digests/signer, parsed Signing Block entries, known static tracker
