@@ -8,6 +8,7 @@ import com.sysadmin.lasstore.install.BackgroundUpdateScheduler
 import com.sysadmin.lasstore.install.ForegroundInstallStore
 import com.sysadmin.lasstore.install.PackageInstallerService
 import com.sysadmin.lasstore.install.QueuedUpdateStatusStore
+import com.sysadmin.lasstore.wear.WearUpdateMessenger
 
 @SuppressLint("StaticFieldLeak")
 object ServiceLocator {
@@ -48,6 +49,8 @@ object ServiceLocator {
     lateinit var catalogSnapshots: CatalogSnapshotStore
         private set
     lateinit var foregroundInstalls: ForegroundInstallStore
+        private set
+    lateinit var wearUpdates: WearUpdateMessenger
         private set
 
     fun init(context: Context) {
@@ -95,6 +98,10 @@ object ServiceLocator {
             queuedUpdateStatus = QueuedUpdateStatusStore(appContext)
             backgroundUpdates = BackgroundUpdateScheduler(appContext, logger)
             foregroundInstalls = ForegroundInstallStore(appContext)
+            wearUpdates = WearUpdateMessenger(appContext) { throwable ->
+                logger.warn("Wear", "Could not deliver update count: ${throwable.message}")
+            }
+            wearUpdates.registerPhoneCapability()
             initialized = true
         }
     }

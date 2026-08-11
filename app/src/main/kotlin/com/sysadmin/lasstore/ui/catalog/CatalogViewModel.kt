@@ -427,6 +427,9 @@ class CatalogViewModel : ViewModel() {
                         add(buildCardState(info, cached))
                     }
                 }
+                sl.wearUpdates.publishUpdateCount(
+                    cards.count { it.status == CardStatus.UpdateAvailable },
+                )
                 ensureActive()
                 val catalogNotice = catalogNotice(discoveryResult)
                 _state.update { current ->

@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">LocalAndroidStore for Wear</string>
+    <string name="tile_name">LocalAndroidStore updates</string>
+</resources>

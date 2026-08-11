@@ -35,6 +35,7 @@ That's what this is.
 - **Multi-source GitHub discovery** — every enabled GitHub user / org source with a `.apk` asset on its latest release. Each source has its own enable toggle, optional topic filter, pre-release toggle, and optional PAT.
 - **Pinned F-Droid repositories** — add any HTTPS F-Droid index-v2 endpoint by pasting its `?fingerprint=` URL. The repository fingerprint is checked before metadata is exposed, and signed `entry.jar` metadata is verified when the repository provides it. APK SHA-256 digests and F-Droid anti-features travel into the catalog.
 - **Multi-source package aggregation** — once an Android package identity is known, releases from multiple configured sources share one card. Open the card's source chooser to inspect every candidate and pin the preferred source for that package.
+- **Wear OS companion** — the separate `wear` module provides an update-count Tile and short-text complication. A paired watch can send a user-initiated refresh request back to the phone; no APK is installed on-watch.
 - **Rate-aware offline catalog** — repository discovery continues through a bounded 50-page policy, release lookups are capped at four concurrent requests, GitHub ETags reuse unchanged responses, partial sources retain only current candidates whose release lookup failed transiently, and a dated on-device snapshot remains usable offline for up to seven days. Retained cards are marked stale; removed, archived, topic-excluded, missing-release, and non-transiently failed repositories are not resurrected. A source that exceeds the repository bound is marked truncated with fetched/omitted evidence instead of appearing complete; use a topic filter to narrow it. TLS, token, authorization, rate-limit, network, server, malformed-response, truncation, and valid-empty outcomes are shown distinctly.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black. Repo handle, star count, version tag, status badge, two-line description.
 - **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
@@ -116,6 +117,11 @@ version with a standalone APK for each package, verifies the repository fingerpr
 and shows anti-feature filter chips when the index publishes them. HTTPS is required for index and
 APK URLs.
 
+The optional Wear OS companion is built with `./gradlew :wear:assembleDebug` and installed on a
+paired watch. Add the Tile or short-text complication from the watch face editor; the watch receives
+the phone's available-update count and its Tile action asks the phone to open LocalAndroidStore for
+a refresh.
+
 ---
 
 ## Where things live
@@ -170,6 +176,8 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 │   ├── settings/              Form + ViewModel
 │   └── log/                   Live log viewer
 └── App.kt + MainActivity.kt
+wear/
+└── Wear OS Tile, complication, and phone back-channel companion
 ```
 
 The signature-pin store is keyed by `applicationId`. Before the installer or permission-review step, `ApkInspector` asks `apksig` to verify the exact downloaded bytes across the app's API 26+ support window. Verification must report a supported v1/v2/v3/v3.1 scheme, exactly one current certificate, no errors, and—when present—a valid proof-of-rotation lineage ending at that certificate. Android's archive parser must independently return the same current signer and a valid package id. Only metadata carrying that verified evidence can enroll or roll forward a pin after a successful install; the secret store also rejects incomplete fingerprints.

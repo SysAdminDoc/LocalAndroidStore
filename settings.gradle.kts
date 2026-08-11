@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "LocalAndroidStore"
 include(":app")
+include(":wear")

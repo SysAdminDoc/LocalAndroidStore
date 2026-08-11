@@ -117,10 +117,12 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.9")
     implementation("androidx.navigation:navigation-compose:2.9.8")
 
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation("com.google.android.gms:play-services-wearable:19.0.0")
 
     implementation("com.google.crypto.tink:tink-android:1.23.0")
     implementation("com.squareup.okhttp3:okhttp")
