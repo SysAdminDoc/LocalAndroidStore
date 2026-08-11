@@ -211,7 +211,7 @@ fun SettingsScreen(
             )
         }
 
-        if (state.savedAt > 0L) {
+        if (state.saveStatus == SettingsSaveStatus.Saved) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),

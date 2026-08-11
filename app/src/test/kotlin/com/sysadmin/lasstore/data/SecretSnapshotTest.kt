@@ -32,6 +32,42 @@ class SecretSnapshotTest {
     }
 
     @Test
+    fun sourcePatTransactionCanApplyAndCompleteIdempotently() {
+        val transaction = SecretSnapshot(
+            sourcePats = mapOf("old" to "old-token"),
+        ).beginSourcePatTransaction(
+            id = "tx-1",
+            targetSettingsFingerprint = "settings-v2",
+            targetSourcePats = mapOf("new" to "new-token"),
+        )
+
+        val applied = transaction.applySourcePatTransaction("tx-1")
+        assertEquals(mapOf("new" to "new-token"), applied.sourcePats)
+        assertEquals(
+            mapOf("new" to "new-token"),
+            applied.completeSourcePatTransaction("tx-1").sourcePats,
+        )
+    }
+
+    @Test
+    fun sourcePatTransactionRollbackRestoresPreviousSnapshot() {
+        val pending = SecretSnapshot(
+            sourcePats = mapOf("old" to "old-token"),
+        ).beginSourcePatTransaction(
+            id = "tx-1",
+            targetSettingsFingerprint = "settings-v2",
+            targetSourcePats = mapOf("new" to "new-token"),
+        )
+
+        val rolledBack = pending
+            .applySourcePatTransaction("tx-1")
+            .rollbackSourcePatTransaction("tx-1")
+
+        assertEquals(mapOf("old" to "old-token"), rolledBack.sourcePats)
+        assertEquals(null, rolledBack.pendingSourcePatTransaction)
+    }
+
+    @Test
     fun pinsCanBeAddedAndRemovedWithoutTouchingTokens() {
         val snapshot = SecretSnapshot(globalPat = "pat")
             .withPin("com.example.app", "abc123")

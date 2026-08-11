@@ -16,7 +16,7 @@ import java.io.File
  * A plaintext fallback is retained only for devices where Android Keystore
  * setup fails, and is migrated forward when Tink becomes available again.
  */
-class SecretStore(context: Context) {
+class SecretStore(context: Context) : SettingsSecretStore {
     @Volatile var encrypted: Boolean = true
         private set
 
@@ -39,19 +39,68 @@ class SecretStore(context: Context) {
         PlainPreferencesSecretBackend(context.applicationContext)
     }
 
-    fun getPat(): String = backend.read().globalPat
-    fun setPat(pat: String) = backend.update { it.withGlobalPat(pat) }
+    override fun getPat(): String = backend.read().globalPat
+    override fun setPat(pat: String) = backend.update { it.withGlobalPat(pat) }
 
-    fun getPat(sourceKey: String): String =
+    override fun getPat(sourceKey: String): String =
         backend.read().sourcePats[sourceKey] ?: getPat()
 
-    fun getSourcePat(sourceKey: String): String? = backend.read().sourcePats[sourceKey]
+    override fun getSourcePat(sourceKey: String): String? = backend.read().sourcePats[sourceKey]
 
-    fun setPat(sourceKey: String, pat: String) =
+    override fun setPat(sourceKey: String, pat: String) =
         backend.update { it.withSourcePat(sourceKey, pat) }
 
-    fun replaceSourcePats(sourcePats: Map<String, String>, activeSourceKeys: Set<String>) =
+    override fun replaceSourcePats(sourcePats: Map<String, String>, activeSourceKeys: Set<String>) =
         backend.update { it.replaceSourcePats(sourcePats, activeSourceKeys) }
+
+    override fun beginSourcePatTransaction(
+        id: String,
+        targetSettingsFingerprint: String,
+        targetSourcePats: Map<String, String>,
+    ) = backend.update {
+        it.beginSourcePatTransaction(
+            id = id,
+            targetSettingsFingerprint = targetSettingsFingerprint,
+            targetSourcePats = targetSourcePats,
+        )
+    }
+
+    override fun applySourcePatTransaction(id: String) = backend.update { snapshot ->
+        snapshot.applySourcePatTransaction(id)
+    }
+
+    /** Complete a transaction if it is still pending; safe to retry after a process restart. */
+    override fun completeSourcePatTransaction(id: String) = backend.update { snapshot ->
+        val pending = snapshot.pendingSourcePatTransaction
+        when {
+            pending == null -> snapshot
+            pending.id == id -> snapshot.completeSourcePatTransaction(id)
+            else -> error("A different source PAT transaction is pending")
+        }
+    }
+
+    /** Roll back a transaction if it is still pending; safe to retry after a process restart. */
+    override fun rollbackSourcePatTransaction(id: String) = backend.update { snapshot ->
+        val pending = snapshot.pendingSourcePatTransaction
+        when {
+            pending == null -> snapshot
+            pending.id == id -> snapshot.rollbackSourcePatTransaction(id)
+            else -> error("A different source PAT transaction is pending")
+        }
+    }
+
+    /** Reconcile a pending transaction when its settings journal was lost or already finalized. */
+    override fun reconcilePendingSourcePatTransaction(settingsFingerprint: String) =
+        backend.update { snapshot ->
+            val pending = snapshot.pendingSourcePatTransaction ?: return@update snapshot
+            if (pending.targetSettingsFingerprint == settingsFingerprint) {
+                snapshot.completeSourcePatTransaction(pending.id)
+            } else {
+                snapshot.rollbackSourcePatTransaction(pending.id)
+            }
+        }
+
+    override fun sourcePats(): Map<String, String> = backend.read().sourcePats
 
     fun getPin(packageName: String): String? = backend.read().pins[packageName]
     fun setPin(packageName: String, sha256Hex: String) {
@@ -136,6 +185,16 @@ private class PlainPreferencesSecretBackend(context: Context) : SynchronizedSecr
             globalPat = prefs.getString(KEY_PAT, "").orEmpty(),
             sourcePats = all.stringMapWithPrefix(SOURCE_PAT_PREFIX),
             pins = all.stringMapWithPrefix(PIN_PREFIX),
+            pendingSourcePatTransaction = prefs
+                .getString(KEY_PENDING_SOURCE_PAT_TRANSACTION, null)
+                ?.let { raw ->
+                    runCatching {
+                        secretJson().decodeFromString(
+                            PendingSourcePatTransaction.serializer(),
+                            raw,
+                        )
+                    }.getOrNull()
+                },
         )
     }
 
@@ -145,6 +204,15 @@ private class PlainPreferencesSecretBackend(context: Context) : SynchronizedSecr
             if (snapshot.globalPat.isNotBlank()) putString(KEY_PAT, snapshot.globalPat)
             snapshot.sourcePats.forEach { (key, value) -> putString("$SOURCE_PAT_PREFIX$key", value) }
             snapshot.pins.forEach { (packageName, sha256) -> putString("$PIN_PREFIX$packageName", sha256) }
+            snapshot.pendingSourcePatTransaction?.let { transaction ->
+                putString(
+                    KEY_PENDING_SOURCE_PAT_TRANSACTION,
+                    secretJson().encodeToString(
+                        PendingSourcePatTransaction.serializer(),
+                        transaction,
+                    ),
+                )
+            }
         }.commit()) { "Could not persist plaintext secret fallback" }
     }
 }
@@ -164,3 +232,4 @@ private fun secretJson(): Json = Json {
 private const val KEY_PAT = "github_pat"
 private const val SOURCE_PAT_PREFIX = "github_pat_source_"
 private const val PIN_PREFIX = "pin_"
+private const val KEY_PENDING_SOURCE_PAT_TRANSACTION = "pending_source_pat_transaction"

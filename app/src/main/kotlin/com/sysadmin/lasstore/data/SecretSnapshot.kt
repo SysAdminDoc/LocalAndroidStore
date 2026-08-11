@@ -3,14 +3,26 @@ package com.sysadmin.lasstore.data
 import kotlinx.serialization.Serializable
 
 @Serializable
+internal data class PendingSourcePatTransaction(
+    val id: String,
+    val targetSettingsFingerprint: String,
+    val previousSourcePats: Map<String, String>,
+    val targetSourcePats: Map<String, String>,
+)
+
+@Serializable
 internal data class SecretSnapshot(
     val globalPat: String = "",
     val sourcePats: Map<String, String> = emptyMap(),
     val pins: Map<String, String> = emptyMap(),
     val updatedAtEpochMillis: Long = 0L,
+    val pendingSourcePatTransaction: PendingSourcePatTransaction? = null,
 ) {
     val isEmpty: Boolean
-        get() = globalPat.isBlank() && sourcePats.isEmpty() && pins.isEmpty()
+        get() = globalPat.isBlank() &&
+            sourcePats.isEmpty() &&
+            pins.isEmpty() &&
+            pendingSourcePatTransaction == null
 
     fun withGlobalPat(pat: String): SecretSnapshot =
         copy(globalPat = pat.trim(), updatedAtEpochMillis = System.currentTimeMillis())
@@ -36,6 +48,54 @@ internal data class SecretSnapshot(
         return copy(sourcePats = next, updatedAtEpochMillis = System.currentTimeMillis())
     }
 
+    fun beginSourcePatTransaction(
+        id: String,
+        targetSettingsFingerprint: String,
+        targetSourcePats: Map<String, String>,
+    ): SecretSnapshot {
+        check(pendingSourcePatTransaction == null) {
+            "A source PAT transaction is already pending"
+        }
+        return copy(
+            pendingSourcePatTransaction = PendingSourcePatTransaction(
+                id = id,
+                targetSettingsFingerprint = targetSettingsFingerprint,
+                previousSourcePats = sourcePats,
+                targetSourcePats = targetSourcePats,
+            ),
+            updatedAtEpochMillis = System.currentTimeMillis(),
+        )
+    }
+
+    fun applySourcePatTransaction(id: String): SecretSnapshot {
+        val pending = requirePendingSourcePatTransaction(id)
+        return copy(
+            sourcePats = pending.targetSourcePats,
+            updatedAtEpochMillis = System.currentTimeMillis(),
+        )
+    }
+
+    fun completeSourcePatTransaction(id: String): SecretSnapshot {
+        requirePendingSourcePatTransaction(id)
+        return copy(
+            pendingSourcePatTransaction = null,
+            updatedAtEpochMillis = System.currentTimeMillis(),
+        )
+    }
+
+    fun rollbackSourcePatTransaction(id: String): SecretSnapshot {
+        val pending = requirePendingSourcePatTransaction(id)
+        return copy(
+            sourcePats = pending.previousSourcePats,
+            pendingSourcePatTransaction = null,
+            updatedAtEpochMillis = System.currentTimeMillis(),
+        )
+    }
+
+    private fun requirePendingSourcePatTransaction(id: String): PendingSourcePatTransaction =
+        checkNotNull(pendingSourcePatTransaction) { "No source PAT transaction is pending" }
+            .also { check(it.id == id) { "A different source PAT transaction is pending" } }
+
     fun withPin(packageName: String, sha256Hex: String): SecretSnapshot =
         copy(
             pins = pins + (packageName to sha256Hex),
@@ -51,6 +111,8 @@ internal data class SecretSnapshot(
             sourcePats = fallback.sourcePats + sourcePats,
             pins = fallback.pins + pins,
             updatedAtEpochMillis = maxOf(updatedAtEpochMillis, fallback.updatedAtEpochMillis),
+            pendingSourcePatTransaction = pendingSourcePatTransaction
+                ?: fallback.pendingSourcePatTransaction,
         )
 
     /**

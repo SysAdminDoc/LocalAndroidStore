@@ -15,6 +15,7 @@ data class GitHubSource(
     val displayName: String get() = user.trim().ifBlank { DEFAULT_GITHUB_USER }
 }
 
+@Serializable
 data class AppSettings(
     val githubUser: String = DEFAULT_GITHUB_USER,
     val topic: String = DEFAULT_GITHUB_TOPIC,

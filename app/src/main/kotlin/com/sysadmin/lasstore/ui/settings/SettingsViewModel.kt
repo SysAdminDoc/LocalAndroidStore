@@ -9,12 +9,21 @@ import com.sysadmin.lasstore.data.GitHubSource
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.sourceKey
 import com.sysadmin.lasstore.data.validateSources
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+enum class SettingsSaveStatus {
+    Idle,
+    Saving,
+    Saved,
+    Error,
+}
 
 data class SettingsUiState(
     val settings: AppSettings = AppSettings(),
@@ -22,9 +31,11 @@ data class SettingsUiState(
     val encryptedAtRest: Boolean = true,
     val savedAt: Long = 0L,
     val saveError: String? = null,
-    val saving: Boolean = false,
+    val saveStatus: SettingsSaveStatus = SettingsSaveStatus.Idle,
     val connectionChecks: Map<String, ConnectionCheckState> = emptyMap(),
-)
+) {
+    val saving: Boolean get() = saveStatus == SettingsSaveStatus.Saving
+}
 
 data class ConnectionCheckState(
     val user: String,
@@ -40,17 +51,31 @@ class SettingsViewModel : ViewModel() {
     private val sl = ServiceLocator
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
+    private var saveJob: Job? = null
 
     init {
         viewModelScope.launch {
-            sl.settings.flow.collect { current ->
+            try {
+                sl.settings.recoverPendingTransaction()
+                sl.settings.flow.collect { current ->
+                    _state.update {
+                        it.copy(
+                            settings = current,
+                            sourcePats = current.sources.associate { source ->
+                                source.key to sl.settings.getSourcePat(source.key).orEmpty()
+                            },
+                            encryptedAtRest = sl.secrets.encrypted,
+                        )
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
                 _state.update {
                     it.copy(
-                        settings = current,
-                        sourcePats = current.sources.associate { source ->
-                            source.key to sl.settings.getSourcePat(source.key).orEmpty()
-                        },
-                        encryptedAtRest = sl.secrets.encrypted,
+                        saveStatus = SettingsSaveStatus.Error,
+                        saveError = throwable.message
+                            ?: "Could not recover the source registry. Retry Save settings.",
                     )
                 }
             }
@@ -62,49 +87,77 @@ class SettingsViewModel : ViewModel() {
         sourcePats: Map<String, String>,
     ) {
         validateSources(sources)?.let { error ->
-            _state.update { it.copy(saveError = error, saving = false) }
+            _state.update {
+                it.copy(
+                    saveStatus = SettingsSaveStatus.Error,
+                    saveError = error,
+                )
+            }
             return
         }
-        viewModelScope.launch(Dispatchers.IO) {
-            _state.update { it.copy(saving = true, saveError = null) }
+        if (_state.value.saveStatus == SettingsSaveStatus.Saving) return
+        val normalized = sources.map { source ->
+            source.copy(
+                user = source.user.trim(),
+                topic = source.topic.trim(),
+            )
+        }
+        _state.update {
+            it.copy(
+                saveStatus = SettingsSaveStatus.Saving,
+                saveError = null,
+            )
+        }
+        val job = viewModelScope.launch(Dispatchers.IO) {
             try {
-                val normalized = sources.map { source ->
-                    source.copy(
-                        user = source.user.trim(),
-                        topic = source.topic.trim(),
-                    )
-                }
                 val affectedSourceKeys = (
                     _state.value.settings.sources.map { it.key } + normalized.map { it.key }
                     ).toSet()
-                affectedSourceKeys.forEach { sourceKey ->
-                    sl.github.purgeSourceCache(sourceKey)
-                    sl.catalogSnapshots.purge(sourceKey)
-                }
-                sl.settings.replaceSourcePats(
+                sl.settings.saveSourceRegistry(
+                    settings = AppSettings(sources = normalized),
                     sourcePats = sourcePats,
-                    activeSourceKeys = normalized.map { it.key }.toSet(),
                 )
-                sl.settings.update(AppSettings(sources = normalized))
+                affectedSourceKeys.forEach { sourceKey ->
+                    runCatching { sl.github.purgeSourceCache(sourceKey) }
+                        .onFailure {
+                            sl.logger.warn(
+                                "Settings",
+                                "Could not purge HTTP cache for $sourceKey: ${it.message}",
+                            )
+                        }
+                    runCatching { sl.catalogSnapshots.purge(sourceKey) }
+                        .onFailure {
+                            sl.logger.warn(
+                                "Settings",
+                                "Could not purge snapshot for $sourceKey: ${it.message}",
+                            )
+                        }
+                }
                 val enabled = normalized.count { it.enabled }
                 sl.logger.info("Settings", "Saved ${normalized.size} GitHub sources ($enabled enabled)")
                 _state.update {
                     it.copy(
                         savedAt = System.currentTimeMillis(),
                         sourcePats = sourcePats,
-                        saving = false,
+                        saveStatus = SettingsSaveStatus.Saved,
                         saveError = null,
                     )
                 }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (throwable: Throwable) {
                 sl.logger.error("Settings", "Could not save source registry", throwable)
                 _state.update {
                     it.copy(
-                        saving = false,
+                        saveStatus = SettingsSaveStatus.Error,
                         saveError = throwable.message ?: "Could not save the source registry.",
                     )
                 }
             }
+        }
+        saveJob = job
+        job.invokeOnCompletion {
+            if (saveJob == job) saveJob = null
         }
     }
 
