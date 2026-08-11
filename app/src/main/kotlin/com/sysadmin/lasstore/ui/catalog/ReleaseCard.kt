@@ -117,6 +117,7 @@ fun ReleaseCard(
     onOpenAdvancedSideloading: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val sourceAccent = Catppuccin.accent(state.sourceAccent)
     val isReleaseStale = remember(state.info.publishedAt) {
         val publishedAt = state.info.publishedAt ?: return@remember false
         val published = runCatching { Instant.parse(publishedAt).toEpochMilli() }.getOrNull()
@@ -534,6 +535,7 @@ fun ReleaseCard(
                 brush = Brush.linearGradient(
                     colors = listOf(
                         Catppuccin.Surface1.copy(alpha = 0.72f),
+                        sourceAccent.copy(alpha = 0.16f),
                         Catppuccin.Panel,
                         Catppuccin.PanelRaised.copy(alpha = 0.86f),
                     ),
@@ -552,6 +554,7 @@ fun ReleaseCard(
                     AppMonogram(
                         name = state.info.displayName,
                         seed = state.info.handle,
+                        accent = sourceAccent,
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
@@ -569,7 +572,7 @@ fun ReleaseCard(
                             Icon(
                                 imageVector = Icons.Default.Code,
                                 contentDescription = null,
-                                tint = Catppuccin.Subtext,
+                                tint = sourceAccent.copy(alpha = 0.82f),
                                 modifier = Modifier.size(14.dp),
                             )
                             Text(
@@ -738,7 +741,7 @@ fun ReleaseCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(5.dp),
-                        color = Catppuccin.MauveStrong,
+                        color = sourceAccent,
                         trackColor = Catppuccin.Surface2,
                     )
                 }
@@ -893,6 +896,7 @@ fun ReleaseCard(
                         assetSelectionRequired = state.info.assetChoices.size > 1,
                         onChooseAsset = { assetSelectionVisible = true },
                         resumeAvailable = state.resumableDownloadBytes > 0L,
+                        sourceAccent = sourceAccent,
                     )
                 }
             }
@@ -904,14 +908,10 @@ fun ReleaseCard(
 private fun AppMonogram(
     name: String,
     seed: String,
+    accent: Color,
 ) {
-    val palette = remember(seed) {
-        when ((seed.hashCode() and Int.MAX_VALUE) % 4) {
-            0 -> Triple(Catppuccin.MauveStrong, Color(0xFF4A2873), Catppuccin.MauveStrong)
-            1 -> Triple(Catppuccin.Sapphire, Color(0xFF203F78), Catppuccin.Sapphire)
-            2 -> Triple(Catppuccin.Mint, Color(0xFF194E42), Catppuccin.Mint)
-            else -> Triple(Catppuccin.Peach, Color(0xFF63352E), Catppuccin.Peach)
-        }
+    val palette = remember(seed, accent) {
+        Triple(accent, accent.copy(alpha = 0.52f), accent)
     }
     val shape = RoundedCornerShape(18.dp)
 
@@ -996,6 +996,7 @@ private fun PrimaryReleaseAction(
     assetSelectionRequired: Boolean,
     onChooseAsset: () -> Unit,
     resumeAvailable: Boolean,
+    sourceAccent: Color,
 ) {
     val modifier = Modifier
         .widthIn(min = 122.dp)
@@ -1042,7 +1043,7 @@ private fun PrimaryReleaseAction(
             AccentButton(
                 text = stringResource(R.string.install),
                 icon = Icons.Default.Download,
-                accent = Catppuccin.MauveStrong,
+                accent = sourceAccent,
                 onClick = onInstall,
                 modifier = modifier,
             )
@@ -1069,7 +1070,7 @@ private fun PrimaryReleaseAction(
             AccentButton(
                 text = stringResource(R.string.update),
                 icon = Icons.Default.SystemUpdateAlt,
-                accent = Catppuccin.MauveStrong,
+                accent = sourceAccent,
                 onClick = onUpdate,
                 modifier = modifier,
             )
@@ -1121,7 +1122,7 @@ private fun PrimaryReleaseAction(
             AccentButton(
                 text = stringResource(R.string.retry),
                 icon = Icons.Default.Refresh,
-                accent = Catppuccin.MauveStrong,
+                accent = sourceAccent,
                 onClick = onInstall,
                 modifier = modifier,
             )

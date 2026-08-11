@@ -105,6 +105,8 @@ class SettingsStore(
     private val keySources = stringPreferencesKey("github_sources_v1")
     private val keyFdroidSources = stringPreferencesKey("fdroid_sources_v1")
     private val keyHideUnverifiedSources = booleanPreferencesKey("hide_unverified_sources")
+    private val keyThemeMode = stringPreferencesKey("theme_mode")
+    private val keyAccentColor = stringPreferencesKey("accent_color")
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -270,6 +272,8 @@ class SettingsStore(
                 canonical.fdroidSources,
             )
             prefs[keyHideUnverifiedSources] = canonical.hideUnverifiedSources
+            prefs[keyThemeMode] = canonical.themeMode.name
+            prefs[keyAccentColor] = canonical.accentColor.name
         }
     }
 
@@ -287,6 +291,12 @@ class SettingsStore(
                 sources = normalizeSources(sources),
                 fdroidSources = decodeFdroidSources(prefs[keyFdroidSources]),
                 hideUnverifiedSources = prefs[keyHideUnverifiedSources] ?: false,
+                themeMode = prefs[keyThemeMode]
+                    ?.let { value -> runCatching { AppThemeMode.valueOf(value) }.getOrNull() }
+                    ?: AppThemeMode.Dark,
+                accentColor = prefs[keyAccentColor]
+                    ?.let { value -> runCatching { AccentColor.valueOf(value) }.getOrNull() }
+                    ?: AccentColor.Mauve,
             ),
             payloadState = decoded.state,
             malformedPayload = decoded.rawPayload,
@@ -304,6 +314,8 @@ class SettingsStore(
             sources = sources,
             fdroidSources = normalizeFdroidSources(settings.fdroidSources),
             hideUnverifiedSources = settings.hideUnverifiedSources,
+            themeMode = settings.themeMode,
+            accentColor = settings.accentColor,
         )
     }
 

@@ -276,4 +276,20 @@
     <string name="loading">Loading…</string>
     <string name="grant_install_permission">Grant install-unknown-apps permission</string>
     <string name="trust_matrix_pseudolocale_probe">Publisher trust requires explicit review</string>
+    <string name="appearance_settings_title">Appearance</string>
+    <string name="appearance_settings_body">Choose the Catppuccin theme and primary accent. Changes apply when you save settings.</string>
+    <string name="theme_mode">Theme</string>
+    <string name="theme_dark">Dark AMOLED</string>
+    <string name="theme_light">Light Latte</string>
+    <string name="accent_color">Primary accent</string>
+    <string name="source_accent">Source accent</string>
+    <string name="use_global_accent">Global</string>
+    <string name="accent_mauve">Mauve</string>
+    <string name="accent_sapphire">Sapphire</string>
+    <string name="accent_green">Green</string>
+    <string name="accent_yellow">Yellow</string>
+    <string name="accent_red">Red</string>
+    <string name="accent_pink">Pink</string>
+    <string name="accent_teal">Teal</string>
+    <string name="accent_lavender">Lavender</string>
 </resources>

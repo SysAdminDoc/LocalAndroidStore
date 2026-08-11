@@ -2,9 +2,11 @@ package com.sysadmin.lasstore.ui.settings
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,7 +16,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -58,6 +62,8 @@ import java.text.DateFormat
 import java.util.Date
 import com.sysadmin.lasstore.data.DEFAULT_GITHUB_TOPIC
 import com.sysadmin.lasstore.data.DEFAULT_GITHUB_USER
+import com.sysadmin.lasstore.data.AccentColor
+import com.sysadmin.lasstore.data.AppThemeMode
 import com.sysadmin.lasstore.data.FdroidSource
 import com.sysadmin.lasstore.data.GitHubSource
 import com.sysadmin.lasstore.data.normalizeFdroidSources
@@ -99,6 +105,12 @@ fun SettingsScreen(
     var hideUnverifiedSources by remember(state.settings.hideUnverifiedSources) {
         mutableStateOf(state.settings.hideUnverifiedSources)
     }
+    var themeMode by remember(state.settings.themeMode) {
+        mutableStateOf(state.settings.themeMode)
+    }
+    var accentColor by remember(state.settings.accentColor) {
+        mutableStateOf(state.settings.accentColor)
+    }
     val draftFdroidSources = fdroidDrafts.map(FdroidSourceDraft::toSource)
     val fdroidValidationError = validateFdroidSources(draftFdroidSources)
     val normalizedFdroidSources = normalizeFdroidSources(draftFdroidSources)
@@ -112,7 +124,9 @@ fun SettingsScreen(
         normalizedSourcePats(sourcePats) != normalizedSourcePats(state.sourcePats) ||
         fdroidDrafts != persistedFdroidDrafts ||
         normalizedFdroidSources != normalizeFdroidSources(state.settings.fdroidSources) ||
-        hideUnverifiedSources != state.settings.hideUnverifiedSources
+        hideUnverifiedSources != state.settings.hideUnverifiedSources ||
+        themeMode != state.settings.themeMode ||
+        accentColor != state.settings.accentColor
 
     Column(
         modifier = Modifier
@@ -126,6 +140,13 @@ fun SettingsScreen(
         SettingsHeader()
 
         SecurityPosture(encryptedAtRest = state.encryptedAtRest)
+
+        AppearanceSettings(
+            themeMode = themeMode,
+            accentColor = accentColor,
+            onThemeModeChange = { themeMode = it },
+            onAccentColorChange = { accentColor = it },
+        )
 
         SourceVerificationPosture(
             hideUnverifiedSources = hideUnverifiedSources,
@@ -292,6 +313,8 @@ fun SettingsScreen(
                         sourcePats = sourcePats,
                         fdroidSources = draftFdroidSources,
                         hideUnverifiedSources = hideUnverifiedSources,
+                        themeMode = themeMode,
+                        accentColor = accentColor,
                     )
                 },
                 enabled = validationError == null && fdroidValidationError == null && !state.saving &&
@@ -312,6 +335,8 @@ fun SettingsScreen(
                     sourcePats = sourcePats,
                     fdroidSources = draftFdroidSources,
                     hideUnverifiedSources = hideUnverifiedSources,
+                    themeMode = themeMode,
+                    accentColor = accentColor,
                 )
             },
             enabled = validationError == null && fdroidValidationError == null &&
@@ -429,6 +454,175 @@ private fun SettingsHeader() {
             color = Catppuccin.Subtext,
         )
     }
+}
+
+@Composable
+private fun AppearanceSettings(
+    themeMode: AppThemeMode,
+    accentColor: AccentColor,
+    onThemeModeChange: (AppThemeMode) -> Unit,
+    onAccentColorChange: (AccentColor) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = Catppuccin.Surface1,
+        border = BorderStroke(1.dp, Catppuccin.Stroke),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.appearance_settings_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = Catppuccin.TextStrong,
+            )
+            Text(
+                text = stringResource(R.string.appearance_settings_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Subtext,
+            )
+            Text(
+                text = stringResource(R.string.theme_mode),
+                style = MaterialTheme.typography.labelMedium,
+                color = Catppuccin.TextStrong,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ThemeChoice(
+                    label = stringResource(R.string.theme_dark),
+                    selected = themeMode == AppThemeMode.Dark,
+                    onClick = { onThemeModeChange(AppThemeMode.Dark) },
+                    modifier = Modifier.weight(1f),
+                )
+                ThemeChoice(
+                    label = stringResource(R.string.theme_light),
+                    selected = themeMode == AppThemeMode.Light,
+                    onClick = { onThemeModeChange(AppThemeMode.Light) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Text(
+                text = stringResource(R.string.accent_color),
+                style = MaterialTheme.typography.labelMedium,
+                color = Catppuccin.TextStrong,
+            )
+            AccentPicker(
+                selected = accentColor,
+                onSelected = { selected ->
+                    if (selected != null) onAccentColorChange(selected)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThemeChoice(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = label },
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) Catppuccin.Mauve.copy(alpha = 0.14f) else Catppuccin.Surface0,
+        border = BorderStroke(
+            1.dp,
+            if (selected) Catppuccin.Mauve else Catppuccin.StrokeBright,
+        ),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) Catppuccin.MauveStrong else Catppuccin.Subtext,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+        )
+    }
+}
+
+@Composable
+private fun AccentPicker(
+    selected: AccentColor?,
+    onSelected: (AccentColor?) -> Unit,
+    allowGlobal: Boolean = false,
+) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (allowGlobal) {
+            AccentChoice(
+                label = stringResource(R.string.use_global_accent),
+                tint = Catppuccin.Mauve,
+                selected = selected == null,
+                onClick = { onSelected(null) },
+            )
+        }
+        AccentColor.entries.forEach { accent ->
+            AccentChoice(
+                label = stringResource(accentLabelRes(accent)),
+                tint = Catppuccin.accent(accent),
+                selected = selected == accent,
+                onClick = { onSelected(accent) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AccentChoice(
+    label: String,
+    tint: androidx.compose.ui.graphics.Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .width(58.dp)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = label },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .background(tint, CircleShape)
+                .then(
+                    if (selected) {
+                        Modifier.border(3.dp, Catppuccin.TextStrong, CircleShape)
+                    } else {
+                        Modifier.border(1.dp, tint.copy(alpha = 0.65f), CircleShape)
+                    },
+                ),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) Catppuccin.TextStrong else Catppuccin.Subtext,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private fun accentLabelRes(accent: AccentColor): Int = when (accent) {
+    AccentColor.Mauve -> R.string.accent_mauve
+    AccentColor.Sapphire -> R.string.accent_sapphire
+    AccentColor.Green -> R.string.accent_green
+    AccentColor.Yellow -> R.string.accent_yellow
+    AccentColor.Red -> R.string.accent_red
+    AccentColor.Pink -> R.string.accent_pink
+    AccentColor.Teal -> R.string.accent_teal
+    AccentColor.Lavender -> R.string.accent_lavender
 }
 
 @Composable
@@ -710,6 +904,17 @@ private fun SourceEditor(
 
             connection?.let { ConnectionFeedback(it) }
 
+            Text(
+                text = stringResource(R.string.source_accent),
+                style = MaterialTheme.typography.labelMedium,
+                color = Catppuccin.TextStrong,
+            )
+            AccentPicker(
+                selected = source.accent,
+                allowGlobal = true,
+                onSelected = { onChange(source.copy(accent = it)) },
+            )
+
             HorizontalDivider(color = Catppuccin.Stroke)
 
             SettingRow(
@@ -842,6 +1047,17 @@ private fun FdroidSourceEditor(
                 shape = RoundedCornerShape(16.dp),
                 colors = fieldColors,
             )
+
+            Text(
+                text = stringResource(R.string.source_accent),
+                style = MaterialTheme.typography.labelMedium,
+                color = Catppuccin.TextStrong,
+            )
+            AccentPicker(
+                selected = source.accent,
+                allowGlobal = true,
+                onSelected = { onChange(source.copy(accent = it)) },
+            )
         }
     }
 }
@@ -950,6 +1166,7 @@ private data class SourceDraft(
     val filterByTopic: Boolean = false,
     val showPrereleases: Boolean = false,
     val enabled: Boolean = true,
+    val accent: AccentColor? = null,
     val pat: String = "",
 ) {
     fun toSource(): GitHubSource = GitHubSource(
@@ -958,6 +1175,7 @@ private data class SourceDraft(
         filterByTopic = filterByTopic,
         showPrereleases = showPrereleases,
         enabled = enabled,
+        accent = accent,
     )
 
     companion object {
@@ -967,6 +1185,7 @@ private data class SourceDraft(
             filterByTopic = source.filterByTopic,
             showPrereleases = source.showPrereleases,
             enabled = source.enabled,
+            accent = source.accent,
             pat = pat,
         )
     }
@@ -975,16 +1194,19 @@ private data class SourceDraft(
 private data class FdroidSourceDraft(
     val endpointUrl: String = "",
     val enabled: Boolean = true,
+    val accent: AccentColor? = null,
 ) {
     fun toSource(): FdroidSource = FdroidSource(
         endpointUrl = endpointUrl,
         enabled = enabled,
+        accent = accent,
     )
 
     companion object {
         fun from(source: FdroidSource): FdroidSourceDraft = FdroidSourceDraft(
             endpointUrl = source.endpointUrl,
             enabled = source.enabled,
+            accent = source.accent,
         )
     }
 }

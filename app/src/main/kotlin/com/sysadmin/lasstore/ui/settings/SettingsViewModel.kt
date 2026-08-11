@@ -3,6 +3,8 @@ package com.sysadmin.lasstore.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sysadmin.lasstore.data.AppSettings
+import com.sysadmin.lasstore.data.AccentColor
+import com.sysadmin.lasstore.data.AppThemeMode
 import com.sysadmin.lasstore.data.FdroidSource
 import com.sysadmin.lasstore.data.GitHubConnectionResult
 import com.sysadmin.lasstore.data.GitHubRequestException
@@ -116,12 +118,16 @@ class SettingsViewModel : ViewModel() {
         sourcePats: Map<String, String>,
         fdroidSources: List<FdroidSource>,
         hideUnverifiedSources: Boolean = _state.value.settings.hideUnverifiedSources,
+        themeMode: AppThemeMode = _state.value.settings.themeMode,
+        accentColor: AccentColor = _state.value.settings.accentColor,
     ) {
         saveInternal(
             sources = sources,
             sourcePats = sourcePats,
             fdroidSources = fdroidSources,
             hideUnverifiedSources = hideUnverifiedSources,
+            themeMode = themeMode,
+            accentColor = accentColor,
             replaceMalformedRegistry = false,
         )
     }
@@ -142,12 +148,16 @@ class SettingsViewModel : ViewModel() {
         sourcePats: Map<String, String>,
         fdroidSources: List<FdroidSource>,
         hideUnverifiedSources: Boolean = _state.value.settings.hideUnverifiedSources,
+        themeMode: AppThemeMode = _state.value.settings.themeMode,
+        accentColor: AccentColor = _state.value.settings.accentColor,
     ) {
         saveInternal(
             sources = sources,
             sourcePats = sourcePats,
             fdroidSources = fdroidSources,
             hideUnverifiedSources = hideUnverifiedSources,
+            themeMode = themeMode,
+            accentColor = accentColor,
             replaceMalformedRegistry = true,
         )
     }
@@ -157,6 +167,8 @@ class SettingsViewModel : ViewModel() {
         sourcePats: Map<String, String>,
         fdroidSources: List<FdroidSource>,
         hideUnverifiedSources: Boolean,
+        themeMode: AppThemeMode,
+        accentColor: AccentColor,
         replaceMalformedRegistry: Boolean,
     ) {
         if (_state.value.saveStatus == SettingsSaveStatus.Saving) return
@@ -211,6 +223,8 @@ class SettingsViewModel : ViewModel() {
                     sources = normalizeSources(normalized),
                     fdroidSources = normalizedFdroidSources,
                     hideUnverifiedSources = hideUnverifiedSources,
+                    themeMode = themeMode,
+                    accentColor = accentColor,
                 )
                 val persistedSourcePats = sourcePats
                     .filter { (key, value) ->

@@ -9,6 +9,9 @@ import androidx.lifecycle.viewModelScope
 import com.sysadmin.lasstore.data.AppIdEntry
 import com.sysadmin.lasstore.data.ApkInspectionResult
 import com.sysadmin.lasstore.data.ApkMetadata
+import com.sysadmin.lasstore.data.AccentColor
+import com.sysadmin.lasstore.data.AppSettings
+import com.sysadmin.lasstore.data.accentForSource
 import com.sysadmin.lasstore.data.DeveloperVerificationNotice
 import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.GhRelease
@@ -72,6 +75,7 @@ data class CardState(
     val message: String? = null,
     val developerVerificationNotice: DeveloperVerificationNotice? = null,
     val sourceVerification: SourceVerificationStatus = SourceVerificationStatus.Unknown,
+    val sourceAccent: AccentColor = AccentColor.Mauve,
     /** New dangerous permissions the update requests vs the installed version (Item 34). */
     val newDangerousPermissions: List<String> = emptyList(),
     /** True when the user has silenced update notifications for this app (Item 35). */
@@ -216,6 +220,7 @@ class CatalogViewModel : ViewModel() {
     @Volatile private var resumeReconcileJob: Job? = null
     @Volatile private var refreshGeneration = 0L
     @Volatile private var sourceCandidatesByApplicationId: Map<String, List<AppInfo>> = emptyMap()
+    @Volatile private var currentSettings: AppSettings = AppSettings()
 
     /** APK + metadata held after inspection when waiting for permission review (Item 34). */
     private data class PendingInstallData(
@@ -243,7 +248,15 @@ class CatalogViewModel : ViewModel() {
         }
         viewModelScope.launch {
             sl.settings.flow.collectLatest { settings ->
-                _state.update { it.copy(hideUnverifiedSources = settings.hideUnverifiedSources) }
+                currentSettings = settings
+                _state.update { ui ->
+                    ui.copy(
+                        hideUnverifiedSources = settings.hideUnverifiedSources,
+                        cards = ui.cards.map { card ->
+                            card.copy(sourceAccent = accentForSource(settings, card.info.sourceKey))
+                        },
+                    )
+                }
             }
         }
         viewModelScope.launch {
@@ -439,6 +452,7 @@ class CatalogViewModel : ViewModel() {
             }
             try {
                 val settings = sl.settings.flow.first()
+                currentSettings = settings
                 ensureActive()
                 val enabledSources = settings.sources.filter { it.enabled }
                 val enabledFdroidSources = settings.fdroidSources.filter { it.enabled }
@@ -618,6 +632,7 @@ class CatalogViewModel : ViewModel() {
                             ?: reconciled?.inspectedRelease?.signerSha256,
                         pinnedSignerSha256 = applicationId?.let(sl.secrets::getPin),
                     ),
+                    sourceAccent = accentForSource(currentSettings, info.sourceKey),
                     alternativeSources = alternatives,
                     channelPreference = sl.channelPreferences.get(info),
                     resumableDownloadBytes = sl.foregroundInstalls.partialDownloadSize(info),

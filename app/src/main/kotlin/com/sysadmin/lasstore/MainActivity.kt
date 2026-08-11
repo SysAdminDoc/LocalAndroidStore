@@ -13,6 +13,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableSharedFlow
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import com.sysadmin.lasstore.data.AppSettings
+import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.ui.AppRoot
 import com.sysadmin.lasstore.ui.theme.LocalAndroidStoreTheme
 
@@ -36,7 +40,8 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         setContent {
-            LocalAndroidStoreTheme {
+            val appSettings by ServiceLocator.settings.flow.collectAsState(initial = AppSettings())
+            LocalAndroidStoreTheme(appSettings = appSettings) {
                 AppRoot(
                     requestNotificationPermission = ::requestNotificationPermission,
                     openNotificationSettings = ::openNotificationSettings,

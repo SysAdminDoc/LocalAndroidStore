@@ -38,8 +38,9 @@ That's what this is.
 - **Per-app release channels** — release tags and pre-release metadata derive stable, beta, alpha, nightly, release-candidate, and development labels. Use a card's overflow menu to pin the channel; GitHub discovery searches the bounded release history for that channel and falls back safely when none is published.
 - **Per-app language controls** — on Android 13+, an installed app's card opens that package's system language page. Automatic `LocaleConfig` generation keeps LocalAndroidStore's supported locales synchronized as translated resources are added.
 - **Wear OS companion** — the separate `wear` module provides an update-count Tile and short-text complication. A paired watch can send a user-initiated refresh request back to the phone; no APK is installed on-watch.
+- **Theme and source accents** — choose Catppuccin Mocha AMOLED dark or Latte light, then select Mauve, Sapphire, Green, Yellow, Red, Pink, Teal, or Lavender. Each GitHub or F-Droid source can inherit the global accent or use its own tint on catalog cards and primary actions.
 - **Rate-aware offline catalog** — repository discovery continues through a bounded 50-page policy, release lookups are capped at four concurrent requests, GitHub ETags reuse unchanged responses, partial sources retain only current candidates whose release lookup failed transiently, and a dated on-device snapshot remains usable offline for up to seven days. Retained cards are marked stale; removed, archived, topic-excluded, missing-release, and non-transiently failed repositories are not resurrected. A source that exceeds the repository bound is marked truncated with fetched/omitted evidence instead of appearing complete; use a topic filter to narrow it. TLS, token, authorization, rate-limit, network, server, malformed-response, truncation, and valid-empty outcomes are shown distinctly.
-- **Store-style cards** — Catppuccin Mocha on AMOLED black. Repo handle, star count, version tag, status badge, two-line description.
+- **Store-style cards** — Catppuccin Mocha on AMOLED black or Catppuccin Latte light. Repo handle, star count, version tag, status badge, two-line description.
 - **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
 - **One-tap install** — APK is downloaded to app cache, then driven through `PackageInstaller.Session`. The system shows its install dialog, the user confirms once, done.
 - **Recoverable foreground installs** — download, preapproval, permission review, and installer-session ownership are persisted. Restart restores review/commit work when safe, and interrupted downloads keep a source/release-keyed partial in `cacheDir/apks/.partial/` for an explicit **Resume download** action; cancellation reaches the OkHttp call and terminal paths remove transient files.
@@ -186,7 +187,7 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 │   ├── ForegroundInstallStore.kt    Process-safe download/review/commit ownership + cleanup
 │   └── QueuedUpdate*.kt             UIDT/WorkManager scheduling, constraints, durable outcomes
 ├── ui/
-│   ├── theme/                 Catppuccin Mocha + AMOLED black dark theme
+│   ├── theme/                 Catppuccin Mocha/Latte palettes + accent tokens
 │   ├── catalog/               LazyVerticalGrid + search/filter + ReleaseCard + StatusBadge + ViewModel
 │   ├── settings/              Form + ViewModel
 │   └── log/                   Live log viewer

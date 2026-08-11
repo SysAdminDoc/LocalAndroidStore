@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added persisted Catppuccin Mocha dark and Latte light themes, eight selectable primary accents, and per-source accent overrides for GitHub and F-Droid catalog cards.
 - Added per-source verification badges with an in-app explanation, an Android developer-options entry point for advanced sideloading, and a Settings preference to hide locally unverified catalog cards while leaving unknown cards visible.
 - Added package-identity aggregation across configured sources with a persisted preferred-source chooser for duplicate releases.
 - Added normalized release-channel derivation and per-repository channel pinning; GitHub discovery now selects the newest matching stable, beta, alpha, nightly, release-candidate, or development release within its bounded history.

@@ -4,12 +4,31 @@ import kotlinx.serialization.Serializable
 import java.util.Locale
 
 @Serializable
+enum class AppThemeMode {
+    Dark,
+    Light,
+}
+
+@Serializable
+enum class AccentColor {
+    Mauve,
+    Sapphire,
+    Green,
+    Yellow,
+    Red,
+    Pink,
+    Teal,
+    Lavender,
+}
+
+@Serializable
 data class GitHubSource(
     val user: String = DEFAULT_GITHUB_USER,
     val topic: String = DEFAULT_GITHUB_TOPIC,
     val filterByTopic: Boolean = false,
     val showPrereleases: Boolean = false,
     val enabled: Boolean = true,
+    val accent: AccentColor? = null,
 ) {
     val key: String get() = sourceKey(user)
     val displayName: String get() = user.trim().ifBlank { DEFAULT_GITHUB_USER }
@@ -19,6 +38,7 @@ data class GitHubSource(
 data class FdroidSource(
     val endpointUrl: String = "",
     val enabled: Boolean = true,
+    val accent: AccentColor? = null,
 ) {
     val key: String get() = FdroidRepositoryTrust.sourceKey(endpointUrl)
     val displayName: String get() = FdroidRepositoryTrust.displayName(endpointUrl)
@@ -40,6 +60,8 @@ data class AppSettings(
     ),
     val fdroidSources: List<FdroidSource> = emptyList(),
     val hideUnverifiedSources: Boolean = false,
+    val themeMode: AppThemeMode = AppThemeMode.Dark,
+    val accentColor: AccentColor = AccentColor.Mauve,
 )
 
 const val DEFAULT_GITHUB_USER = "SysAdminDoc"
@@ -124,3 +146,8 @@ fun legacySource(settings: AppSettings): GitHubSource = GitHubSource(
     filterByTopic = settings.filterByTopic,
     showPrereleases = settings.showPrereleases,
 )
+
+fun accentForSource(settings: AppSettings, sourceKey: String): AccentColor =
+    settings.sources.firstOrNull { it.key == sourceKey }?.accent
+        ?: settings.fdroidSources.firstOrNull { it.key == sourceKey }?.accent
+        ?: settings.accentColor

@@ -68,7 +68,22 @@ class AppSettingsTest {
         assertTrue(
             validateFdroidSources(
                 listOf(FdroidSource("https://repo.example/index-v2.json")),
-            )?.contains("fingerprint") == true,
+        )?.contains("fingerprint") == true,
         )
+    }
+
+    @Test
+    fun sourceAccentOverridesGlobalAccentAndGlobalIsTheFallback() {
+        val settings = AppSettings(
+            accentColor = AccentColor.Lavender,
+            sources = listOf(
+                GitHubSource(user = "alice", accent = AccentColor.Teal),
+                GitHubSource(user = "bob"),
+            ),
+        )
+
+        assertEquals(AccentColor.Teal, accentForSource(settings, sourceKey("alice")))
+        assertEquals(AccentColor.Lavender, accentForSource(settings, sourceKey("bob")))
+        assertEquals(AccentColor.Lavender, accentForSource(settings, "missing"))
     }
 }

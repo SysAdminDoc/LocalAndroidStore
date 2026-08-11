@@ -1,35 +1,58 @@
 package com.sysadmin.lasstore.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sysadmin.lasstore.data.AppSettings
+import com.sysadmin.lasstore.data.AppThemeMode
 
-private val DarkAmoledColors = darkColorScheme(
-    primary = Catppuccin.Mauve,
-    onPrimary = Catppuccin.Crust,
-    secondary = Catppuccin.Sapphire,
-    onSecondary = Catppuccin.Crust,
-    tertiary = Catppuccin.Green,
-    onTertiary = Catppuccin.Crust,
-    error = Catppuccin.Red,
-    onError = Catppuccin.Crust,
-    background = Catppuccin.Crust,
-    onBackground = Catppuccin.Text,
-    surface = Catppuccin.Panel,
-    onSurface = Catppuccin.Text,
-    surfaceVariant = Catppuccin.PanelRaised,
-    onSurfaceVariant = Catppuccin.Subtext,
-    outline = Catppuccin.StrokeBright,
-    outlineVariant = Catppuccin.Stroke,
-)
+private fun appColorScheme(darkTheme: Boolean, appSettings: AppSettings) = if (darkTheme) {
+    darkColorScheme(
+        primary = Catppuccin.Mauve,
+        onPrimary = Catppuccin.onAccent(appSettings.accentColor),
+        secondary = Catppuccin.Sapphire,
+        onSecondary = Catppuccin.Crust,
+        tertiary = Catppuccin.Green,
+        onTertiary = Catppuccin.Crust,
+        error = Catppuccin.Red,
+        onError = Catppuccin.Crust,
+        background = Catppuccin.Crust,
+        onBackground = Catppuccin.Text,
+        surface = Catppuccin.Panel,
+        onSurface = Catppuccin.Text,
+        surfaceVariant = Catppuccin.PanelRaised,
+        onSurfaceVariant = Catppuccin.Subtext,
+        outline = Catppuccin.StrokeBright,
+        outlineVariant = Catppuccin.Stroke,
+    )
+} else {
+    lightColorScheme(
+        primary = Catppuccin.Mauve,
+        onPrimary = Catppuccin.onAccent(appSettings.accentColor),
+        secondary = Catppuccin.Sapphire,
+        onSecondary = Catppuccin.TextStrong,
+        tertiary = Catppuccin.Green,
+        onTertiary = Catppuccin.TextStrong,
+        error = Catppuccin.Red,
+        onError = Catppuccin.TextStrong,
+        background = Catppuccin.Crust,
+        onBackground = Catppuccin.Text,
+        surface = Catppuccin.Panel,
+        onSurface = Catppuccin.Text,
+        surfaceVariant = Catppuccin.PanelRaised,
+        onSurfaceVariant = Catppuccin.Subtext,
+        outline = Catppuccin.StrokeBright,
+        outlineVariant = Catppuccin.Stroke,
+    )
+}
 
 private val AppTypography = Typography(
     displaySmall = TextStyle(
@@ -102,12 +125,16 @@ private val AppShapes = Shapes(
 
 @Composable
 fun LocalAndroidStoreTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    appSettings: AppSettings = AppSettings(),
+    darkTheme: Boolean = appSettings.themeMode == AppThemeMode.Dark,
     content: @Composable () -> Unit,
 ) {
-    // AMOLED-true-black is the default regardless of system; v0.4 will add a light theme.
+    Catppuccin.configure(
+        themeMode = if (darkTheme) AppThemeMode.Dark else AppThemeMode.Light,
+        accentColor = appSettings.accentColor,
+    )
     MaterialTheme(
-        colorScheme = DarkAmoledColors,
+        colorScheme = appColorScheme(darkTheme, appSettings),
         typography = AppTypography,
         shapes = AppShapes,
         content = content,
