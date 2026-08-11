@@ -315,7 +315,11 @@ verification command fails, treat the binary as untrusted and do not distribute 
 
 - No silent install. Stock Android doesn't allow it for non-device-owner apps. The system install dialog appears once per install. v0.4 will add Shizuku as an opt-in tier-2 path.
 - Uninstall opens the system uninstall confirmation. We can't bypass it without device-owner / Work Profile admin.
-- Catalog refresh and APK download happen on-tap; v0.4 adds scheduled background refresh via WorkManager.
+- Catalog refresh still happens on-tap for the foreground view. A durable WorkManager check also
+  runs every 24 hours on unmetered Wi-Fi while battery and storage are healthy; it queues only
+  digest-published releases for apps already managed by LocalAndroidStore and posts a notification
+  when work is added. Ambiguous variants, stale snapshots, ignored apps, and externally installed
+  packages remain foreground-only.
 - GitHub Releases and pinned F-Droid index-v2 repositories are supported today. GitLab and HTML source plugins remain adapter-level work rather than configured catalog sources.
 
 ---

@@ -11,6 +11,14 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         ServiceLocator.init(this)
+        runCatching {
+            ServiceLocator.backgroundUpdates.schedulePeriodicCheck()
+        }.onFailure {
+            ServiceLocator.logger.warn(
+                "PeriodicUpdate",
+                "Could not schedule the periodic catalog check: ${it.message}",
+            )
+        }
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 ServiceLocator.settings.recoverPendingTransaction()

@@ -187,6 +187,12 @@
     <string name="background_update_notifications">Background update notifications</string>
     <string name="background_update_notifications_body">Android may hide queued-update progress or results if notifications are off. Foreground installs are unaffected.</string>
     <string name="open_android_notification_settings">Open Android notification settings</string>
+    <string name="periodic_update_channel_name">Scheduled update checks</string>
+    <string name="periodic_updates_queued_title">Updates queued</string>
+    <plurals name="periodic_updates_queued_body">
+        <item quantity="one">1 managed app update is queued for a safe background install.</item>
+        <item quantity="other">%1$d managed app updates are queued for safe background installs.</item>
+    </plurals>
     <string name="hide_unverified_sources_setting">Hide unverified sources</string>
     <string name="hide_unverified_sources_subtitle">Remove catalog cards without a pinned publisher key. Unknown sources remain visible.</string>
     <string name="source_verification_settings_title">Source verification</string>

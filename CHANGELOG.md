@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added
+- Added a durable 24-hour WorkManager catalog check constrained to unmetered network, healthy
+  battery, and available storage. It queues only changed, digest-published releases for managed
+  installs through the existing APK/signature/version gates and notifies when updates are queued;
+  WorkManager preserves the schedule across reboot.
 - Added an atomic app-private `las.lock` capture on successful installs, recording APK/manifest hashes, version code, source URL, and signer certificate for each installed package.
 - Added optional HTTPS AltStore-compatible publisher feeds with bounded icon/header loading, source tint, featured-app labels, and safe news links; branding failures leave catalog discovery intact.
 - Added an opt-in Android 12+ Material You color mode. It uses the system dynamic light/dark scheme and maps custom catalog tokens to the same wallpaper-derived surfaces while leaving Catppuccin as the default.

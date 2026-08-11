@@ -2,6 +2,7 @@ package com.sysadmin.lasstore.install
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import androidx.work.NetworkType
 import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.domain.AppInfo
@@ -96,6 +97,48 @@ class BackgroundUpdateSchedulerTest {
             )
             assertEquals(QueuedUpdatePhase.Queued, status?.phase)
             assertTrue(status?.message.orEmpty().contains("Could not cancel"))
+        } finally {
+            clearStatuses(context)
+        }
+    }
+
+    @Test
+    fun periodicCheckUsesTheRequiredConstrainedTwentyFourHourRequest() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        ServiceLocator.init(context)
+        val request = BackgroundUpdateScheduler(context, ServiceLocator.logger)
+            .buildPeriodicCheckRequest()
+
+        assertEquals(NetworkType.UNMETERED, request.workSpec.constraints.requiredNetworkType)
+        assertTrue(request.workSpec.constraints.requiresBatteryNotLow())
+        assertTrue(request.workSpec.constraints.requiresStorageNotLow())
+        assertEquals(
+            java.util.concurrent.TimeUnit.HOURS.toMillis(24),
+            request.workSpec.intervalDuration,
+        )
+        assertEquals(PeriodicUpdateCheckWorker::class.java.name, request.workSpec.workerClassName)
+    }
+
+    @Test
+    fun periodicEnqueueNeverUsesUserInitiatedTransport() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        ServiceLocator.init(context)
+        clearStatuses(context)
+        val info = appInfo("periodic")
+        val scheduler = BackgroundUpdateScheduler(
+            context = context,
+            logger = ServiceLocator.logger,
+            scheduleUidtOverride = { error("periodic checks must not schedule UIDT work") },
+            enqueueWorkerOverride = {},
+            cancelWorkOverride = {},
+        )
+
+        try {
+            assertTrue(scheduler.enqueuePeriodic(info))
+            assertEquals(
+                QueuedUpdatePhase.Queued,
+                ServiceLocator.queuedUpdateStatus.get(info.sourceKey, info.owner, info.repo)?.phase,
+            )
         } finally {
             clearStatuses(context)
         }

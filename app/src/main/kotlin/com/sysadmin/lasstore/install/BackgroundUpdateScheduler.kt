@@ -9,11 +9,14 @@ import android.net.NetworkRequest
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.BackoffPolicy
+import androidx.work.PeriodicWorkRequest
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.sysadmin.lasstore.data.Logger
 import com.sysadmin.lasstore.data.ServiceLocator
@@ -46,6 +49,24 @@ class BackgroundUpdateScheduler(
     private val jobIdLock = Any()
 
     suspend fun enqueue(info: AppInfo): Boolean {
+        return enqueueInternal(info, useUserInitiatedTransport = true)
+    }
+
+    /**
+     * Queue a candidate discovered by the periodic checker.
+     *
+     * A periodic worker is not a user-initiated transfer, so it must stay on WorkManager even on
+     * API 34+. The worker still uses the same generation, digest, APK inspection, signer, and
+     * PackageInstaller reconciliation path as a manually queued update.
+     */
+    suspend fun enqueuePeriodic(info: AppInfo): Boolean {
+        return enqueueInternal(info, useUserInitiatedTransport = false)
+    }
+
+    private suspend fun enqueueInternal(
+        info: AppInfo,
+        useUserInitiatedTransport: Boolean,
+    ): Boolean {
         val payload = QueuedUpdatePayload.from(info)
         val statusStore = com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus
         statusStore.awaitLoaded()
@@ -55,6 +76,7 @@ class BackgroundUpdateScheduler(
                 ?.let(com.sysadmin.lasstore.data.ServiceLocator.installer::abandonSession)
             statusStore.markQueued(payload)
             if (
+                useUserInitiatedTransport &&
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
                 backgroundUpdateTransportForApi() == BackgroundUpdateTransport.UserInitiatedJob
             ) {
@@ -98,6 +120,37 @@ class BackgroundUpdateScheduler(
             return false
         }
     }
+
+    /** Schedule the durable 24-hour catalog/update check. WorkManager persists this across reboot. */
+    fun schedulePeriodicCheck() {
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            PERIODIC_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            buildPeriodicCheckRequest(),
+        )
+        logger.info("PeriodicUpdate", "Scheduled the 24-hour constrained catalog check")
+    }
+
+    fun cancelPeriodicCheck() {
+        WorkManager.getInstance(context).cancelUniqueWork(PERIODIC_WORK_NAME)
+        logger.info("PeriodicUpdate", "Cancelled the periodic catalog check")
+    }
+
+    internal fun buildPeriodicCheckRequest(): PeriodicWorkRequest =
+        PeriodicWorkRequestBuilder<PeriodicUpdateCheckWorker>(24, TimeUnit.HOURS)
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.UNMETERED)
+                    .setRequiresBatteryNotLow(true)
+                    .setRequiresStorageNotLow(true)
+                    .build(),
+            )
+            .setBackoffCriteria(
+                BackoffPolicy.EXPONENTIAL,
+                30,
+                TimeUnit.MINUTES,
+            )
+            .build()
 
     suspend fun cancel(info: AppInfo): Boolean {
         val statusStore = com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus
@@ -330,5 +383,6 @@ class BackgroundUpdateScheduler(
         const val JOB_ID_PREFS = "queued_update_job_ids"
         const val JOB_ID_PREFIX = "job."
         const val INVALID_JOB_ID = -1
+        const val PERIODIC_WORK_NAME = "periodic-catalog-update-check"
     }
 }
