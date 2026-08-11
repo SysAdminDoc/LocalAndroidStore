@@ -136,6 +136,7 @@ data class CatalogUiState(
     val catalogNotice: String? = null,
     val noEnabledSources: Boolean = false,
     val warning: String? = null,
+    val selectedAntiFeatures: Set<String> = emptySet(),
 )
 
 internal fun validatedGitHubRepositoryUri(rawUrl: String): android.net.Uri? {
@@ -183,6 +184,7 @@ class CatalogViewModel : ViewModel() {
         snapshots = sl.catalogSnapshots,
         patForSource = { sourceKey -> sl.settings.getPat(sourceKey) },
         supportedAbis = Build.SUPPORTED_ABIS.toList(),
+        fdroidIndexProvider = sl.fdroidIndex,
     )
 
     private val _state = MutableStateFlow(CatalogUiState())
@@ -365,6 +367,14 @@ class CatalogViewModel : ViewModel() {
         _state.update { it.copy(searchQuery = query) }
     }
 
+    fun toggleAntiFeature(feature: String) {
+        _state.update { current ->
+            val selected = current.selectedAntiFeatures.toMutableSet()
+            if (!selected.add(feature)) selected.remove(feature)
+            current.copy(selectedAntiFeatures = selected)
+        }
+    }
+
     fun refresh() {
         refreshJob?.cancel()
         val generation = ++refreshGeneration
@@ -380,8 +390,9 @@ class CatalogViewModel : ViewModel() {
                 val settings = sl.settings.flow.first()
                 ensureActive()
                 val enabledSources = settings.sources.filter { it.enabled }
+                val enabledFdroidSources = settings.fdroidSources.filter { it.enabled }
                 val discoveryResult = try {
-                    discovery.discover(settings.sources)
+                    discovery.discover(settings.sources, settings.fdroidSources)
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (throwable: Throwable) {
@@ -402,7 +413,8 @@ class CatalogViewModel : ViewModel() {
                 val infos = discoveryResult.apps
                 sl.logger.info(
                     "Catalog",
-                    "Discovered ${infos.size} APK-bearing repos across ${enabledSources.size} enabled sources"
+                    "Discovered ${infos.size} APK-bearing repos across " +
+                        "${enabledSources.size + enabledFdroidSources.size} enabled sources"
                 )
                 // Hydrate applicationId from the persistent cache so UpdateAvailable survives cold starts.
                 val cards = buildList {
@@ -421,7 +433,7 @@ class CatalogViewModel : ViewModel() {
                         current.copy(
                             refreshing = false,
                             cards = cards,
-                            noEnabledSources = enabledSources.isEmpty(),
+                            noEnabledSources = enabledSources.isEmpty() && enabledFdroidSources.isEmpty(),
                             errorMessage = catalogNotice.takeIf {
                                 cards.isEmpty() && discoveryResult.issues.isNotEmpty()
                             },

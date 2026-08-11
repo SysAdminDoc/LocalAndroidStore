@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -46,6 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -84,8 +86,21 @@ fun CatalogExperience(
     LaunchedEffect(viewModel, activityResumed) {
         activityResumed.collect { viewModel.onActivityResumed() }
     }
-    val visibleCards = remember(state.cards, state.searchQuery) {
+    val antiFeatureOptions = remember(state.cards) {
+        state.cards
+            .flatMap { it.info.antiFeatures }
+            .distinct()
+            .sorted()
+    }
+    val visibleCards = remember(
+        state.cards,
+        state.searchQuery,
+        state.selectedAntiFeatures,
+    ) {
         filterCards(state.cards, state.searchQuery)
+            .filter { card ->
+                state.selectedAntiFeatures.all { it in card.info.antiFeatures }
+            }
     }
     val updateCount = remember(state.cards) {
         state.cards.count { it.status == CardStatus.UpdateAvailable }
@@ -130,6 +145,9 @@ fun CatalogExperience(
             totalCount = state.cards.size,
             visibleCount = visibleCards.size,
             onQueryChange = viewModel::updateSearchQuery,
+            antiFeatureOptions = antiFeatureOptions,
+            selectedAntiFeatures = state.selectedAntiFeatures,
+            onToggleAntiFeature = viewModel::toggleAntiFeature,
         )
 
         Box(
@@ -493,6 +511,9 @@ private fun CatalogSearchSurface(
     totalCount: Int,
     visibleCount: Int,
     onQueryChange: (String) -> Unit,
+    antiFeatureOptions: List<String>,
+    selectedAntiFeatures: Set<String>,
+    onToggleAntiFeature: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -548,8 +569,37 @@ private fun CatalogSearchSurface(
                 modifier = Modifier.padding(horizontal = 8.dp),
             )
         }
+        if (antiFeatureOptions.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.anti_features_filter_title),
+                style = MaterialTheme.typography.labelSmall,
+                color = Catppuccin.Subtext,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                antiFeatureOptions.forEach { feature ->
+                    FilterChip(
+                        selected = feature in selectedAntiFeatures,
+                        onClick = { onToggleAntiFeature(feature) },
+                        label = { Text(formatAntiFeatureLabel(feature)) },
+                    )
+                }
+            }
+        }
     }
 }
+
+private fun formatAntiFeatureLabel(value: String): String = value
+    .replace('_', ' ')
+    .replace('-', ' ')
+    .split(' ')
+    .filter { it.isNotBlank() }
+    .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
 
 @Composable
 private fun CatalogLoading() {

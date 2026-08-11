@@ -103,12 +103,14 @@ class SettingsStore(
     private val keyFilterByTopic = booleanPreferencesKey("filter_by_topic")
     private val keyPrereleases = booleanPreferencesKey("show_prereleases")
     private val keySources = stringPreferencesKey("github_sources_v1")
+    private val keyFdroidSources = stringPreferencesKey("fdroid_sources_v1")
 
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
     private val sourceListSerializer = ListSerializer(GitHubSource.serializer())
+    private val fdroidSourceListSerializer = ListSerializer(FdroidSource.serializer())
     private val transactionMutex = Mutex()
 
     val flow: Flow<AppSettings> = dataStore.data
@@ -262,6 +264,10 @@ class SettingsStore(
             prefs[keyFilterByTopic] = primary.filterByTopic
             prefs[keyPrereleases] = primary.showPrereleases
             prefs[keySources] = json.encodeToString(sourceListSerializer, canonical.sources)
+            prefs[keyFdroidSources] = json.encodeToString(
+                fdroidSourceListSerializer,
+                canonical.fdroidSources,
+            )
         }
     }
 
@@ -275,7 +281,10 @@ class SettingsStore(
         val decoded = decodeSources(prefs[keySources])
         val sources = (decoded.sources ?: listOf(legacySource(legacy)))
         return SourceRegistryInspection(
-            settings = legacy.copy(sources = normalizeSources(sources)),
+            settings = legacy.copy(
+                sources = normalizeSources(sources),
+                fdroidSources = decodeFdroidSources(prefs[keyFdroidSources]),
+            ),
             payloadState = decoded.state,
             malformedPayload = decoded.rawPayload,
         )
@@ -290,6 +299,7 @@ class SettingsStore(
             filterByTopic = primary.filterByTopic,
             showPrereleases = primary.showPrereleases,
             sources = sources,
+            fdroidSources = normalizeFdroidSources(settings.fdroidSources),
         )
     }
 
@@ -348,6 +358,14 @@ class SettingsStore(
             state = SourceRegistryPayloadState.Valid,
             sources = sources,
         )
+    }
+
+    private fun decodeFdroidSources(raw: String?): List<FdroidSource> {
+        if (raw == null) return emptyList()
+        return runCatching {
+            json.decodeFromString(fdroidSourceListSerializer, raw)
+        }.getOrDefault(emptyList())
+            .let(::normalizeFdroidSources)
     }
 
     private fun persistMalformedPayload(rawPayload: String?): Boolean {

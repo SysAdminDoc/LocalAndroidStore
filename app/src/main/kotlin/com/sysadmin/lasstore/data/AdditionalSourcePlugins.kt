@@ -226,6 +226,25 @@ object FdroidRepositoryTrust {
     fun matches(expectedFingerprint: String, observedFingerprint: String?): Boolean =
         normalizeFingerprint(expectedFingerprint) != null &&
             normalizeFingerprint(expectedFingerprint) == normalizeFingerprint(observedFingerprint)
+
+    fun canonicalEndpoint(rawUrl: String): String {
+        val endpoint = parseEndpoint(rawUrl)
+        val index = requireNotNull(endpoint.indexUrl.toHttpUrlOrNull())
+        return index.newBuilder()
+            .addQueryParameter("fingerprint", endpoint.expectedFingerprint)
+            .build()
+            .toString()
+    }
+
+    fun sourceKey(rawUrl: String): String {
+        val base = runCatching { parseEndpoint(rawUrl).indexUrl }
+            .getOrElse { rawUrl.trim() }
+        return "fdroid:${base.lowercase(Locale.US)}"
+    }
+
+    fun displayName(rawUrl: String): String = runCatching {
+        requireNotNull(parseEndpoint(rawUrl).indexUrl.toHttpUrlOrNull()).host
+    }.getOrElse { "F-Droid repository" }
 }
 
 class FDroidIndexV2Plugin(
@@ -242,6 +261,7 @@ class FDroidIndexV2Plugin(
             displayName = app.displayName,
             description = app.description,
             homepageUrl = null,
+            antiFeatures = app.antiFeatures,
         )
     }
 

@@ -16,6 +16,15 @@ data class GitHubSource(
 }
 
 @Serializable
+data class FdroidSource(
+    val endpointUrl: String = "",
+    val enabled: Boolean = true,
+) {
+    val key: String get() = FdroidRepositoryTrust.sourceKey(endpointUrl)
+    val displayName: String get() = FdroidRepositoryTrust.displayName(endpointUrl)
+}
+
+@Serializable
 data class AppSettings(
     val githubUser: String = DEFAULT_GITHUB_USER,
     val topic: String = DEFAULT_GITHUB_TOPIC,
@@ -29,6 +38,7 @@ data class AppSettings(
             showPrereleases = showPrereleases,
         )
     ),
+    val fdroidSources: List<FdroidSource> = emptyList(),
 )
 
 const val DEFAULT_GITHUB_USER = "SysAdminDoc"
@@ -68,6 +78,41 @@ fun validateSources(sources: List<GitHubSource>): String? {
     if (duplicate != null) {
         val label = duplicate.first().value.user.trim()
         return "Source '$label' is listed more than once. Keep one entry or use a different owner."
+    }
+    return null
+}
+
+fun normalizeFdroidSources(sources: List<FdroidSource>): List<FdroidSource> = sources
+    .mapNotNull { source ->
+        runCatching {
+            source.copy(
+                endpointUrl = FdroidRepositoryTrust.canonicalEndpoint(source.endpointUrl),
+            )
+        }.getOrNull()
+    }
+    .distinctBy { it.key }
+
+fun validateFdroidSources(sources: List<FdroidSource>): String? {
+    sources.forEachIndexed { index, source ->
+        if (source.endpointUrl.trim().isBlank()) {
+            return "Enter an F-Droid index URL with a fingerprint for repository ${index + 1}."
+        }
+        val failure = runCatching {
+            FdroidRepositoryTrust.parseEndpoint(source.endpointUrl)
+        }.exceptionOrNull()
+        if (failure != null) {
+            return "F-Droid repository ${index + 1}: ${failure.message ?: "the endpoint is invalid"}"
+        }
+    }
+    val duplicate = sources
+        .withIndex()
+        .groupBy {
+            runCatching { FdroidRepositoryTrust.sourceKey(it.value.endpointUrl) }.getOrNull()
+        }
+        .values
+        .firstOrNull { it.size > 1 }
+    if (duplicate != null) {
+        return "F-Droid repository is listed more than once. Keep one endpoint entry."
     }
     return null
 }

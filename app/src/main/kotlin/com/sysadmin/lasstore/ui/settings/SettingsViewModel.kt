@@ -3,6 +3,7 @@ package com.sysadmin.lasstore.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sysadmin.lasstore.data.AppSettings
+import com.sysadmin.lasstore.data.FdroidSource
 import com.sysadmin.lasstore.data.GitHubConnectionResult
 import com.sysadmin.lasstore.data.GitHubRequestException
 import com.sysadmin.lasstore.data.GitHubSource
@@ -11,6 +12,8 @@ import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.normalizeSources
 import com.sysadmin.lasstore.data.sourceKey
 import com.sysadmin.lasstore.data.validateSources
+import com.sysadmin.lasstore.data.normalizeFdroidSources
+import com.sysadmin.lasstore.data.validateFdroidSources
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -101,23 +104,57 @@ class SettingsViewModel : ViewModel() {
         sources: List<GitHubSource>,
         sourcePats: Map<String, String>,
     ) {
-        saveInternal(sources, sourcePats, replaceMalformedRegistry = false)
+        save(
+            sources = sources,
+            sourcePats = sourcePats,
+            fdroidSources = _state.value.settings.fdroidSources,
+        )
+    }
+
+    fun save(
+        sources: List<GitHubSource>,
+        sourcePats: Map<String, String>,
+        fdroidSources: List<FdroidSource>,
+    ) {
+        saveInternal(sources, sourcePats, fdroidSources, replaceMalformedRegistry = false)
     }
 
     fun replaceMalformedRegistry(
         sources: List<GitHubSource>,
         sourcePats: Map<String, String>,
     ) {
-        saveInternal(sources, sourcePats, replaceMalformedRegistry = true)
+        replaceMalformedRegistry(
+            sources = sources,
+            sourcePats = sourcePats,
+            fdroidSources = _state.value.settings.fdroidSources,
+        )
+    }
+
+    fun replaceMalformedRegistry(
+        sources: List<GitHubSource>,
+        sourcePats: Map<String, String>,
+        fdroidSources: List<FdroidSource>,
+    ) {
+        saveInternal(sources, sourcePats, fdroidSources, replaceMalformedRegistry = true)
     }
 
     private fun saveInternal(
         sources: List<GitHubSource>,
         sourcePats: Map<String, String>,
+        fdroidSources: List<FdroidSource>,
         replaceMalformedRegistry: Boolean,
     ) {
         if (_state.value.saveStatus == SettingsSaveStatus.Saving) return
         validateSources(sources)?.let { error ->
+            _state.update {
+                it.copy(
+                    saveStatus = SettingsSaveStatus.Error,
+                    saveError = error,
+                )
+            }
+            return
+        }
+        validateFdroidSources(fdroidSources)?.let { error ->
             _state.update {
                 it.copy(
                     saveStatus = SettingsSaveStatus.Error,
@@ -141,6 +178,7 @@ class SettingsViewModel : ViewModel() {
                 topic = source.topic.trim(),
             )
         }
+        val normalizedFdroidSources = normalizeFdroidSources(fdroidSources)
         _state.update {
             it.copy(
                 saveStatus = SettingsSaveStatus.Saving,
@@ -150,9 +188,14 @@ class SettingsViewModel : ViewModel() {
         val job = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val affectedSourceKeys = (
-                    _state.value.settings.sources.map { it.key } + normalized.map { it.key }
+                    _state.value.settings.sources.map { it.key } + normalized.map { it.key } +
+                        _state.value.settings.fdroidSources.map { it.key } +
+                        normalizedFdroidSources.map { it.key }
                     ).toSet()
-                val targetSettings = AppSettings(sources = normalizeSources(normalized))
+                val targetSettings = AppSettings(
+                    sources = normalizeSources(normalized),
+                    fdroidSources = normalizedFdroidSources,
+                )
                 val persistedSourcePats = sourcePats
                     .filter { (key, value) ->
                         key in targetSettings.sources.map { it.key } && value.isNotBlank()
@@ -186,7 +229,11 @@ class SettingsViewModel : ViewModel() {
                         }
                 }
                 val enabled = normalized.count { it.enabled }
-                sl.logger.info("Settings", "Saved ${normalized.size} GitHub sources ($enabled enabled)")
+                sl.logger.info(
+                    "Settings",
+                    "Saved ${normalized.size} GitHub sources ($enabled enabled) and " +
+                        "${normalizedFdroidSources.size} F-Droid repositories",
+                )
                 _state.update {
                     it.copy(
                         settings = targetSettings,

@@ -29,6 +29,8 @@ object ServiceLocator {
         private set
     lateinit var github: GitHubClient
         private set
+    lateinit var fdroidIndex: FdroidIndexClient
+        private set
     lateinit var installer: PackageInstallerService
         private set
     lateinit var audit: InstallAuditLog
@@ -62,6 +64,17 @@ object ServiceLocator {
                 patProvider = { secrets.getPat() },
                 logger = logger,
                 responseCache = FileGitHubResponseCache(appContext),
+                networkAvailable = {
+                    val connectivity =
+                        appContext.getSystemService(ConnectivityManager::class.java)
+                    val capabilities = connectivity.activeNetwork
+                        ?.let(connectivity::getNetworkCapabilities)
+                    capabilities?.hasCapability(
+                        NetworkCapabilities.NET_CAPABILITY_VALIDATED
+                    ) == true
+                },
+            )
+            fdroidIndex = FdroidIndexClient(
                 networkAvailable = {
                     val connectivity =
                         appContext.getSystemService(ConnectivityManager::class.java)

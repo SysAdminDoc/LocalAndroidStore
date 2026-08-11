@@ -12,6 +12,7 @@ data class DiscoveredApp(
     val displayName: String,
     val description: String? = null,
     val homepageUrl: String? = null,
+    val antiFeatures: Set<String> = emptySet(),
 )
 
 data class ReleaseAsset(

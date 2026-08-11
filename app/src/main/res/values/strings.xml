@@ -24,6 +24,7 @@
     <string name="search_apps_repos_versions">Search apps, repos, versions</string>
     <string name="clear_search">Clear search</string>
     <string name="catalog_release_count">%1$d of %2$d releases</string>
+    <string name="anti_features_filter_title">F-Droid anti-features</string>
     <string name="checking_private_releases">Checking private releases…</string>
     <string name="no_releases_on_shelf">No releases on the shelf</string>
     <string name="catalog_unavailable">Catalog unavailable</string>
@@ -174,6 +175,14 @@
     <string name="scopes_not_exposed">not exposed by GitHub</string>
     <string name="unknown">unknown</string>
     <string name="rate_budget">Rate budget: %1$s remaining · resets %2$s</string>
+    <string name="fdroid_repositories">F-Droid repositories</string>
+    <string name="fdroid_repositories_subtitle">Paste an index-v2 URL with its SHA-256 fingerprint.</string>
+    <string name="add_fdroid_repository">Add F-Droid repository</string>
+    <string name="fdroid_repository_number">F-Droid repository %1$02d</string>
+    <string name="enable_fdroid_repository">Enable F-Droid repository %1$d</string>
+    <string name="remove_fdroid_repository">Remove F-Droid repository</string>
+    <string name="fdroid_index_url">F-Droid index URL with fingerprint</string>
+    <string name="fdroid_index_url_supporting_text">Use HTTPS and include ?fingerprint=SHA256. The fingerprint pins this repository before its apps are shown.</string>
 
     <string name="journal_diagnostics">Diagnostics</string>
     <string name="journal_diagnostics_description">Recent runtime, network, and workflow events.</string>

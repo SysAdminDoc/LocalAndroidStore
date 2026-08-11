@@ -58,8 +58,11 @@ import java.text.DateFormat
 import java.util.Date
 import com.sysadmin.lasstore.data.DEFAULT_GITHUB_TOPIC
 import com.sysadmin.lasstore.data.DEFAULT_GITHUB_USER
+import com.sysadmin.lasstore.data.FdroidSource
 import com.sysadmin.lasstore.data.GitHubSource
+import com.sysadmin.lasstore.data.normalizeFdroidSources
 import com.sysadmin.lasstore.data.normalizeSources
+import com.sysadmin.lasstore.data.validateFdroidSources
 import com.sysadmin.lasstore.data.validateSources
 import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.ui.theme.Catppuccin
@@ -88,13 +91,24 @@ fun SettingsScreen(
         }
         .distinctBy { it.first }
         .toMap()
+    var fdroidDrafts by remember(state.settings.fdroidSources) {
+        mutableStateOf(
+            state.settings.fdroidSources.map(FdroidSourceDraft::from),
+        )
+    }
+    val draftFdroidSources = fdroidDrafts.map(FdroidSourceDraft::toSource)
+    val fdroidValidationError = validateFdroidSources(draftFdroidSources)
+    val normalizedFdroidSources = normalizeFdroidSources(draftFdroidSources)
+    val persistedFdroidDrafts = state.settings.fdroidSources.map(FdroidSourceDraft::from)
     val persistedDrafts = state.settings.sources.map { source ->
         SourceDraft.from(source, state.sourcePats[source.key].orEmpty())
     }
     val draftsDirty = validationError != null ||
         drafts != persistedDrafts ||
         normalizedSources != normalizeSources(state.settings.sources) ||
-        normalizedSourcePats(sourcePats) != normalizedSourcePats(state.sourcePats)
+        normalizedSourcePats(sourcePats) != normalizedSourcePats(state.sourcePats) ||
+        fdroidDrafts != persistedFdroidDrafts ||
+        normalizedFdroidSources != normalizeFdroidSources(state.settings.fdroidSources)
 
     Column(
         modifier = Modifier
@@ -179,7 +193,73 @@ fun SettingsScreen(
             Text(stringResource(R.string.add_github_source))
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.fdroid_repositories),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Catppuccin.MauveStrong,
+                )
+                Text(
+                    text = stringResource(R.string.fdroid_repositories_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.Subtext,
+                )
+            }
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = Catppuccin.Surface1,
+                border = BorderStroke(1.dp, Catppuccin.Stroke),
+            ) {
+                Text(
+                    text = normalizedFdroidSources.size.toString(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Catppuccin.MauveStrong,
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
+                )
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
+            fdroidDrafts.forEachIndexed { index, source ->
+                FdroidSourceEditor(
+                    index = index,
+                    source = source,
+                    canRemove = fdroidDrafts.size > 1,
+                    onChange = { updated ->
+                        fdroidDrafts = fdroidDrafts.toMutableList().also { it[index] = updated }
+                    },
+                    onRemove = {
+                        fdroidDrafts = fdroidDrafts.toMutableList()
+                            .also { it.removeAt(index) }
+                    },
+                )
+            }
+        }
+
+        OutlinedButton(
+            onClick = { fdroidDrafts = fdroidDrafts + FdroidSourceDraft() },
+            modifier = Modifier.fillMaxWidth(),
+            border = BorderStroke(1.dp, Catppuccin.StrokeBright),
+            contentPadding = PaddingValues(vertical = 13.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Catppuccin.MauveStrong),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = null,
+                modifier = Modifier.size(19.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.add_fdroid_repository))
+        }
+
         validationError?.let { error ->
+            SettingsError(text = error)
+        }
+        fdroidValidationError?.let { error ->
             SettingsError(text = error)
         }
         state.saveError?.let { error ->
@@ -201,9 +281,10 @@ fun SettingsScreen(
                     viewModel.replaceMalformedRegistry(
                         sources = draftSources,
                         sourcePats = sourcePats,
+                        fdroidSources = draftFdroidSources,
                     )
                 },
-                enabled = validationError == null && !state.saving &&
+                enabled = validationError == null && fdroidValidationError == null && !state.saving &&
                     state.registryRecoveryBackupAvailable,
                 modifier = Modifier.fillMaxWidth(),
                 border = BorderStroke(1.dp, Catppuccin.Red.copy(alpha = 0.45f)),
@@ -219,9 +300,11 @@ fun SettingsScreen(
                 viewModel.save(
                     sources = draftSources,
                     sourcePats = sourcePats,
+                    fdroidSources = draftFdroidSources,
                 )
             },
-            enabled = validationError == null && !state.saving && !state.registryRecoveryRequired,
+            enabled = validationError == null && fdroidValidationError == null &&
+                !state.saving && !state.registryRecoveryRequired,
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(vertical = 14.dp),
             colors = ButtonDefaults.buttonColors(
@@ -272,8 +355,8 @@ fun SettingsScreen(
                     Text(
                         text = pluralStringResource(
                             R.plurals.registry_saved,
-                            normalizedSources.size,
-                            normalizedSources.size,
+                            normalizedSources.size + normalizedFdroidSources.size,
+                            normalizedSources.size + normalizedFdroidSources.size,
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = Catppuccin.Mint,
@@ -612,6 +695,112 @@ private fun SourceEditor(
 }
 
 @Composable
+private fun FdroidSourceEditor(
+    index: Int,
+    source: FdroidSourceDraft,
+    canRemove: Boolean,
+    onChange: (FdroidSourceDraft) -> Unit,
+    onRemove: () -> Unit,
+) {
+    val enableRepositoryDescription = stringResource(
+        R.string.enable_fdroid_repository,
+        index + 1,
+    )
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Catppuccin.TextStrong,
+        unfocusedTextColor = Catppuccin.TextStrong,
+        disabledTextColor = Catppuccin.Overlay,
+        focusedContainerColor = Catppuccin.Crust.copy(alpha = 0.55f),
+        unfocusedContainerColor = Catppuccin.Crust.copy(alpha = 0.55f),
+        focusedBorderColor = Catppuccin.Mauve,
+        unfocusedBorderColor = Catppuccin.StrokeBright,
+        focusedLabelColor = Catppuccin.MauveStrong,
+        unfocusedLabelColor = Catppuccin.Subtext,
+        cursorColor = Catppuccin.MauveStrong,
+        focusedSupportingTextColor = Catppuccin.Subtext,
+        unfocusedSupportingTextColor = Catppuccin.Subtext,
+    )
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = Catppuccin.PanelRaised,
+        border = BorderStroke(1.dp, Catppuccin.Stroke),
+    ) {
+        Column(
+            modifier = Modifier.padding(15.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .background(Catppuccin.Mauve.copy(alpha = 0.1f), RoundedCornerShape(14.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = null,
+                        tint = Catppuccin.MauveStrong,
+                        modifier = Modifier.size(23.dp),
+                    )
+                }
+                Spacer(Modifier.width(11.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.fdroid_repository_number, index + 1),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Catppuccin.TextStrong,
+                    )
+                    Text(
+                        text = source.endpointUrl.ifBlank { stringResource(R.string.not_configured) },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Subtext,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Switch(
+                    checked = source.enabled,
+                    onCheckedChange = { onChange(source.copy(enabled = it)) },
+                    modifier = Modifier.semantics {
+                        contentDescription = enableRepositoryDescription
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Catppuccin.Crust,
+                        checkedTrackColor = Catppuccin.MauveStrong,
+                        uncheckedThumbColor = Catppuccin.Subtext,
+                        uncheckedTrackColor = Catppuccin.Surface2,
+                        uncheckedBorderColor = Catppuccin.StrokeBright,
+                    ),
+                )
+                if (canRemove) {
+                    IconButton(onClick = onRemove) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = stringResource(R.string.remove_fdroid_repository),
+                            tint = Catppuccin.Red,
+                        )
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = source.endpointUrl,
+                onValueChange = { onChange(source.copy(endpointUrl = it)) },
+                label = { Text(stringResource(R.string.fdroid_index_url)) },
+                supportingText = { Text(stringResource(R.string.fdroid_index_url_supporting_text)) },
+                singleLine = false,
+                minLines = 2,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = fieldColors,
+            )
+        }
+    }
+}
+
+@Composable
 private fun ConnectionFeedback(state: ConnectionCheckState) {
     state.error?.let { error ->
         Text(
@@ -733,6 +922,23 @@ private data class SourceDraft(
             showPrereleases = source.showPrereleases,
             enabled = source.enabled,
             pat = pat,
+        )
+    }
+}
+
+private data class FdroidSourceDraft(
+    val endpointUrl: String = "",
+    val enabled: Boolean = true,
+) {
+    fun toSource(): FdroidSource = FdroidSource(
+        endpointUrl = endpointUrl,
+        enabled = enabled,
+    )
+
+    companion object {
+        fun from(source: FdroidSource): FdroidSourceDraft = FdroidSourceDraft(
+            endpointUrl = source.endpointUrl,
+            enabled = source.enabled,
         )
     }
 }

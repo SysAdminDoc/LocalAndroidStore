@@ -2,6 +2,10 @@ package com.sysadmin.lasstore.domain
 
 import com.sysadmin.lasstore.data.CatalogSnapshot
 import com.sysadmin.lasstore.data.CatalogSnapshotRepository
+import com.sysadmin.lasstore.data.FDroidIndexV2Plugin
+import com.sysadmin.lasstore.data.FdroidIndexProvider
+import com.sysadmin.lasstore.data.FdroidRepositoryTrust
+import com.sysadmin.lasstore.data.FdroidSource
 import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.GhRelease
 import com.sysadmin.lasstore.data.GitHubFailureKind
@@ -10,6 +14,7 @@ import com.sysadmin.lasstore.data.GitHubRepoListResult
 import com.sysadmin.lasstore.data.GitHubRequestException
 import com.sysadmin.lasstore.data.GitHubSource
 import com.sysadmin.lasstore.data.Logger
+import com.sysadmin.lasstore.data.NetworkUnavailableException
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -96,6 +101,36 @@ internal object CatalogFailureClassifier {
             retryAtEpochMillis = (throwable as? GitHubRequestException)?.retryAtEpochMillis,
         )
     }
+
+    fun classifyFdroid(
+        source: FdroidSource,
+        throwable: Throwable,
+    ): CatalogSourceIssue {
+        val kind = when (throwable) {
+            is SSLHandshakeException -> CatalogFailureKind.Tls
+            is SocketTimeoutException,
+            is UnknownHostException,
+            is NetworkUnavailableException,
+            is IOException -> CatalogFailureKind.Network
+            is SerializationException,
+            is IllegalArgumentException,
+            is SecurityException -> CatalogFailureKind.InvalidResponse
+            else -> CatalogFailureKind.Unknown
+        }
+        val message = when (kind) {
+            CatalogFailureKind.Tls -> "Secure connection to this F-Droid repository failed."
+            CatalogFailureKind.Network -> "This F-Droid repository is unreachable from the device."
+            CatalogFailureKind.InvalidResponse ->
+                "This F-Droid repository failed fingerprint or index validation."
+            else -> "F-Droid repository refresh failed unexpectedly."
+        }
+        return CatalogSourceIssue(
+            sourceKey = source.key,
+            sourceLabel = source.displayName,
+            kind = kind,
+            message = message,
+        )
+    }
 }
 
 class DiscoveryUseCase(
@@ -105,15 +140,22 @@ class DiscoveryUseCase(
     private val patForSource: (String) -> String = { "" },
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
     private val supportedAbis: List<String> = emptyList(),
+    private val fdroidIndexProvider: FdroidIndexProvider? = null,
 ) {
-    suspend fun discover(sources: List<GitHubSource>): CatalogDiscoveryResult = coroutineScope {
+    suspend fun discover(
+        sources: List<GitHubSource>,
+        fdroidSources: List<FdroidSource> = emptyList(),
+    ): CatalogDiscoveryResult = coroutineScope {
         val requestBudget = Semaphore(MAX_CONCURRENT_RELEASE_LOOKUPS)
-        val sourceResults = sources
+        val githubJobs = sources
             .filter { it.enabled }
             .map { source ->
                 async { discoverSource(source, requestBudget) }
             }
-            .awaitAll()
+        val fdroidJobs = fdroidSources
+            .filter { it.enabled }
+            .map { source -> async { discoverFdroidSource(source) } }
+        val sourceResults = (githubJobs + fdroidJobs).awaitAll()
 
         val apps = sourceResults
             .flatMap { it.apps }
@@ -132,6 +174,104 @@ class DiscoveryUseCase(
                 .mapNotNull { it.snapshotAgeMillis }
                 .maxOrNull(),
         )
+    }
+
+    private suspend fun discoverFdroidSource(source: FdroidSource): SourceDiscovery {
+        val provider = fdroidIndexProvider
+            ?: return SourceDiscovery(
+                apps = emptyList(),
+                issue = CatalogSourceIssue(
+                    sourceKey = source.key,
+                    sourceLabel = source.displayName,
+                    kind = CatalogFailureKind.Unknown,
+                    message = "F-Droid source support is not available in this build.",
+                ),
+            )
+        return try {
+            val endpoint = FdroidRepositoryTrust.parseEndpoint(source.endpointUrl)
+            when (val entryJar = provider.verifyEntryJar(
+                endpoint.indexUrl,
+                endpoint.expectedFingerprint,
+            )) {
+                null,
+                is VerifyResult.Verified -> Unit
+                is VerifyResult.Unverified -> throw SecurityException(entryJar.reason)
+                is VerifyResult.Rejected -> throw SecurityException(entryJar.reason)
+            }
+            var cachedRaw: String? = null
+            val plugin = FDroidIndexV2Plugin(
+                indexProvider = {
+                    cachedRaw ?: provider.fetch(endpoint.indexUrl).also { cachedRaw = it }
+                },
+                baseUrl = endpoint.indexUrl,
+                expectedFingerprint = endpoint.expectedFingerprint,
+                id = source.key,
+            )
+            val apps = plugin.listApps().mapNotNull { discovered ->
+                val release = plugin.getReleases(discovered.applicationId)
+                    .maxWithOrNull(
+                        compareBy<Release> { it.versionCode ?: Long.MIN_VALUE }
+                            .thenBy { it.versionName.orEmpty() },
+                    )
+                    ?: return@mapNotNull null
+                val asset = release.assets.firstOrNull { asset ->
+                    asset.name.lowercase(Locale.US).endsWith(".apk")
+                } ?: return@mapNotNull null
+                val ghAsset = GhAsset(
+                    id = asset.id.hashCode().toLong(),
+                    name = asset.name,
+                    browserDownloadUrl = plugin.resolveDownloadUrl(release),
+                    size = asset.sizeBytes,
+                    contentType = "application/vnd.android.package-archive",
+                    digest = asset.sha256,
+                )
+                AppInfo(
+                    owner = source.key,
+                    repo = discovered.applicationId,
+                    sourceKey = source.key,
+                    sourceLabel = source.displayName,
+                    displayName = discovered.displayName,
+                    description = discovered.description,
+                    stars = 0,
+                    htmlUrl = discovered.homepageUrl ?: endpoint.indexUrl,
+                    tagName = release.versionName
+                        ?: release.versionCode?.toString()
+                        ?: release.id,
+                    versionName = release.versionName,
+                    versionCode = release.versionCode,
+                    applicationId = discovered.applicationId,
+                    asset = ghAsset,
+                    publishedAt = release.publishedAt,
+                    prerelease = release.prerelease,
+                    releaseBody = release.body,
+                    antiFeatures = discovered.antiFeatures,
+                )
+            }
+            runCatching {
+                snapshots.write(
+                    CatalogSnapshot(
+                        sourceKey = source.key,
+                        sourceLabel = source.displayName,
+                        refreshedAtEpochMillis = nowEpochMillis(),
+                        apps = apps,
+                    )
+                )
+            }.onFailure {
+                logger?.warn("Discovery", "Could not persist snapshot for ${source.displayName}")
+            }
+            SourceDiscovery(apps = apps)
+        } catch (throwable: Throwable) {
+            if (throwable is CancellationException) throw throwable
+            logger?.error(
+                "Discovery",
+                "Could not read F-Droid repository ${source.displayName}",
+                throwable,
+            )
+            SourceDiscovery(
+                apps = emptyList(),
+                issue = CatalogFailureClassifier.classifyFdroid(source, throwable),
+            )
+        }
     }
 
     private suspend fun discoverSource(

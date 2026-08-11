@@ -46,7 +46,29 @@ class AppSettingsTest {
         assertTrue(
             validateSources(
                 listOf(GitHubSource(user = "Alice"), GitHubSource(user = " alice ")),
-            )?.contains("listed more than once") == true,
+        )?.contains("listed more than once") == true,
+        )
+    }
+
+    @Test
+    fun fdroidEndpointsAreCanonicalizedAndRequireFingerprint() {
+        val fingerprint = "AB".repeat(32)
+        val normalized = normalizeFdroidSources(
+            listOf(
+                FdroidSource(
+                    endpointUrl = "https://repo.example/index-v2.json?fingerprint=$fingerprint",
+                ),
+            ),
+        )
+
+        assertEquals(
+            "https://repo.example/index-v2.json?fingerprint=${fingerprint.lowercase()}",
+            normalized.single().endpointUrl,
+        )
+        assertTrue(
+            validateFdroidSources(
+                listOf(FdroidSource("https://repo.example/index-v2.json")),
+            )?.contains("fingerprint") == true,
         )
     }
 }

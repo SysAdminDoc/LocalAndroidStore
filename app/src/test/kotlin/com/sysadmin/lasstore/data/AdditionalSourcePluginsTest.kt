@@ -59,6 +59,12 @@ class AdditionalSourcePluginsTest {
         assertEquals("https://example.invalid/index-v2.json", endpoint.indexUrl)
         assertTrue(FdroidRepositoryTrust.matches(fingerprint, fingerprint.uppercase()))
         assertTrue(!FdroidRepositoryTrust.matches(fingerprint, "cd".repeat(32)))
+        assertEquals(
+            "https://example.invalid/index-v2.json?fingerprint=${fingerprint.lowercase()}",
+            FdroidRepositoryTrust.canonicalEndpoint(
+                "https://example.invalid/index-v2.json?fingerprint=${fingerprint.uppercase()}",
+            ),
+        )
     }
 
     @Test

@@ -9,6 +9,8 @@ import com.sysadmin.lasstore.data.GhRepo
 import com.sysadmin.lasstore.data.GitHubGateway
 import com.sysadmin.lasstore.data.GitHubRepoListResult
 import com.sysadmin.lasstore.data.GitHubSource
+import com.sysadmin.lasstore.data.FdroidIndexProvider
+import com.sysadmin.lasstore.data.FdroidSource
 import java.net.UnknownHostException
 import javax.net.ssl.SSLHandshakeException
 import java.util.concurrent.atomic.AtomicInteger
@@ -24,6 +26,54 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiscoveryUseCaseTest {
+    @Test
+    fun trustedFdroidIndexBecomesCatalogAppsWithAntiFeatures() = runBlocking {
+        val fingerprint = "ab".repeat(32)
+        val source = FdroidSource(
+            endpointUrl = "https://repo.example/index-v2.json?fingerprint=$fingerprint",
+        )
+        val raw = """
+            {
+              "repo": {
+                "address": "https://repo.example/repo",
+                "fingerprint": "$fingerprint"
+              },
+              "packages": {
+                "com.example.app": {
+                  "metadata": {
+                    "name": {"en-US": "Example"},
+                    "antiFeatures": {"Tracking": {}}
+                  },
+                  "versions": {
+                    "7": {
+                      "manifest": {"versionName": "7.0", "versionCode": 7},
+                      "file": {
+                        "name": "repo/example.apk",
+                        "size": 10,
+                        "sha256": "${"cd".repeat(32)}"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+
+        val result = DiscoveryUseCase(
+            github = emptyGateway(),
+            logger = null,
+            snapshots = MemorySnapshots(),
+            fdroidIndexProvider = FdroidIndexProvider { raw },
+        ).discover(emptyList(), listOf(source))
+
+        assertEquals(1, result.apps.size)
+        assertEquals("com.example.app", result.apps.single().applicationId)
+        assertEquals(7L, result.apps.single().versionCode)
+        assertEquals(setOf("Tracking"), result.apps.single().antiFeatures)
+        assertEquals("https://repo.example/repo/repo/example.apk", result.apps.single().asset.browserDownloadUrl)
+        assertTrue(result.issues.isEmpty())
+    }
+
     @Test
     fun cancellationDoesNotRecoverOrPersistAPartialDiscovery() = runBlocking {
         val enteredLookup = CompletableDeferred<Unit>()
@@ -566,6 +616,22 @@ class DiscoveryUseCaseTest {
     }
 
     private companion object {
+        fun emptyGateway() = object : GitHubGateway {
+            override suspend fun listUserRepos(
+                user: String,
+                patOverride: String?,
+                sourceKey: String,
+            ): List<GhRepo> = emptyList()
+
+            override suspend fun latestRelease(
+                owner: String,
+                repo: String,
+                includePrereleases: Boolean,
+                patOverride: String?,
+                sourceKey: String,
+            ): GhRelease? = null
+        }
+
         fun repo(owner: String, name: String, topics: List<String> = emptyList()) = GhRepo(
             name = name,
             fullName = "$owner/$name",

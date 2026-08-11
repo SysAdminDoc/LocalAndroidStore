@@ -22,6 +22,7 @@ data class AppInfo(
     val prerelease: Boolean,
     val releaseBody: String? = null,
     val assetChoices: List<GhAsset> = emptyList(),
+    val antiFeatures: Set<String> = emptySet(),
     /** True when this card came from a bounded, stale snapshot after a transient lookup failure. */
     val isStale: Boolean = false,
 ) {

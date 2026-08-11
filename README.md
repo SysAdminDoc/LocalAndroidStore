@@ -33,6 +33,7 @@ That's what this is.
 ## Features (current)
 
 - **Multi-source GitHub discovery** — every enabled GitHub user / org source with a `.apk` asset on its latest release. Each source has its own enable toggle, optional topic filter, pre-release toggle, and optional PAT.
+- **Pinned F-Droid repositories** — add any HTTPS F-Droid index-v2 endpoint by pasting its `?fingerprint=` URL. The repository fingerprint is checked before metadata is exposed, and signed `entry.jar` metadata is verified when the repository provides it. APK SHA-256 digests and F-Droid anti-features travel into the catalog.
 - **Rate-aware offline catalog** — repository discovery continues through a bounded 50-page policy, release lookups are capped at four concurrent requests, GitHub ETags reuse unchanged responses, partial sources retain only current candidates whose release lookup failed transiently, and a dated on-device snapshot remains usable offline for up to seven days. Retained cards are marked stale; removed, archived, topic-excluded, missing-release, and non-transiently failed repositories are not resurrected. A source that exceeds the repository bound is marked truncated with fetched/omitted evidence instead of appearing complete; use a topic filter to narrow it. TLS, token, authorization, rate-limit, network, server, malformed-response, truncation, and valid-empty outcomes are shown distinctly.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black. Repo handle, star count, version tag, status badge, two-line description.
 - **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
@@ -81,7 +82,8 @@ attested release artifacts; release signing is a deliberate local release-owner 
 3. *(Optional)* Paste a source-specific personal access token to raise rate limits and surface private repos owned by that source. The field is masked; the value lives in a Tink AEAD-encrypted app-private file with an Android Keystore-protected keyset.
 4. *(Optional)* Enable **Filter by topic** per source if you want to limit discovery to repos tagged with that source's topic.
 5. *(Optional)* Toggle **Show pre-releases** per source if you want to see `prerelease: true` releases.
-6. Tap **Save settings**, hop back to **Catalog**, hit **Refresh**.
+6. *(Optional)* Add one or more **F-Droid repositories** by pasting the repository's HTTPS `index-v2.json?fingerprint=...` URL. The fingerprint is required as a local trust pin; only repositories whose published fingerprint matches are shown.
+7. Tap **Save settings**, hop back to **Catalog**, hit **Refresh**.
 
 Every qualifying repo appears as a card. Tap **Install** — the APK downloads, the system install dialog appears, you confirm. Tap **Open** to launch. Tap **Uninstall** to land on the system uninstall confirmation.
 
@@ -104,6 +106,11 @@ Release history is a separate, explicit card action. It requests at most ten pag
 
 There is no opinionated topic filter unless you turn one on — your own user / org listing already keeps the catalog tight.
 
+F-Droid repositories are read through their pinned index-v2 metadata. The catalog keeps the newest
+version with a standalone APK for each package, verifies the repository fingerprint before parsing,
+and shows anti-feature filter chips when the index publishes them. HTTPS is required for index and
+APK URLs.
+
 ---
 
 ## Where things live
@@ -118,7 +125,7 @@ There is no opinionated topic filter unless you turn one on — your own user / 
 | `<files-dir>/catalog/snapshots/` | Dated per-source offline catalog snapshots |
 | `<cache-dir>/apks/` | Downloaded APKs (transient, OS-cleanable) |
 | `<files-dir>/secrets/secrets.v1.tinkaead` | Tink AEAD-encrypted GitHub PATs and signing-cert pins per `applicationId` |
-| DataStore `settings` | GitHub sources, topic filters, pre-release toggles |
+| DataStore `settings` | GitHub sources, F-Droid repository endpoints, topic filters, pre-release toggles |
 | SharedPreferences `las_appid_cache` | Source/repository-scoped installed package, version, signer, and release-asset identity |
 | SharedPreferences `foreground_install_state` | Recoverable foreground install phase, installer session, APK metadata, and pending MediaStore cleanup |
 | SharedPreferences `queued_update_status` | Attempt count and durable queued-update terminal state |
@@ -275,7 +282,7 @@ verification command fails, treat the binary as untrusted and do not distribute 
 - No silent install. Stock Android doesn't allow it for non-device-owner apps. The system install dialog appears once per install. v0.4 will add Shizuku as an opt-in tier-2 path.
 - Uninstall opens the system uninstall confirmation. We can't bypass it without device-owner / Work Profile admin.
 - Catalog refresh and APK download happen on-tap; v0.4 adds scheduled background refresh via WorkManager.
-- Only GitHub Releases sources are supported today. F-Droid, GitLab, and HTML source plugins are planned for v0.3+.
+- GitHub Releases and pinned F-Droid index-v2 repositories are supported today. GitLab and HTML source plugins remain adapter-level work rather than configured catalog sources.
 
 ---
 
