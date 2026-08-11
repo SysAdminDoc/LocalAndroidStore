@@ -34,7 +34,11 @@ class AppSettingsTest {
 
     @Test
     fun normalizeSourcesKeepsDefaultWhenEverythingIsBlank() {
-        assertEquals(listOf(GitHubSource()), normalizeSources(listOf(GitHubSource(user = ""))))
+        val normalized = normalizeSources(listOf(GitHubSource(user = "")))
+
+        assertEquals(1, normalized.size)
+        assertEquals(DEFAULT_GITHUB_USER, normalized.single().user)
+        assertTrue(normalized.single().threatModel.isNotBlank())
     }
 
     @Test
@@ -85,5 +89,36 @@ class AppSettingsTest {
         assertEquals(AccentColor.Teal, accentForSource(settings, sourceKey("alice")))
         assertEquals(AccentColor.Lavender, accentForSource(settings, sourceKey("bob")))
         assertEquals(AccentColor.Lavender, accentForSource(settings, "missing"))
+    }
+
+    @Test
+    fun sourceThreatModelsHaveSafeDefaultsAndBoundedValidation() {
+        val normalized = normalizeSources(
+            listOf(GitHubSource(user = "alice")),
+        ).single()
+        assertTrue(normalized.threatModel.contains("alice"))
+
+        val custom = normalizeSources(
+            listOf(GitHubSource(user = "alice", threatModel = "  verified by our team  ")),
+        ).single()
+        assertEquals("verified by our team", custom.threatModel)
+        assertTrue(
+            validateSources(
+                listOf(
+                    GitHubSource(
+                        user = "alice",
+                        threatModel = "x".repeat(MAX_SOURCE_THREAT_MODEL_LENGTH + 1),
+                    ),
+                ),
+            )?.contains(MAX_SOURCE_THREAT_MODEL_LENGTH.toString()) == true,
+        )
+    }
+
+    @Test
+    fun fdroidThreatModelsDescribeThePinnedEndpointWhenBlank() {
+        val endpoint = "https://repo.example/index-v2.json?fingerprint=${"AB".repeat(32)}"
+        val normalized = normalizeFdroidSources(listOf(FdroidSource(endpoint))).single()
+
+        assertTrue(normalized.threatModel.contains("repo.example"))
     }
 }

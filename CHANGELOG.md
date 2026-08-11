@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added bounded per-source threat-model documentation for GitHub and F-Droid definitions. Settings supplies an editable paragraph, validates its contents, and generates a conservative default for legacy or blank entries; exports retain the documentation without credentials.
 - Added a persisted high-contrast appearance mode. It promotes Catppuccin secondary text to the primary text token and strengthens Material outlines while preserving the selected theme, accent, and optional dynamic colors.
 - Added reduced-motion handling for release-note transitions. Android's global animator-duration scale is observed live, and zero-scale devices get instantaneous card expansion/collapse.
 - Completed the TalkBack sweep for catalog cards: status badges now expose a single localized "Status" announcement, queued operations retain live-region guidance, and the card-level D-pad action has an explicit accessible label.

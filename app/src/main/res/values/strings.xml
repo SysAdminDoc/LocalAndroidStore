@@ -449,6 +449,8 @@
     <string name="accent_lavender">Lavender</string>
     <string name="source_branding_feed_url">Branding feed URL (optional)</string>
     <string name="source_branding_feed_supporting_text">HTTPS AltStore-compatible JSON with iconURL, headerURL, tintColor, featuredApps, and news.</string>
+    <string name="source_threat_model">Source threat model</string>
+    <string name="source_threat_model_supporting_text">Document who controls the repository and signing key, what LAS verifies, and what a key leak would mean. Up to 4,000 characters.</string>
     <string name="source_branding_section">Publisher feeds</string>
     <string name="source_featured_apps">Featured · %1$s</string>
     <string name="source_header_image">Source header image</string>

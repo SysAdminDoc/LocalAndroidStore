@@ -1493,6 +1493,18 @@ private fun SourceEditor(
                 colors = fieldColors,
             )
 
+            OutlinedTextField(
+                value = source.threatModel,
+                onValueChange = { onChange(source.copy(threatModel = it)) },
+                label = { Text(stringResource(R.string.source_threat_model)) },
+                supportingText = { Text(stringResource(R.string.source_threat_model_supporting_text)) },
+                minLines = 3,
+                maxLines = 6,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = fieldColors,
+            )
+
             OutlinedButton(
                 onClick = onTestConnection,
                 enabled = source.user.trim().isNotBlank() && connection?.running != true,
@@ -1539,6 +1551,18 @@ private fun SourceEditor(
                     Text(stringResource(R.string.source_branding_feed_supporting_text))
                 },
                 singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = fieldColors,
+            )
+
+            OutlinedTextField(
+                value = source.threatModel,
+                onValueChange = { onChange(source.copy(threatModel = it)) },
+                label = { Text(stringResource(R.string.source_threat_model)) },
+                supportingText = { Text(stringResource(R.string.source_threat_model_supporting_text)) },
+                minLines = 3,
+                maxLines = 6,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 colors = fieldColors,
@@ -1812,6 +1836,7 @@ private data class SourceDraft(
     val enabled: Boolean = true,
     val accent: AccentColor? = null,
     val brandingUrl: String = "",
+    val threatModel: String = "",
     val pat: String = "",
 ) {
     fun toSource(): GitHubSource = GitHubSource(
@@ -1822,6 +1847,7 @@ private data class SourceDraft(
         enabled = enabled,
         accent = accent,
         brandingUrl = brandingUrl,
+        threatModel = threatModel,
     )
 
     companion object {
@@ -1833,6 +1859,7 @@ private data class SourceDraft(
             enabled = source.enabled,
             accent = source.accent,
             brandingUrl = source.brandingUrl,
+            threatModel = source.threatModel,
             pat = pat,
         )
     }
@@ -1843,12 +1870,14 @@ private data class FdroidSourceDraft(
     val enabled: Boolean = true,
     val accent: AccentColor? = null,
     val brandingUrl: String = "",
+    val threatModel: String = "",
 ) {
     fun toSource(): FdroidSource = FdroidSource(
         endpointUrl = endpointUrl,
         enabled = enabled,
         accent = accent,
         brandingUrl = brandingUrl,
+        threatModel = threatModel,
     )
 
     companion object {
@@ -1857,6 +1886,7 @@ private data class FdroidSourceDraft(
             enabled = source.enabled,
             accent = source.accent,
             brandingUrl = source.brandingUrl,
+            threatModel = source.threatModel,
         )
     }
 }

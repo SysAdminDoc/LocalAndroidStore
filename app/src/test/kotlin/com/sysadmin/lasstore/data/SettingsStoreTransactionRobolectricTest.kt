@@ -73,7 +73,7 @@ class SettingsStoreTransactionRobolectricTest {
         store.recoverPendingTransaction()
 
         assertEquals(mapOf("alice" to "new-token"), secrets.sourcePats)
-        assertEquals(target.sources, store.flow.first().sources)
+        assertEquals(normalizeSources(target.sources), store.flow.first().sources)
     }
 
     @Test
@@ -85,6 +85,7 @@ class SettingsStoreTransactionRobolectricTest {
                     user = "alice",
                     accent = AccentColor.Teal,
                     brandingUrl = "https://example.com/alice.json",
+                    threatModel = "Alice controls the repository; LAS verifies the release digest and signer.",
                 ),
             ),
             hideUnverifiedSources = true,
@@ -106,6 +107,7 @@ class SettingsStoreTransactionRobolectricTest {
         assertEquals(7, saved.dailyUpdateCap)
         assertEquals(AccentColor.Teal, saved.sources.single().accent)
         assertEquals("https://example.com/alice.json", saved.sources.single().brandingUrl)
+        assertTrue(saved.sources.single().threatModel.startsWith("Alice controls"))
     }
 
     private fun newStore(
