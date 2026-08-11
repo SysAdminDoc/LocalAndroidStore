@@ -329,6 +329,7 @@ fun CatalogExperience(
                                 onToggleFavorite = { viewModel.toggleFavorite(card) },
                                 onSetCollections = { ids -> viewModel.setCollections(card, ids) },
                                 onCreateCollection = viewModel::createCollection,
+                                onLoadWhatIsNew = { viewModel.loadWhatIsNew(card) },
                                 onSetUpdateCadence = { cadence ->
                                     viewModel.setUpdateCadence(card, cadence)
                                 },

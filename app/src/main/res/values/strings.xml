@@ -144,6 +144,12 @@
     <string name="blocked">Blocked</string>
     <string name="hide_release_notes">Hide release notes</string>
     <string name="whats_new">What’s new</string>
+    <string name="what_is_new_since_install">What’s new since installed</string>
+    <string name="what_is_new_title">What’s new since installed</string>
+    <string name="what_is_new_body">These bounded release notes cover versions newer than the installed version. Notes are shown as published and are not treated as install instructions.</string>
+    <string name="what_is_new_loading">Loading release notes…</string>
+    <string name="what_is_new_empty">No cumulative release notes were published for the releases available here.</string>
+    <string name="what_is_new_error">Could not load cumulative release notes: %1$s</string>
     <string name="more_actions_for">More actions for %1$s</string>
     <string name="open_app">Open app</string>
     <string name="queue_update">Queue update</string>

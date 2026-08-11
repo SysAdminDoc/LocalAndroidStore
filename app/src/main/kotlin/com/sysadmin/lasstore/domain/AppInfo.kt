@@ -57,6 +57,7 @@ data class AppInfo(
     val antiFeatures: Set<String> = emptySet(),
     /** Source-provided, namespace-qualified categories such as GitHub topics or F-Droid groups. */
     val tags: Set<String> = emptySet(),
+    val releaseNotes: List<ReleaseNote> = emptyList(),
     /** True when this card came from a bounded, stale snapshot after a transient lookup failure. */
     val isStale: Boolean = false,
 ) {

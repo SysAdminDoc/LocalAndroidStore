@@ -38,8 +38,11 @@ import com.sysadmin.lasstore.domain.CatalogSourceIssue
 import com.sysadmin.lasstore.domain.DiscoveryUseCase
 import com.sysadmin.lasstore.domain.ReleaseVersionRelation
 import com.sysadmin.lasstore.domain.ReleaseChannel
+import com.sysadmin.lasstore.domain.ReleaseNote
 import com.sysadmin.lasstore.domain.SourceVerificationStatus
 import com.sysadmin.lasstore.domain.classifyReleaseVersion
+import com.sysadmin.lasstore.domain.releaseNoteIdentity
+import com.sysadmin.lasstore.domain.releaseNotesSinceInstalled
 import com.sysadmin.lasstore.domain.sourceVerificationStatus
 import com.sysadmin.lasstore.install.InstallResult
 import com.sysadmin.lasstore.install.ArchiveRequestResult
@@ -116,6 +119,7 @@ data class CardState(
     val splitSelection: SplitSelectionState? = null,
     val isFavorite: Boolean = false,
     val collectionIds: Set<String> = emptySet(),
+    val whatIsNew: WhatIsNewState? = null,
 )
 
 data class SplitSelectionEntryState(
@@ -152,6 +156,12 @@ data class ReleaseHistoryState(
     val loading: Boolean = false,
     val releases: List<HistoricalRelease> = emptyList(),
     val nextPage: Int? = 1,
+    val error: String? = null,
+)
+
+data class WhatIsNewState(
+    val loading: Boolean = false,
+    val notes: List<ReleaseNote> = emptyList(),
     val error: String? = null,
 )
 
@@ -235,6 +245,7 @@ internal fun preserveActivityResumeContext(previous: CardState, rebuilt: CardSta
         transparencyBusy = previous.transparencyBusy,
         transparencyError = previous.transparencyError,
         splitSelection = previous.splitSelection,
+        whatIsNew = previous.whatIsNew,
     )
 
 internal fun reserveUniqueDownloadFile(directory: File, filename: String): File {
@@ -2508,6 +2519,18 @@ class CatalogViewModel : ViewModel() {
     }
 
     /** Load a bounded, paged release history only after an explicit user request. */
+    fun loadWhatIsNew(card: CardState) {
+        val current = _state.value.cards.firstOrNull { cardKey(it.info) == cardKey(card.info) } ?: card
+        updateCard(card.info) { it.copy(whatIsNew = WhatIsNewState(loading = true, error = null)) }
+        if (releaseNotesFor(current).isNotEmpty()) {
+            updateCard(card.info) { currentCard ->
+                currentCard.copy(whatIsNew = buildWhatIsNewState(currentCard))
+            }
+        } else if (current.releaseHistory?.loading != true) {
+            loadReleaseHistory(card)
+        }
+    }
+
     fun loadReleaseHistory(card: CardState, append: Boolean = false) {
         val key = cardKey(card.info)
         val current = _state.value.cards.firstOrNull { cardKey(it.info) == key } ?: card
@@ -2537,7 +2560,7 @@ class CatalogViewModel : ViewModel() {
                 }
                 updateCard(card.info) { currentCard ->
                     val history = currentCard.releaseHistory ?: starting
-                    currentCard.copy(
+                    val updated = currentCard.copy(
                         releaseHistory = history.copy(
                             loading = false,
                             releases = (history.releases + entries)
@@ -2548,6 +2571,11 @@ class CatalogViewModel : ViewModel() {
                             error = null,
                         ),
                     )
+                    if (currentCard.whatIsNew?.loading == true) {
+                        updated.copy(whatIsNew = buildWhatIsNewState(updated))
+                    } else {
+                        updated
+                    }
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -2555,18 +2583,64 @@ class CatalogViewModel : ViewModel() {
                 sl.logger.error("Catalog", "Release history failed for ${card.info.handle}", throwable)
                 updateCard(card.info) { currentCard ->
                     val history = currentCard.releaseHistory ?: starting
-                    currentCard.copy(
+                    val updated = currentCard.copy(
                         releaseHistory = history.copy(
                             loading = false,
                             error = throwable.message ?: "Could not load release history.",
                         ),
                     )
+                    if (currentCard.whatIsNew?.loading == true) {
+                        updated.copy(
+                            whatIsNew = WhatIsNewState(
+                                loading = false,
+                                error = throwable.message ?: "Could not load release history.",
+                            ),
+                        )
+                    } else {
+                        updated
+                    }
                 }
             }
         }
         historyJobs[key] = job
         job.invokeOnCompletion { historyJobs.remove(key, job) }
     }
+
+    private fun buildWhatIsNewState(card: CardState): WhatIsNewState = WhatIsNewState(
+        notes = releaseNotesSinceInstalled(
+            notes = releaseNotesFor(card),
+            installedVersionCode = card.installedVersionCode,
+            installedVersionName = card.installedVersion,
+        ),
+    )
+
+    private fun releaseNotesFor(card: CardState): List<ReleaseNote> = buildList {
+        addAll(card.info.releaseNotes)
+        card.info.releaseBody?.takeIf { it.isNotBlank() }?.let { body ->
+            add(
+                ReleaseNote(
+                    versionName = card.info.versionName,
+                    versionCode = card.info.versionCode,
+                    label = card.info.tagName,
+                    body = body,
+                    publishedAt = card.info.publishedAt,
+                ),
+            )
+        }
+        card.releaseHistory?.releases?.forEach { historical ->
+            historical.release.body?.takeIf { it.isNotBlank() }?.let { body ->
+                add(
+                    ReleaseNote(
+                        versionName = historical.info?.versionName,
+                        versionCode = historical.inspectedVersionCode,
+                        label = historical.release.tagName,
+                        body = body,
+                        publishedAt = historical.release.publishedAt,
+                    ),
+                )
+            }
+        }
+    }.distinctBy(::releaseNoteIdentity)
 
     fun selectHistoricalRelease(card: CardState, historical: HistoricalRelease) {
         val selectedInfo = historical.info

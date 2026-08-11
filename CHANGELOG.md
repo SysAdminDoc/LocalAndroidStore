@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added bounded Markdown release-note rendering and cumulative “What’s new since installed” views. F-Droid index-v2 `whatsNew` entries are validated and retained across the published version history; GitHub notes use the existing paged release-history budget.
 - Added durable favorites, source-namespaced GitHub/F-Droid category tags, and user-defined collections. The library preference file is the only app data eligible for encrypted Android backup/device transfer.
 - Added Android 15 app archiving and launcher-triggered restore handling. Archived cards retain their managed-app state, and restore requests re-enter the verified foreground install flow with durable hand-off state.
 - Added bounded `.apks`, `.xapk`, `.apkm`, and `.apkset` installation. Each extracted split is

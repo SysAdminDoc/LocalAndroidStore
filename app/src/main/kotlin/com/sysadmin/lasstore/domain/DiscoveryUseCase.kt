@@ -213,7 +213,8 @@ class DiscoveryUseCase(
                 id = source.key,
             )
             val apps = plugin.listApps().mapNotNull { discovered ->
-                val release = plugin.getReleases(discovered.applicationId)
+                val releases = plugin.getReleases(discovered.applicationId)
+                val release = releases
                     .maxWithOrNull(
                         compareBy<Release> { it.versionCode ?: Long.MIN_VALUE }
                             .thenBy { it.versionName.orEmpty() },
@@ -252,6 +253,24 @@ class DiscoveryUseCase(
                     minSdk = release.minSdk,
                     antiFeatures = discovered.antiFeatures,
                     tags = discovered.tags,
+                    releaseNotes = releases
+                        .asSequence()
+                        .filter { !it.body.isNullOrBlank() }
+                        .sortedWith(
+                            compareByDescending<Release> { it.versionCode ?: Long.MIN_VALUE }
+                                .thenByDescending { it.versionName.orEmpty() },
+                        )
+                        .map {
+                            ReleaseNote(
+                                versionName = it.versionName,
+                                versionCode = it.versionCode,
+                                label = it.versionName ?: it.id,
+                                body = requireNotNull(it.body),
+                                publishedAt = it.publishedAt,
+                            )
+                        }
+                        .take(MAX_CUMULATIVE_NOTE_ENTRIES * 4)
+                        .toList(),
                 )
             }
             runCatching {

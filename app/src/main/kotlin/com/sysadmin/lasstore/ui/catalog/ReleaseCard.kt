@@ -118,6 +118,7 @@ fun ReleaseCard(
     onToggleFavorite: () -> Unit = {},
     onSetCollections: (Set<String>) -> Unit = {},
     onCreateCollection: (String) -> LibraryCollection? = { null },
+    onLoadWhatIsNew: () -> Unit = {},
     onArchive: () -> Unit = {},
     onUnarchive: () -> Unit = {},
     onSetUpdateCadence: (UpdateCadence) -> Unit = {},
@@ -166,6 +167,7 @@ fun ReleaseCard(
         mutableStateOf(false)
     }
     var collectionsVisible by rememberSaveable(state.info.handle) { mutableStateOf(false) }
+    var whatIsNewVisible by rememberSaveable(state.info.handle) { mutableStateOf(false) }
     var historyVisible by rememberSaveable(state.info.handle) { mutableStateOf(false) }
     var sourceSelectionVisible by rememberSaveable(
         state.info.applicationId,
@@ -473,6 +475,14 @@ fun ReleaseCard(
                     Text(stringResource(R.string.cancel))
                 }
             },
+        )
+    }
+
+    if (whatIsNewVisible) {
+        WhatIsNewDialog(
+            state = state.whatIsNew ?: WhatIsNewState(),
+            onDismiss = { whatIsNewVisible = false },
+            onRetry = onLoadWhatIsNew,
         )
     }
 
@@ -888,7 +898,7 @@ fun ReleaseCard(
                     )
                 }
 
-                if (state.info.releaseBody != null) {
+                if (!state.info.releaseBody.isNullOrBlank()) {
                     TextButton(
                         onClick = { notesExpanded = !notesExpanded },
                         contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
@@ -910,12 +920,9 @@ fun ReleaseCard(
                         )
                     }
                     AnimatedVisibility(visible = notesExpanded) {
-                        Text(
-                            text = state.info.releaseBody,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Catppuccin.Subtext,
+                        MarkdownReleaseNotes(
+                            raw = state.info.releaseBody,
                             maxLines = 12,
-                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(Catppuccin.Crust.copy(alpha = 0.58f), RoundedCornerShape(14.dp))
@@ -926,6 +933,26 @@ fun ReleaseCard(
                                 )
                                 .padding(12.dp),
                         )
+                    }
+                }
+
+                if (
+                    state.installedVersion != null &&
+                        state.status in setOf(
+                            CardStatus.ReleaseAvailable,
+                            CardStatus.UpdateAvailable,
+                            CardStatus.ReinstallAvailable,
+                            CardStatus.DowngradeAvailable,
+                        )
+                ) {
+                    TextButton(
+                        onClick = {
+                            whatIsNewVisible = true
+                            onLoadWhatIsNew()
+                        },
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                    ) {
+                        Text(stringResource(R.string.what_is_new_since_install))
                     }
                 }
 
@@ -1038,6 +1065,72 @@ fun ReleaseCard(
             }
         }
     }
+}
+
+@Composable
+private fun WhatIsNewDialog(
+    state: WhatIsNewState,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.what_is_new_title)) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.what_is_new_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.Subtext,
+                )
+                if (state.loading && state.notes.isEmpty()) {
+                    Text(stringResource(R.string.what_is_new_loading))
+                }
+                state.error?.let { error ->
+                    Text(
+                        text = stringResource(R.string.what_is_new_error, error),
+                        color = Catppuccin.Red,
+                    )
+                    if (!state.loading) {
+                        OutlinedButton(onClick = onRetry) {
+                            Text(stringResource(R.string.release_history_retry))
+                        }
+                    }
+                }
+                if (!state.loading && state.error == null && state.notes.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.what_is_new_empty),
+                        color = Catppuccin.Subtext,
+                    )
+                }
+                state.notes.forEach { note ->
+                    Text(
+                        text = note.label
+                            ?: note.versionName
+                            ?: note.versionCode?.toString()
+                            ?: stringResource(R.string.unknown),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Catppuccin.Sapphire,
+                    )
+                    MarkdownReleaseNotes(raw = note.body)
+                }
+                if (state.loading && state.notes.isNotEmpty()) {
+                    Text(
+                        text = stringResource(R.string.what_is_new_loading),
+                        color = Catppuccin.Subtext,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.done)) }
+        },
+    )
 }
 
 @Composable

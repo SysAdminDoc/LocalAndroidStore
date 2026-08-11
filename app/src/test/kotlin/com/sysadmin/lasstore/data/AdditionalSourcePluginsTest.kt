@@ -30,6 +30,7 @@ class AdditionalSourcePluginsTest {
                       "versions": {
                         "42": {
                           "manifest": {"versionName": "4.2", "versionCode": 42, "usesSdk": {"minSdkVersion": 26}},
+                          "whatsNew": {"en-US": "- Fix the sample flow"},
                           "file": {
                             "name": "repo/example.apk",
                             "size": 123,
@@ -48,6 +49,7 @@ class AdditionalSourcePluginsTest {
         assertEquals(setOf("Tracking", "Ads"), app.antiFeatures)
         assertEquals(setOf("Internet", "Connectivity"), app.categories)
         assertEquals("4.2", app.versions.single().versionName)
+        assertEquals("- Fix the sample flow", app.versions.single().whatsNew)
         assertEquals(26, app.versions.single().minSdk)
         assertEquals("https://example.invalid/repo/repo/example.apk", app.versions.single().downloadUrl)
     }
