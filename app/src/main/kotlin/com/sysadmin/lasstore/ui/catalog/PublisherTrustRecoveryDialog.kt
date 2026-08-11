@@ -1,7 +1,6 @@
 package com.sysadmin.lasstore.ui.catalog
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -40,6 +40,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -218,16 +220,19 @@ internal fun PublisherTrustRecoveryDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
-                                        independentlyVerified = !independentlyVerified
-                                    }
+                                    .toggleable(
+                                        value = independentlyVerified,
+                                        role = Role.Checkbox,
+                                        onValueChange = { independentlyVerified = it },
+                                    )
+                                    .semantics(mergeDescendants = true) {}
                                     .padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.Top,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 Checkbox(
                                     checked = independentlyVerified,
-                                    onCheckedChange = { independentlyVerified = it },
+                                    onCheckedChange = null,
                                 )
                                 Text(
                                     text = stringResource(R.string.independent_verification_ack),

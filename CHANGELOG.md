@@ -33,6 +33,7 @@
 - Added bounded, paged historical release browsing with explicit foreground selection; selected older releases retain available version/digest/signer evidence, use the normal inspection/trust/downgrade gates, are audit-recorded, and cannot enter the background queue.
 
 ### Fixed
+- Publisher-trust recovery now exposes one merged checkbox control for the independent-verification acknowledgement, preventing duplicate row and checkbox activation.
 - Catalog status, refresh, queued-update, and install transitions now expose deduplicated TalkBack live-region announcements; download percentages collapse to stable stages and publisher-signature blocks remain assertive.
 - Synchronized the v0.2.3 release identity across the README badge, build metadata, changelog, working notes, and the new `scripts/verify-version.ps1` consistency check.
 - Instrumentation visual tests now write screenshots only to app-private test cache, clean them in teardown, and support an explicit CI artifact-directory argument without publishing images to the user's gallery.
