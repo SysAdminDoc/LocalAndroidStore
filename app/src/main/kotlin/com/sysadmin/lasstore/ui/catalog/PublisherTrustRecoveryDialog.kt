@@ -45,7 +45,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.ui.theme.Catppuccin
+import androidx.compose.ui.res.stringResource
 
 @Composable
 internal fun PublisherTrustRecoveryDialog(
@@ -114,15 +116,15 @@ internal fun PublisherTrustRecoveryDialog(
                         Column {
                             Text(
                                 text = if (stage == TRUST_DETAILS_STAGE) {
-                                    "Publisher trust details"
+                                    stringResource(R.string.publisher_trust_details)
                                 } else {
-                                    "Final trust replacement"
+                                    stringResource(R.string.final_trust_replacement)
                                 },
                                 style = MaterialTheme.typography.titleLarge,
                                 color = Catppuccin.TextStrong,
                             )
                             Text(
-                                text = "This does not install the APK.",
+                                text = stringResource(R.string.does_not_install_apk),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Catppuccin.Subtext,
                             )
@@ -145,33 +147,37 @@ internal fun PublisherTrustRecoveryDialog(
                     ) {
                         if (stage == TRUST_DETAILS_STAGE) {
                             Text(
-                                text = "The downloaded APK is cryptographically valid, but its current " +
-                                    "publisher key is unrelated to the stored pin. This can indicate a " +
-                                    "repository compromise, a substituted APK, or legitimate key loss.",
+                                text = stringResource(R.string.publisher_trust_explanation),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Catppuccin.Red,
                             )
-                            TrustValue("Source", details.source)
-                            TrustValue("Package", metadata.applicationId)
+                            TrustValue(stringResource(R.string.source), details.source)
+                            TrustValue(stringResource(R.string.package_label), metadata.applicationId)
                             TrustFingerprint(
-                                label = "Installed signer",
+                                label = stringResource(R.string.installed_signer),
                                 value = details.installedSignerSha256
-                                    ?: "Not installed or current signer unavailable",
+                                    ?: stringResource(R.string.installed_signer_unavailable),
                             )
-                            TrustFingerprint("Stored publisher pin", details.storedPinSha256)
-                            TrustFingerprint("Downloaded APK signer", metadata.signingSha256)
+                            TrustFingerprint(
+                                stringResource(R.string.stored_publisher_pin),
+                                details.storedPinSha256,
+                            )
+                            TrustFingerprint(
+                                stringResource(R.string.downloaded_apk_signer),
+                                metadata.signingSha256,
+                            )
                             TrustValue(
-                                "Verified signature schemes",
+                                stringResource(R.string.verified_signature_schemes),
                                 metadata.verifiedSignatureSchemes
                                     .map { it.name.lowercase().replace("31", "3.1") }
                                     .sorted()
                                     .joinToString()
-                                    .ifEmpty { "None" },
+                                    .ifEmpty { stringResource(R.string.trust_none) },
                             )
                             TrustValue(
-                                "Verified proof-of-rotation lineage",
+                                stringResource(R.string.verified_proof_lineage),
                                 if (metadata.lineageSha256.isEmpty()) {
-                                    "No lineage was reported."
+                                    stringResource(R.string.no_lineage_reported)
                                 } else {
                                     metadata.lineageSha256
                                         .mapIndexed { index, fingerprint ->
@@ -185,7 +191,7 @@ internal fun PublisherTrustRecoveryDialog(
                                 value = typedApplicationId,
                                 onValueChange = { typedApplicationId = it },
                                 modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Type the exact package id") },
+                                label = { Text(stringResource(R.string.exact_package_id)) },
                                 supportingText = {
                                     Text(metadata.applicationId)
                                 },
@@ -193,15 +199,21 @@ internal fun PublisherTrustRecoveryDialog(
                             )
                         } else {
                             Text(
-                                text = "This only changes LocalAndroidStore's trust record; it does " +
-                                    "not install the APK. Replacing this pin discards the existing publisher " +
-                                    "continuity for ${metadata.applicationId}. Android may still reject " +
-                                    "the update if the installed app uses the old key.",
+                                text = stringResource(
+                                    R.string.trust_replacement_warning,
+                                    metadata.applicationId,
+                                ),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Catppuccin.Red,
                             )
-                            TrustFingerprint("Pin being removed", details.storedPinSha256)
-                            TrustFingerprint("New trusted pin", metadata.signingSha256)
+                            TrustFingerprint(
+                                stringResource(R.string.pin_being_removed),
+                                details.storedPinSha256,
+                            )
+                            TrustFingerprint(
+                                stringResource(R.string.new_trusted_pin),
+                                metadata.signingSha256,
+                            )
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -217,8 +229,7 @@ internal fun PublisherTrustRecoveryDialog(
                                     onCheckedChange = { independentlyVerified = it },
                                 )
                                 Text(
-                                    text = "I independently verified this new publisher fingerprint " +
-                                        "outside LocalAndroidStore and accept the loss of continuity.",
+                                    text = stringResource(R.string.independent_verification_ack),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = Catppuccin.Text,
                                     modifier = Modifier.padding(top = 11.dp),
@@ -236,7 +247,7 @@ internal fun PublisherTrustRecoveryDialog(
                     ) {
                         if (stage == TRUST_DETAILS_STAGE) {
                             TextButton(onClick = onDismiss) {
-                                Text("Cancel")
+                                Text(stringResource(R.string.cancel))
                             }
                             Button(
                                 onClick = { stage = FINAL_ACKNOWLEDGEMENT_STAGE },
@@ -245,7 +256,7 @@ internal fun PublisherTrustRecoveryDialog(
                                     typedApplicationId,
                                 ),
                             ) {
-                                Text("Continue")
+                                Text(stringResource(R.string.continue_label))
                             }
                         } else {
                             OutlinedButton(
@@ -254,7 +265,7 @@ internal fun PublisherTrustRecoveryDialog(
                                     independentlyVerified = false
                                 },
                             ) {
-                                Text("Back")
+                                Text(stringResource(R.string.back))
                             }
                             Button(
                                 onClick = {
@@ -271,7 +282,7 @@ internal fun PublisherTrustRecoveryDialog(
                                 ),
                             ) {
                                 Text(
-                                    text = "Replace publisher pin",
+                                    text = stringResource(R.string.replace_publisher_pin),
                                     fontWeight = FontWeight.SemiBold,
                                 )
                             }

@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,28 +61,40 @@ import com.sysadmin.lasstore.data.LogLevel
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.SupportBundleExporter
 import com.sysadmin.lasstore.ui.theme.Catppuccin
-import java.text.SimpleDateFormat
+import java.text.DateFormat
 import java.util.Date
-import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.sysadmin.lasstore.R
 
 private enum class JournalCategory(
-    val label: String,
-    val description: String,
+    val labelRes: Int,
+    val descriptionRes: Int,
+    val emptyRes: Int,
+    val clearTitleRes: Int,
+    val clearBodyRes: Int,
 ) {
     Diagnostics(
-        label = "Diagnostics",
-        description = "Recent runtime, network, and workflow events.",
+        labelRes = R.string.journal_diagnostics,
+        descriptionRes = R.string.journal_diagnostics_description,
+        emptyRes = R.string.no_diagnostics_recorded,
+        clearTitleRes = R.string.clear_diagnostics,
+        clearBodyRes = R.string.clear_diagnostics_body,
     ),
     InstallAudit(
-        label = "Install audit",
-        description = "Durable install, uninstall, and trust decisions.",
+        labelRes = R.string.journal_install_audit,
+        descriptionRes = R.string.journal_install_audit_description,
+        emptyRes = R.string.no_install_decisions_recorded,
+        clearTitleRes = R.string.clear_install_audit,
+        clearBodyRes = R.string.clear_install_audit_body,
     ),
     CrashEvidence(
-        label = "Crash evidence",
-        description = "Durable handled and uncaught failure details.",
+        labelRes = R.string.journal_crash_evidence,
+        descriptionRes = R.string.journal_crash_evidence_description,
+        emptyRes = R.string.no_crash_evidence_recorded,
+        clearTitleRes = R.string.clear_crash_evidence,
+        clearBodyRes = R.string.clear_crash_evidence_body,
     ),
 }
 
@@ -96,6 +109,7 @@ fun LogScreen() {
     var showClearConfirmation by rememberSaveable { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var exportStatus by remember { mutableStateOf<String?>(null) }
+    var exportFailed by remember { mutableStateOf(false) }
     val entries = when (category) {
         JournalCategory.Diagnostics -> diagnostics
         JournalCategory.InstallAudit -> auditEntries.map(InstallAuditLog.Entry::asLogEntry)
@@ -106,7 +120,7 @@ fun LogScreen() {
         JournalCategory.InstallAudit to auditEntries.size,
         JournalCategory.CrashEvidence to crashEntries.size,
     )
-    val timeFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US) }
+    val timeFormat = remember { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT) }
     val warningCount = entries.count { it.level == LogLevel.Warn }
     val errorCount = entries.count { it.level == LogLevel.Error }
 
@@ -122,6 +136,7 @@ fun LogScreen() {
                 if (!exporting) {
                     exporting = true
                     exportStatus = null
+                    exportFailed = false
                     scope.launch {
                         runCatching {
                             withContext(Dispatchers.IO) {
@@ -129,14 +144,18 @@ fun LogScreen() {
                                 val bundle = exporter.create()
                                 Intent.createChooser(
                                     exporter.shareIntent(bundle),
-                                    "Share redacted support bundle",
+                                    context.getString(R.string.share_redacted_support_bundle),
                                 )
                             }
                         }.onSuccess { chooser ->
                             context.startActivity(chooser)
-                            exportStatus = "Redacted support bundle is ready to share."
+                            exportStatus = context.getString(R.string.support_bundle_ready)
                         }.onFailure {
-                            exportStatus = "Support export failed: ${it.message ?: "unknown error"}"
+                            exportFailed = true
+                            exportStatus = context.getString(
+                                R.string.support_export_failed,
+                                it.message ?: context.getString(R.string.unknown),
+                            )
                         }
                         exporting = false
                     }
@@ -151,11 +170,12 @@ fun LogScreen() {
             onSelected = {
                 category = it
                 exportStatus = null
+                exportFailed = false
             },
         )
 
         Text(
-            text = category.description,
+            text = stringResource(category.descriptionRes),
             style = MaterialTheme.typography.bodySmall,
             color = Catppuccin.Subtext,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
@@ -165,7 +185,7 @@ fun LogScreen() {
             Text(
                 text = status,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (status.startsWith("Support export failed")) {
+                color = if (exportFailed) {
                     Catppuccin.Red
                 } else {
                     Catppuccin.Green
@@ -207,11 +227,10 @@ fun LogScreen() {
     }
 
     if (showClearConfirmation) {
-        val copy = category.clearCopy()
         AlertDialog(
             onDismissRequest = { showClearConfirmation = false },
-            title = { Text(copy.first) },
-            text = { Text(copy.second) },
+            title = { Text(stringResource(category.clearTitleRes)) },
+            text = { Text(stringResource(category.clearBodyRes)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -226,12 +245,12 @@ fun LogScreen() {
                         showClearConfirmation = false
                     },
                 ) {
-                    Text(copy.first)
+                    Text(stringResource(category.clearTitleRes))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearConfirmation = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )
@@ -256,7 +275,7 @@ private fun ActivityHeader(
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             Text(
-                text = "DEVICE JOURNAL",
+                text = stringResource(R.string.device_journal),
                 style = MaterialTheme.typography.labelSmall,
                 color = Catppuccin.MauveStrong,
             )
@@ -273,12 +292,12 @@ private fun ActivityHeader(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Activity",
+                    text = stringResource(R.string.activity),
                     style = MaterialTheme.typography.headlineMedium,
                     color = Catppuccin.TextStrong,
                 )
                 Text(
-                    text = "Inspect local evidence or export a redacted support bundle.",
+                    text = stringResource(R.string.inspect_local_evidence),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Catppuccin.Subtext,
                 )
@@ -295,7 +314,7 @@ private fun ActivityHeader(
                 } else {
                     Icon(
                         imageVector = Icons.Default.Share,
-                        contentDescription = "Export redacted support bundle",
+                        contentDescription = stringResource(R.string.export_redacted_support_bundle),
                         tint = Catppuccin.Sapphire,
                     )
                 }
@@ -304,7 +323,7 @@ private fun ActivityHeader(
                 IconButton(onClick = onClear) {
                     Icon(
                         imageVector = Icons.Default.DeleteSweep,
-                        contentDescription = "Clear selected journal",
+                        contentDescription = stringResource(R.string.clear_selected_journal),
                         tint = Catppuccin.Subtext,
                     )
                 }
@@ -330,7 +349,15 @@ private fun JournalTabs(
             FilterChip(
                 selected = selected == category,
                 onClick = { onSelected(category) },
-                label = { Text("${category.label} ${counts[category] ?: 0}") },
+                label = {
+                    Text(
+                        stringResource(
+                            R.string.journal_tab,
+                            stringResource(category.labelRes),
+                            counts[category] ?: 0,
+                        ),
+                    )
+                },
             )
         }
     }
@@ -349,21 +376,21 @@ private fun ActivityMetrics(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ActivityMetric(
-            label = "Events",
+            label = stringResource(R.string.events),
             value = total,
             icon = Icons.AutoMirrored.Filled.ReceiptLong,
             accent = Catppuccin.Sapphire,
             modifier = Modifier.weight(1f),
         )
         ActivityMetric(
-            label = "Warnings",
+            label = stringResource(R.string.warnings),
             value = warningCount,
             icon = Icons.Default.Warning,
             accent = Catppuccin.Yellow,
             modifier = Modifier.weight(1f),
         )
         ActivityMetric(
-            label = "Errors",
+            label = stringResource(R.string.errors),
             value = errorCount,
             icon = Icons.Default.Error,
             accent = Catppuccin.Red,
@@ -440,16 +467,12 @@ private fun EmptyActivity(category: JournalCategory) {
                 )
             }
             Text(
-                text = when (category) {
-                    JournalCategory.Diagnostics -> "No diagnostics recorded"
-                    JournalCategory.InstallAudit -> "No install decisions recorded"
-                    JournalCategory.CrashEvidence -> "No crash evidence recorded"
-                },
+                text = stringResource(category.emptyRes),
                 style = MaterialTheme.typography.titleLarge,
                 color = Catppuccin.TextStrong,
             )
             Text(
-                text = category.description,
+                text = stringResource(category.descriptionRes),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Catppuccin.Subtext,
             )
@@ -472,6 +495,11 @@ private fun ActivityEntry(
         LogLevel.Info -> Icons.Default.CheckCircle
         LogLevel.Warn -> Icons.Default.Warning
         LogLevel.Error -> Icons.Default.Error
+    }
+    val levelLabel = when (entry.level) {
+        LogLevel.Info -> stringResource(R.string.log_level_info)
+        LogLevel.Warn -> stringResource(R.string.log_level_warn)
+        LogLevel.Error -> stringResource(R.string.log_level_error)
     }
 
     Surface(
@@ -510,7 +538,7 @@ private fun ActivityEntry(
                         color = accent.copy(alpha = 0.1f),
                     ) {
                         Text(
-                            text = entry.level.name.uppercase(),
+                            text = levelLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = accent,
                             modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
@@ -555,7 +583,15 @@ private fun ActivityEntry(
                             modifier = Modifier.size(17.dp),
                         )
                         Spacer(Modifier.width(5.dp))
-                        Text(if (expanded) "Collapse details" else "Show technical details")
+                        Text(
+                            stringResource(
+                                if (expanded) {
+                                    R.string.collapse_details
+                                } else {
+                                    R.string.show_technical_details
+                                },
+                            ),
+                        )
                     }
                 }
             }
@@ -591,18 +627,3 @@ private fun InstallAuditLog.Entry.asLogEntry(): LogEntry = LogEntry(
         }
     },
 )
-
-private fun JournalCategory.clearCopy(): Pair<String, String> = when (this) {
-    JournalCategory.Diagnostics ->
-        "Clear diagnostics" to
-            "Remove recent runtime diagnostics from memory and local diagnostic files. " +
-            "Install audit and crash evidence stay."
-    JournalCategory.InstallAudit ->
-        "Clear install audit" to
-            "Delete local install, uninstall, and publisher-trust decision history. " +
-            "Diagnostics and crash evidence stay."
-    JournalCategory.CrashEvidence ->
-        "Clear crash evidence" to
-            "Delete handled and uncaught failure evidence from local crash files. " +
-            "Diagnostics and install audit stay."
-}

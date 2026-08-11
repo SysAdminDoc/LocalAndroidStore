@@ -51,15 +51,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import android.os.Build
-import java.text.SimpleDateFormat
+import java.text.DateFormat
 import java.util.Date
-import java.util.Locale
 import com.sysadmin.lasstore.data.DEFAULT_GITHUB_TOPIC
 import com.sysadmin.lasstore.data.DEFAULT_GITHUB_USER
 import com.sysadmin.lasstore.data.GitHubSource
 import com.sysadmin.lasstore.data.normalizeSources
 import com.sysadmin.lasstore.data.validateSources
+import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 
 @Composable
@@ -110,12 +112,12 @@ fun SettingsScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "SOURCE REGISTRY",
+                    text = stringResource(R.string.source_registry),
                     style = MaterialTheme.typography.labelSmall,
                     color = Catppuccin.MauveStrong,
                 )
                 Text(
-                    text = "GitHub owners and organizations",
+                    text = stringResource(R.string.github_owners_organizations),
                     style = MaterialTheme.typography.bodySmall,
                     color = Catppuccin.Subtext,
                 )
@@ -167,7 +169,7 @@ fun SettingsScreen(
                 modifier = Modifier.size(19.dp),
             )
             Spacer(Modifier.width(8.dp))
-            Text("Add GitHub source")
+            Text(stringResource(R.string.add_github_source))
         }
 
         validationError?.let { error ->
@@ -198,7 +200,15 @@ fun SettingsScreen(
                 modifier = Modifier.size(19.dp),
             )
             Spacer(Modifier.width(8.dp))
-            Text(if (state.saving) "Saving source registry…" else "Save source registry")
+            Text(
+                stringResource(
+                    if (state.saving) {
+                        R.string.saving_source_registry
+                    } else {
+                        R.string.save_source_registry
+                    },
+                ),
+            )
         }
 
         if (state.savedAt > 0L) {
@@ -209,7 +219,11 @@ fun SettingsScreen(
                 border = BorderStroke(1.dp, Catppuccin.Mint.copy(alpha = 0.28f)),
             ) {
                 Text(
-                    text = "Registry saved · ${normalizedSources.size} source${if (normalizedSources.size == 1) "" else "s"} ready to sync.",
+                    text = pluralStringResource(
+                        R.plurals.registry_saved,
+                        normalizedSources.size,
+                        normalizedSources.size,
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = Catppuccin.Mint,
                     modifier = Modifier.padding(13.dp),
@@ -247,7 +261,7 @@ private fun SettingsHeader() {
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             Text(
-                text = "CONTROL CENTER",
+                text = stringResource(R.string.control_center),
                 style = MaterialTheme.typography.labelSmall,
                 color = Catppuccin.MauveStrong,
             )
@@ -259,12 +273,12 @@ private fun SettingsHeader() {
             )
         }
         Text(
-            text = "Sources & access",
+            text = stringResource(R.string.sources_access),
             style = MaterialTheme.typography.headlineMedium,
             color = Catppuccin.TextStrong,
         )
         Text(
-            text = "Choose which release shelves this device can see.",
+            text = stringResource(R.string.choose_release_shelves),
             style = MaterialTheme.typography.bodyMedium,
             color = Catppuccin.Subtext,
         )
@@ -274,11 +288,17 @@ private fun SettingsHeader() {
 @Composable
 private fun SecurityPosture(encryptedAtRest: Boolean) {
     val accent = if (encryptedAtRest) Catppuccin.Mint else Catppuccin.Red
-    val title = if (encryptedAtRest) "Secrets protected on device" else "Secure keystore unavailable"
+    val title = stringResource(
+        if (encryptedAtRest) {
+            R.string.secrets_protected
+        } else {
+            R.string.secure_keystore_unavailable
+        },
+    )
     val body = if (encryptedAtRest) {
-        "Personal access tokens and publisher pins are encrypted with Android Keystore."
+        stringResource(R.string.tokens_encrypted)
     } else {
-        "Tokens and publisher pins are using a plaintext fallback on this device."
+        stringResource(R.string.tokens_plaintext_fallback)
     }
 
     Surface(
@@ -334,13 +354,12 @@ private fun NotificationPosture(onOpenSettings: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             Text(
-                text = "Background update notifications",
+                text = stringResource(R.string.background_update_notifications),
                 style = MaterialTheme.typography.titleSmall,
                 color = Catppuccin.TextStrong,
             )
             Text(
-                text = "Android may hide queued-update progress or results if notifications are off. " +
-                    "Foreground installs are unaffected.",
+                text = stringResource(R.string.background_update_notifications_body),
                 style = MaterialTheme.typography.bodySmall,
                 color = Catppuccin.Subtext,
             )
@@ -351,7 +370,7 @@ private fun NotificationPosture(onOpenSettings: () -> Unit) {
                 contentPadding = PaddingValues(vertical = 11.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Catppuccin.MauveStrong),
             ) {
-                Text("Open Android notification settings")
+                Text(stringResource(R.string.open_android_notification_settings))
             }
         }
     }
@@ -367,6 +386,7 @@ private fun SourceEditor(
     connection: ConnectionCheckState?,
     onTestConnection: () -> Unit,
 ) {
+    val enableSourceDescription = stringResource(R.string.enable_github_source, index + 1)
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedTextColor = Catppuccin.TextStrong,
         unfocusedTextColor = Catppuccin.TextStrong,
@@ -412,12 +432,12 @@ private fun SourceEditor(
                 Spacer(Modifier.width(11.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Source ${(index + 1).toString().padStart(2, '0')}",
+                        text = stringResource(R.string.source_number, index + 1),
                         style = MaterialTheme.typography.titleMedium,
                         color = Catppuccin.TextStrong,
                     )
                     Text(
-                        text = source.user.ifBlank { "Not configured" },
+                        text = source.user.ifBlank { stringResource(R.string.not_configured) },
                         style = MaterialTheme.typography.bodySmall,
                         color = Catppuccin.Subtext,
                         maxLines = 1,
@@ -428,7 +448,7 @@ private fun SourceEditor(
                     checked = source.enabled,
                     onCheckedChange = { onChange(source.copy(enabled = it)) },
                     modifier = Modifier.semantics {
-                        contentDescription = "Enable GitHub source ${index + 1}"
+                        contentDescription = enableSourceDescription
                     },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Catppuccin.Crust,
@@ -442,7 +462,7 @@ private fun SourceEditor(
                     IconButton(onClick = onRemove) {
                         Icon(
                             imageVector = Icons.Default.DeleteOutline,
-                            contentDescription = "Remove source",
+                            contentDescription = stringResource(R.string.remove_source),
                             tint = Catppuccin.Red,
                         )
                     }
@@ -452,7 +472,7 @@ private fun SourceEditor(
             OutlinedTextField(
                 value = source.user,
                 onValueChange = { onChange(source.copy(user = it)) },
-                label = { Text("GitHub user or organization") },
+                label = { Text(stringResource(R.string.github_user_or_organization)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -462,7 +482,7 @@ private fun SourceEditor(
             OutlinedTextField(
                 value = source.pat,
                 onValueChange = { onChange(source.copy(pat = it)) },
-                label = { Text("Personal access token") },
+                label = { Text(stringResource(R.string.personal_access_token)) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Key,
@@ -474,8 +494,7 @@ private fun SourceEditor(
                 visualTransformation = PasswordVisualTransformation(),
                 supportingText = {
                     Text(
-                        "Optional · unlocks private repos and higher API limits. " +
-                            "Renaming carries this token; removing the source deletes its override on save.",
+                        stringResource(R.string.pat_supporting_text),
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -497,7 +516,15 @@ private fun SourceEditor(
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(if (connection?.running == true) "Testing connection…" else "Test connection")
+                Text(
+                    stringResource(
+                        if (connection?.running == true) {
+                            R.string.testing_connection
+                        } else {
+                            R.string.test_connection
+                        },
+                    ),
+                )
             }
 
             connection?.let { ConnectionFeedback(it) }
@@ -505,8 +532,8 @@ private fun SourceEditor(
             HorizontalDivider(color = Catppuccin.Stroke)
 
             SettingRow(
-                title = "Filter by topic",
-                subtitle = "Only show repos tagged with this source’s topic.",
+                title = stringResource(R.string.filter_by_topic_setting),
+                subtitle = stringResource(R.string.filter_by_topic_subtitle),
                 value = source.filterByTopic,
                 onChange = { onChange(source.copy(filterByTopic = it)) },
             )
@@ -514,7 +541,7 @@ private fun SourceEditor(
             OutlinedTextField(
                 value = source.topic,
                 onValueChange = { onChange(source.copy(topic = it)) },
-                label = { Text("Repository topic") },
+                label = { Text(stringResource(R.string.repository_topic)) },
                 singleLine = true,
                 enabled = source.filterByTopic,
                 modifier = Modifier.fillMaxWidth(),
@@ -523,8 +550,8 @@ private fun SourceEditor(
             )
 
             SettingRow(
-                title = "Show pre-releases",
-                subtitle = "Include releases marked as pre-release by GitHub.",
+                title = stringResource(R.string.show_prereleases_setting),
+                subtitle = stringResource(R.string.show_prereleases_subtitle),
                 value = source.showPrereleases,
                 onChange = { onChange(source.copy(showPrereleases = it)) },
             )
@@ -544,12 +571,19 @@ private fun ConnectionFeedback(state: ConnectionCheckState) {
     state.result?.let { result ->
         val access = when {
             result.authenticatedLogin == null ->
-                "Owner is reachable. No token supplied, so private access was not checked."
+                stringResource(R.string.owner_reachable_no_token)
             result.authenticatedOwnerAccess ->
-                "Authenticated as ${result.authenticatedLogin}; access to ${result.requestedOwner} confirmed."
+                stringResource(
+                    R.string.authenticated_owner_access,
+                    result.authenticatedLogin,
+                    result.requestedOwner,
+                )
             else ->
-                "Authenticated as ${result.authenticatedLogin}; no repositories for " +
-                    "${result.requestedOwner} were returned."
+                stringResource(
+                    R.string.authenticated_no_repositories,
+                    result.authenticatedLogin,
+                    result.requestedOwner,
+                )
         }
         Text(
             text = access,
@@ -560,9 +594,11 @@ private fun ConnectionFeedback(state: ConnectionCheckState) {
                 Catppuccin.Peach
             },
         )
-        val scopes = result.tokenScopes.takeIf { it.isNotEmpty() }?.joinToString().orEmpty()
+        val scopes = result.tokenScopes.takeIf { it.isNotEmpty() }?.joinToString()
+            .orEmpty()
+            .ifBlank { stringResource(R.string.scopes_not_exposed) }
         Text(
-            text = "Scopes: ${scopes.ifBlank { "not exposed by GitHub" }}",
+            text = stringResource(R.string.scopes, scopes),
             style = MaterialTheme.typography.bodySmall,
             color = Catppuccin.Subtext,
         )
@@ -571,10 +607,11 @@ private fun ConnectionFeedback(state: ConnectionCheckState) {
     val reset = state.result?.rateLimitResetEpochMillis ?: state.rateLimitResetEpochMillis
     if (remaining != null || reset != null) {
         val resetText = reset?.let {
-            SimpleDateFormat("MMM d, HH:mm z", Locale.US).format(Date(it))
-        } ?: "unknown"
+            DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))
+        } ?: stringResource(R.string.unknown)
+        val remainingText = remaining?.toString() ?: stringResource(R.string.unknown)
         Text(
-            text = "Rate budget: ${remaining ?: "unknown"} remaining · resets $resetText",
+            text = stringResource(R.string.rate_budget, remainingText, resetText),
             style = MaterialTheme.typography.bodySmall,
             color = Catppuccin.Subtext,
         )

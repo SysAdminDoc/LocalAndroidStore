@@ -52,6 +52,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +62,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 
@@ -199,6 +202,10 @@ private fun CatalogHero(
     refreshing: Boolean,
     onRefresh: () -> Unit,
 ) {
+    val brandLocal = stringResource(R.string.brand_local)
+    val brandAndroid = stringResource(R.string.brand_android)
+    val brandStore = stringResource(R.string.brand_store)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -210,7 +217,7 @@ private fun CatalogHero(
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             Text(
-                text = "PRIVATE RELEASES",
+                text = stringResource(R.string.private_releases),
                 style = MaterialTheme.typography.labelSmall,
                 color = Catppuccin.MauveStrong,
             )
@@ -229,16 +236,22 @@ private fun CatalogHero(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = buildAnnotatedString {
-                        withStyle(SpanStyle(color = Catppuccin.TextStrong)) { append("Local") }
-                        withStyle(SpanStyle(color = Catppuccin.MauveStrong)) { append("Android") }
-                        withStyle(SpanStyle(color = Catppuccin.TextStrong)) { append("Store") }
+                        withStyle(SpanStyle(color = Catppuccin.TextStrong)) {
+                            append(brandLocal)
+                        }
+                        withStyle(SpanStyle(color = Catppuccin.MauveStrong)) {
+                            append(brandAndroid)
+                        }
+                        withStyle(SpanStyle(color = Catppuccin.TextStrong)) {
+                            append(brandStore)
+                        }
                     },
                     style = MaterialTheme.typography.displaySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Clip,
                 )
                 Text(
-                    text = "Your apps. Your repos. One tap.",
+                    text = stringResource(R.string.catalog_tagline),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Catppuccin.Subtext,
                 )
@@ -264,7 +277,10 @@ private fun CatalogHero(
                         strokeWidth = 2.dp,
                     )
                 } else {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh catalog")
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = stringResource(R.string.refresh_catalog),
+                    )
                 }
             }
         }
@@ -286,21 +302,21 @@ private fun CatalogMetrics(
         MetricTile(
             icon = Icons.Default.Apps,
             value = appCount.toString(),
-            label = if (appCount == 1) "app" else "apps",
+            label = pluralStringResource(R.plurals.catalog_app_count, appCount),
             accent = Catppuccin.MauveStrong,
             modifier = Modifier.weight(1f),
         )
         MetricTile(
             icon = Icons.Default.SystemUpdateAlt,
             value = updateCount.toString(),
-            label = if (updateCount == 1) "update" else "updates",
+            label = pluralStringResource(R.plurals.catalog_update_count, updateCount),
             accent = Catppuccin.Sapphire,
             modifier = Modifier.weight(1f),
         )
         MetricTile(
             icon = Icons.Default.CloudDone,
             value = sourceCount.toString(),
-            label = if (sourceCount == 1) "source" else "sources",
+            label = pluralStringResource(R.plurals.catalog_source_count, sourceCount),
             accent = Catppuccin.Mint,
             modifier = Modifier.weight(1f),
         )
@@ -387,12 +403,12 @@ private fun PermissionStrip(onClick: () -> Unit) {
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Install permission required",
+                    text = stringResource(R.string.install_permission_required),
                     style = MaterialTheme.typography.titleSmall,
                     color = Catppuccin.TextStrong,
                 )
                 Text(
-                    text = "Android requires approval before this store can install APKs.",
+                    text = stringResource(R.string.install_permission_body),
                     style = MaterialTheme.typography.bodySmall,
                     color = Catppuccin.Subtext,
                     maxLines = 2,
@@ -405,7 +421,7 @@ private fun PermissionStrip(onClick: () -> Unit) {
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Catppuccin.MauveStrong),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             ) {
-                Text("Grant")
+                Text(stringResource(R.string.grant))
             }
         }
     }
@@ -439,7 +455,7 @@ private fun WarningStrip(
             IconButton(onClick = onDismiss) {
                 Icon(
                     Icons.Default.Close,
-                    contentDescription = "Dismiss message",
+                    contentDescription = stringResource(R.string.dismiss_message),
                     tint = Catppuccin.Red,
                 )
             }
@@ -465,7 +481,7 @@ private fun CatalogSearchSurface(
             onValueChange = onQueryChange,
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            placeholder = { Text("Search apps, repos, versions") },
+            placeholder = { Text(stringResource(R.string.search_apps_repos_versions)) },
             leadingIcon = {
                 Icon(
                     Icons.Default.Search,
@@ -476,7 +492,10 @@ private fun CatalogSearchSurface(
             trailingIcon = {
                 if (query.isNotBlank()) {
                     IconButton(onClick = { onQueryChange("") }) {
-                        Icon(Icons.Default.Close, contentDescription = "Clear search")
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = stringResource(R.string.clear_search),
+                        )
                     }
                 }
             },
@@ -499,7 +518,7 @@ private fun CatalogSearchSurface(
         )
         if (query.isNotBlank() && totalCount > 0) {
             Text(
-                text = "$visibleCount of $totalCount releases",
+                text = stringResource(R.string.catalog_release_count, visibleCount, totalCount),
                 style = MaterialTheme.typography.labelSmall,
                 color = Catppuccin.Subtext,
                 modifier = Modifier.padding(horizontal = 8.dp),
@@ -522,7 +541,7 @@ private fun CatalogLoading() {
         ) {
             CircularProgressIndicator(color = Catppuccin.MauveStrong, strokeWidth = 3.dp)
             Text(
-                text = "Checking private releases…",
+                text = stringResource(R.string.checking_private_releases),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Catppuccin.Subtext,
             )
@@ -568,16 +587,16 @@ private fun CatalogEmpty(
             }
             Text(
                 text = if (errorMessage == null) {
-                    "No releases on the shelf"
+                    stringResource(R.string.no_releases_on_shelf)
                 } else {
-                    "Catalog unavailable"
+                    stringResource(R.string.catalog_unavailable)
                 },
                 style = MaterialTheme.typography.titleLarge,
                 color = Catppuccin.TextStrong,
             )
             Text(
                 text = errorMessage
-                    ?: "Check your GitHub sources in Settings, then refresh the catalog.",
+                    ?: stringResource(R.string.catalog_default_empty_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Catppuccin.Subtext,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -595,7 +614,7 @@ private fun CatalogEmpty(
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("Refresh catalog")
+                Text(stringResource(R.string.refresh_catalog))
             }
         }
     }
@@ -653,19 +672,19 @@ private fun SearchEmpty(
                 modifier = Modifier.size(42.dp),
             )
             Text(
-                text = "Nothing matches “${query.trim()}”",
+                text = stringResource(R.string.nothing_matches_query, query.trim()),
                 style = MaterialTheme.typography.titleMedium,
                 color = Catppuccin.TextStrong,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
             Text(
-                text = "Try an app name, repository, version, or package ID.",
+                text = stringResource(R.string.search_empty_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Catppuccin.Subtext,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
             OutlinedButton(onClick = onClear) {
-                Text("Clear search")
+                Text(stringResource(R.string.clear_search))
             }
         }
     }

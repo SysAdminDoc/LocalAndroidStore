@@ -8,23 +8,25 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 
 @Composable
 fun StatusBadge(status: CardStatus, modifier: Modifier = Modifier) {
-    val (label, color) = when (status) {
-        CardStatus.NotInstalled -> "AVAILABLE" to Catppuccin.Sapphire
-        CardStatus.Installed -> "INSTALLED" to Catppuccin.Mint
-        CardStatus.ReleaseAvailable -> "NEW RELEASE" to Catppuccin.Sapphire
-        CardStatus.UpdateAvailable -> "UPDATE" to Catppuccin.Peach
-        CardStatus.ReinstallAvailable -> "REINSTALL" to Catppuccin.Sapphire
-        CardStatus.DowngradeAvailable -> "DOWNGRADE" to Catppuccin.Peach
-        CardStatus.Working -> "WORKING" to Catppuccin.MauveStrong
-        CardStatus.Error -> "ERROR" to Catppuccin.Red
-        CardStatus.SignatureMismatch -> "KEY MISMATCH" to Catppuccin.Red
-        CardStatus.PermissionReview -> "REVIEW" to Catppuccin.Peach
+    val (labelRes, color) = when (status) {
+        CardStatus.NotInstalled -> R.string.status_available to Catppuccin.Sapphire
+        CardStatus.Installed -> R.string.status_installed to Catppuccin.Mint
+        CardStatus.ReleaseAvailable -> R.string.status_new_release to Catppuccin.Sapphire
+        CardStatus.UpdateAvailable -> R.string.status_update to Catppuccin.Peach
+        CardStatus.ReinstallAvailable -> R.string.status_reinstall to Catppuccin.Sapphire
+        CardStatus.DowngradeAvailable -> R.string.status_downgrade to Catppuccin.Peach
+        CardStatus.Working -> R.string.status_working to Catppuccin.MauveStrong
+        CardStatus.Error -> R.string.status_error to Catppuccin.Red
+        CardStatus.SignatureMismatch -> R.string.status_key_mismatch to Catppuccin.Red
+        CardStatus.PermissionReview -> R.string.status_review to Catppuccin.Peach
     }
 
     Surface(
@@ -34,7 +36,7 @@ fun StatusBadge(status: CardStatus, modifier: Modifier = Modifier) {
         border = BorderStroke(1.dp, color.copy(alpha = 0.48f)),
     ) {
         Text(
-            text = label,
+            text = stringResource(labelRes),
             style = MaterialTheme.typography.labelSmall,
             color = color,
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),

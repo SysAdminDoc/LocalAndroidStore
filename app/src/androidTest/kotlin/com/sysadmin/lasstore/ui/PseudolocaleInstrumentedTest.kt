@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.sysadmin.lasstore.R
 import java.util.Locale
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,5 +28,15 @@ class PseudolocaleInstrumentedTest {
 
         assertNotEquals(source, pseudo)
         assertTrue(pseudo.length > source.length)
+    }
+
+    @Test
+    fun catalogCopyUsesLocalizedQuantitiesAndFormatting() {
+        assertEquals("app", context.resources.getQuantityString(R.plurals.catalog_app_count, 1))
+        assertEquals("apps", context.resources.getQuantityString(R.plurals.catalog_app_count, 2))
+        assertEquals(
+            "1 of 3 releases",
+            context.getString(R.string.catalog_release_count, 1, 3),
+        )
     }
 }

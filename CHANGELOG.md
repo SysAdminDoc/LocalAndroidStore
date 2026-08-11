@@ -24,6 +24,7 @@
 - Separated anonymous and authenticated GitHub ETag caches, rejected legacy unscoped responses, and purged source HTTP/snapshot metadata across credential and source-setting transitions.
 - Added explicit APK variant selection when a release contains multiple same-rank standalone artifacts, with filename/ABI/size evidence and download/install guards until a choice is made.
 - Bound foreground install and save actions to generation-safe durable ownership, unique cache targets, and installer-result capabilities so stale callbacks cannot overwrite a replacement.
+- Externalized active Compose copy, accessibility labels, plural counts, APK size quantities, and locale-aware dates into Android resources for localization and pseudolocale coverage.
 
 ### Fixed
 - Restored GitHub API and release-download connectivity by removing the stale static root-CA pinset and relying on Android's maintained system trust store. Cleartext traffic remains disabled, and a regression test prevents static pins from returning.

@@ -25,12 +25,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.ui.catalog.CatalogExperience
 import com.sysadmin.lasstore.ui.log.LogScreen
 import com.sysadmin.lasstore.ui.settings.SettingsScreen
@@ -131,7 +133,7 @@ private fun StoreDock(
                     onClick = onCatalog,
                     modifier = Modifier.weight(1f),
                     icon = { Icon(Icons.Default.Apps, contentDescription = null) },
-                    label = { Text("Catalog") },
+                    label = { Text(stringResource(R.string.catalog)) },
                     colors = itemColors,
                 )
                 NavigationBarItem(
@@ -139,7 +141,7 @@ private fun StoreDock(
                     onClick = onSettings,
                     modifier = Modifier.weight(1f),
                     icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { Text("Settings") },
+                    label = { Text(stringResource(R.string.settings)) },
                     colors = itemColors,
                 )
                 NavigationBarItem(
@@ -147,7 +149,7 @@ private fun StoreDock(
                     onClick = onActivity,
                     modifier = Modifier.weight(1f),
                     icon = { Icon(Icons.Default.History, contentDescription = null) },
-                    label = { Text("Activity") },
+                    label = { Text(stringResource(R.string.activity)) },
                     colors = itemColors,
                 )
             }

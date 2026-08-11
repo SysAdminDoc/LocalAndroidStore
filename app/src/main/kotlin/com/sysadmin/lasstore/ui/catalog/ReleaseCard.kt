@@ -62,9 +62,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.normalizeSha256Digest
 import com.sysadmin.lasstore.domain.CardStatus
@@ -113,12 +115,11 @@ fun ReleaseCard(
     if (assetSelectionVisible) {
         AlertDialog(
             onDismissRequest = { assetSelectionVisible = false },
-            title = { Text("Choose APK variant") },
+            title = { Text(stringResource(R.string.choose_apk_variant)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text(
-                        text = "Several standalone APKs match this release. Choose the file " +
-                            "for your device before downloading.",
+                        text = stringResource(R.string.choose_apk_variant_body),
                         color = Catppuccin.Subtext,
                     )
                     state.info.assetChoices.forEach { candidate ->
@@ -141,8 +142,11 @@ fun ReleaseCard(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
-                                    text = "${ApkAssetClassifier.variantLabel(candidate.name)} · " +
+                                    text = stringResource(
+                                        R.string.apk_variant_details,
+                                        ApkAssetClassifier.variantLabel(candidate.name),
                                         formatAssetSize(candidate.size),
+                                    ),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = Catppuccin.Subtext,
                                 )
@@ -153,7 +157,7 @@ fun ReleaseCard(
             },
             confirmButton = {
                 TextButton(onClick = { assetSelectionVisible = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )
@@ -265,7 +269,8 @@ fun ReleaseCard(
                 }
 
                 Text(
-                    text = state.info.description ?: "No release description provided.",
+                    text = state.info.description
+                        ?: stringResource(R.string.no_release_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = Catppuccin.Subtext,
                     maxLines = 3,
@@ -274,7 +279,7 @@ fun ReleaseCard(
 
                 if (state.info.assetChoices.size > 1) {
                     Text(
-                        text = "Multiple compatible APKs require a choice before download.",
+                        text = stringResource(R.string.multiple_apks_choice),
                         style = MaterialTheme.typography.bodySmall,
                         color = Catppuccin.Peach,
                     )
@@ -282,8 +287,7 @@ fun ReleaseCard(
 
                 if (normalizeSha256Digest(state.info.asset.digest) == null) {
                     Text(
-                        text = "Integrity unavailable · GitHub did not publish a SHA-256 digest; " +
-                            "background updates are disabled.",
+                        text = stringResource(R.string.integrity_unavailable),
                         style = MaterialTheme.typography.bodySmall,
                         color = Catppuccin.Peach,
                     )
@@ -295,8 +299,11 @@ fun ReleaseCard(
                     state.installedVersion != state.info.versionName
                 ) {
                     Text(
-                        text = "Installed ${state.installedVersion}  →  Release " +
-                            "${state.info.versionName ?: state.info.tagName}",
+                        text = stringResource(
+                            R.string.installed_release_versions,
+                            state.installedVersion,
+                            state.info.versionName ?: state.info.tagName,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = Catppuccin.Sapphire,
                     )
@@ -305,8 +312,11 @@ fun ReleaseCard(
                     state.status == CardStatus.ReleaseAvailable
                 ) {
                     Text(
-                        text = "Installed ${state.installedVersion}  •  " +
-                            "Tag ${state.info.tagName} not inspected",
+                        text = stringResource(
+                            R.string.installed_tag_not_inspected,
+                            state.installedVersion,
+                            state.info.tagName,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = Catppuccin.Subtext,
                     )
@@ -361,7 +371,15 @@ fun ReleaseCard(
                             modifier = Modifier.size(17.dp),
                         )
                         Spacer(Modifier.width(5.dp))
-                        Text(if (notesExpanded) "Hide release notes" else "What’s new")
+                        Text(
+                            stringResource(
+                                if (notesExpanded) {
+                                    R.string.hide_release_notes
+                                } else {
+                                    R.string.whats_new
+                                },
+                            ),
+                        )
                     }
                     AnimatedVisibility(visible = notesExpanded) {
                         Text(
@@ -424,14 +442,14 @@ fun ReleaseCard(
                         }
                         if (isStale) {
                             Text(
-                                text = "No release in the past year",
+                                text = stringResource(R.string.no_release_past_year),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Catppuccin.Peach,
                                 maxLines = 1,
                             )
                         } else if (state.isIgnored) {
                             Text(
-                                text = "Update alerts muted",
+                                text = stringResource(R.string.update_alerts_muted),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Catppuccin.Overlay,
                                 maxLines = 1,
@@ -530,7 +548,7 @@ private fun PrimaryReleaseAction(
 
     if (assetSelectionRequired) {
         AccentButton(
-            text = "Choose APK",
+            text = stringResource(R.string.choose_apk),
             icon = Icons.Default.Warning,
             accent = Catppuccin.Peach,
             onClick = onChooseAsset,
@@ -542,7 +560,7 @@ private fun PrimaryReleaseAction(
     when (status) {
         CardStatus.NotInstalled -> {
             AccentButton(
-                text = "Install",
+                text = stringResource(R.string.install),
                 icon = Icons.Default.Download,
                 accent = Catppuccin.MauveStrong,
                 onClick = onInstall,
@@ -551,7 +569,7 @@ private fun PrimaryReleaseAction(
         }
         CardStatus.ReleaseAvailable -> {
             AccentButton(
-                text = "Check release",
+                text = stringResource(R.string.check_release),
                 icon = Icons.Default.Refresh,
                 accent = Catppuccin.Sapphire,
                 onClick = onUpdate,
@@ -560,7 +578,7 @@ private fun PrimaryReleaseAction(
         }
         CardStatus.UpdateAvailable -> {
             AccentButton(
-                text = "Update",
+                text = stringResource(R.string.update),
                 icon = Icons.Default.SystemUpdateAlt,
                 accent = Catppuccin.MauveStrong,
                 onClick = onUpdate,
@@ -569,7 +587,7 @@ private fun PrimaryReleaseAction(
         }
         CardStatus.ReinstallAvailable -> {
             AccentButton(
-                text = "Reinstall",
+                text = stringResource(R.string.reinstall),
                 icon = Icons.Default.Download,
                 accent = Catppuccin.Sapphire,
                 onClick = onUpdate,
@@ -578,7 +596,7 @@ private fun PrimaryReleaseAction(
         }
         CardStatus.DowngradeAvailable -> {
             AccentButton(
-                text = "Downgrade",
+                text = stringResource(R.string.downgrade),
                 icon = Icons.Default.Warning,
                 accent = Catppuccin.Peach,
                 onClick = onUpdate,
@@ -587,7 +605,7 @@ private fun PrimaryReleaseAction(
         }
         CardStatus.Installed -> {
             AccentButton(
-                text = "Open",
+                text = stringResource(R.string.open),
                 icon = Icons.AutoMirrored.Filled.OpenInNew,
                 accent = Catppuccin.Mint,
                 onClick = onOpen,
@@ -607,12 +625,12 @@ private fun PrimaryReleaseAction(
                     modifier = Modifier.size(17.dp),
                 )
                 Spacer(Modifier.width(7.dp))
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         }
         CardStatus.Error -> {
             AccentButton(
-                text = "Retry",
+                text = stringResource(R.string.retry),
                 icon = Icons.Default.Refresh,
                 accent = Catppuccin.MauveStrong,
                 onClick = onInstall,
@@ -622,7 +640,7 @@ private fun PrimaryReleaseAction(
         CardStatus.SignatureMismatch -> {
             if (onReviewTrust != null) {
                 AccentButton(
-                    text = "Review trust",
+                    text = stringResource(R.string.review_trust),
                     icon = Icons.Default.Lock,
                     accent = Catppuccin.Red,
                     onClick = onReviewTrust,
@@ -644,13 +662,13 @@ private fun PrimaryReleaseAction(
                         modifier = Modifier.size(17.dp),
                     )
                     Spacer(Modifier.width(7.dp))
-                    Text("Blocked")
+                    Text(stringResource(R.string.blocked))
                 }
             }
         }
         CardStatus.PermissionReview -> {
             AccentButton(
-                text = "Install",
+                text = stringResource(R.string.install),
                 icon = Icons.Default.Security,
                 accent = Catppuccin.Peach,
                 onClick = onProceedPermissions,
@@ -660,10 +678,14 @@ private fun PrimaryReleaseAction(
     }
 }
 
+@Composable
 private fun formatAssetSize(bytes: Long): String = when {
-    bytes >= 1024L * 1024L -> "%.1f MiB".format(java.util.Locale.US, bytes / (1024f * 1024f))
-    bytes >= 1024L -> "%.1f KiB".format(java.util.Locale.US, bytes / 1024f)
-    else -> "$bytes bytes"
+    bytes >= 1024L * 1024L -> stringResource(
+        R.string.asset_size_mib,
+        bytes / (1024f * 1024f),
+    )
+    bytes >= 1024L -> stringResource(R.string.asset_size_kib, bytes / 1024f)
+    else -> stringResource(R.string.asset_size_bytes, bytes)
 }
 
 @Composable
@@ -710,7 +732,10 @@ private fun ReleaseOverflowMenu(
         IconButton(onClick = { expanded = true }) {
             Icon(
                 imageVector = Icons.Default.MoreVert,
-                contentDescription = "More actions for ${state.info.displayName}",
+                contentDescription = stringResource(
+                    R.string.more_actions_for,
+                    state.info.displayName,
+                ),
                 tint = Catppuccin.Subtext,
             )
         }
@@ -722,7 +747,7 @@ private fun ReleaseOverflowMenu(
         ) {
             if (state.status.hasInstalledApp()) {
                 ReleaseMenuItem(
-                    text = "Open app",
+                    text = stringResource(R.string.open_app),
                     icon = Icons.Default.PlayArrow,
                     onClick = {
                         expanded = false
@@ -734,7 +759,7 @@ private fun ReleaseOverflowMenu(
                 state.queuedUpdateStatus?.isPending != true
             ) {
                 ReleaseMenuItem(
-                    text = "Queue update",
+                    text = stringResource(R.string.queue_update),
                     icon = Icons.Default.Schedule,
                     onClick = {
                         expanded = false
@@ -744,7 +769,7 @@ private fun ReleaseOverflowMenu(
             }
             if (state.queuedUpdateStatus?.isPending == true) {
                 ReleaseMenuItem(
-                    text = "Cancel queued update",
+                    text = stringResource(R.string.cancel_queued_update),
                     icon = Icons.Default.Close,
                     onClick = {
                         expanded = false
@@ -755,7 +780,13 @@ private fun ReleaseOverflowMenu(
             }
             if (state.status.hasInstalledApp()) {
                 ReleaseMenuItem(
-                    text = if (state.isIgnored) "Unmute update alerts" else "Mute this update",
+                    text = stringResource(
+                        if (state.isIgnored) {
+                            R.string.unmute_update_alerts
+                        } else {
+                            R.string.mute_update
+                        },
+                    ),
                     icon = if (state.isIgnored) {
                         Icons.Default.NotificationsActive
                     } else {
@@ -769,7 +800,7 @@ private fun ReleaseOverflowMenu(
             }
             if (state.status == CardStatus.PermissionReview) {
                 ReleaseMenuItem(
-                    text = "Cancel permission review",
+                    text = stringResource(R.string.cancel_permission_review),
                     icon = Icons.Default.Close,
                     onClick = {
                         expanded = false
@@ -779,7 +810,7 @@ private fun ReleaseOverflowMenu(
             }
             if (state.status != CardStatus.Working) {
                 ReleaseMenuItem(
-                    text = "Save APK",
+                    text = stringResource(R.string.save_apk),
                     icon = Icons.Default.SaveAlt,
                     onClick = {
                         expanded = false
@@ -788,7 +819,7 @@ private fun ReleaseOverflowMenu(
                 )
             }
             ReleaseMenuItem(
-                text = "Open repository",
+                text = stringResource(R.string.open_repository),
                 icon = Icons.Default.Code,
                 onClick = {
                     expanded = false
@@ -797,7 +828,7 @@ private fun ReleaseOverflowMenu(
             )
             if (state.status.hasInstalledApp()) {
                 ReleaseMenuItem(
-                    text = "App details & uninstall",
+                    text = stringResource(R.string.app_details_uninstall),
                     icon = Icons.Default.Info,
                     onClick = {
                         expanded = false
@@ -871,14 +902,17 @@ private fun PermissionReview(
                     modifier = Modifier.size(18.dp),
                 )
                 Text(
-                    text = "New dangerous permissions",
+                    text = stringResource(R.string.new_dangerous_permissions),
                     style = MaterialTheme.typography.titleSmall,
                     color = Catppuccin.Peach,
                 )
             }
             permissions.forEach { permission ->
                 Text(
-                    text = "• ${permission.removePrefix("android.permission.")}",
+                    text = stringResource(
+                        R.string.permission_item,
+                        permission.removePrefix("android.permission."),
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = Catppuccin.Subtext,
                 )
@@ -887,7 +921,7 @@ private fun PermissionReview(
                 onClick = onCancel,
                 contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
             ) {
-                Text("Cancel review", color = Catppuccin.Red)
+                Text(stringResource(R.string.cancel_review), color = Catppuccin.Red)
             }
         }
     }
@@ -934,7 +968,7 @@ private fun VerificationNotice(
                     onClick = { uriHandler.openUri(guidanceUrl) },
                     contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
                 ) {
-                    Text("Official Android guidance")
+                    Text(stringResource(R.string.official_android_guidance))
                 }
             }
         }
