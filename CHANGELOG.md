@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added a stable four-callback `SourcePlugin` contract, duplicate-safe plugin registry, and a GitHub releases adapter over the existing bounded gateway with source-local identities and digest-aware verification results.
 - Added a four-request release-lookup budget, ETag/304 response reuse, bounded jittered transient retries, typed per-source failures, partial-source preservation, and dated offline catalog snapshots.
 - Added gentle queued updates with Android 14+ user-initiated jobs, WorkManager fallback, `InstallConstraints`, three-attempt retry caps, durable terminal reasons, and cancellation from the release card.
 - Added source-scoped installed-app records with package, manifest version, signer, and GitHub asset identity. Tag-only changes now require APK inspection; higher version codes become updates, equal codes become explicit reinstalls, and lower codes become explicit downgrades.
