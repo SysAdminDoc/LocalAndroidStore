@@ -101,6 +101,9 @@
     <string name="cancel_permission_review">Cancel permission review</string>
     <string name="save_apk">Save APK</string>
     <string name="open_repository">Open repository</string>
+    <string name="choose_preferred_source">Choose preferred source</string>
+    <string name="preferred_source_title">Preferred source</string>
+    <string name="preferred_source_body">This package is available from multiple configured sources. Choose which source should supply its active release.</string>
     <string name="app_details_uninstall">App details &amp; uninstall</string>
     <string name="new_dangerous_permissions">New dangerous permissions</string>
     <string name="permission_item">• %1$s</string>

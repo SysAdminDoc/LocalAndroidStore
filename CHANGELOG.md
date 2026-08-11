@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added package-identity aggregation across configured sources with a persisted preferred-source chooser for duplicate releases.
 - Added persisted F-Droid repository settings with HTTPS-plus-fingerprint validation, signed `entry.jar` verification, catalog consumption, and anti-feature filter chips.
 - Added GitLab, F-Droid index-v2, and IzzyOnDroid source-plugin adapters with HTTPS-only asset resolution, repository fingerprint TOFU validation, anti-feature parsing, and signed `entry.jar` verification.
 - Added a stable four-callback `SourcePlugin` contract, duplicate-safe plugin registry, and a GitHub releases adapter over the existing bounded gateway with source-local identities and digest-aware verification results.

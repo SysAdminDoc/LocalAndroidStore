@@ -34,6 +34,7 @@ That's what this is.
 
 - **Multi-source GitHub discovery** — every enabled GitHub user / org source with a `.apk` asset on its latest release. Each source has its own enable toggle, optional topic filter, pre-release toggle, and optional PAT.
 - **Pinned F-Droid repositories** — add any HTTPS F-Droid index-v2 endpoint by pasting its `?fingerprint=` URL. The repository fingerprint is checked before metadata is exposed, and signed `entry.jar` metadata is verified when the repository provides it. APK SHA-256 digests and F-Droid anti-features travel into the catalog.
+- **Multi-source package aggregation** — once an Android package identity is known, releases from multiple configured sources share one card. Open the card's source chooser to inspect every candidate and pin the preferred source for that package.
 - **Rate-aware offline catalog** — repository discovery continues through a bounded 50-page policy, release lookups are capped at four concurrent requests, GitHub ETags reuse unchanged responses, partial sources retain only current candidates whose release lookup failed transiently, and a dated on-device snapshot remains usable offline for up to seven days. Retained cards are marked stale; removed, archived, topic-excluded, missing-release, and non-transiently failed repositories are not resurrected. A source that exceeds the repository bound is marked truncated with fetched/omitted evidence instead of appearing complete; use a topic filter to narrow it. TLS, token, authorization, rate-limit, network, server, malformed-response, truncation, and valid-empty outcomes are shown distinctly.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black. Repo handle, star count, version tag, status badge, two-line description.
 - **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
@@ -86,6 +87,10 @@ attested release artifacts; release signing is a deliberate local release-owner 
 7. Tap **Save settings**, hop back to **Catalog**, hit **Refresh**.
 
 Every qualifying repo appears as a card. Tap **Install** — the APK downloads, the system install dialog appears, you confirm. Tap **Open** to launch. Tap **Uninstall** to land on the system uninstall confirmation.
+
+When the same package is available from more than one source, open the card overflow menu and choose
+**Choose preferred source**. The preference is stored per package on this device; cards without a
+verified package identity remain source-specific until an APK has been inspected.
 
 To inspect or restore an older published version, open a card's overflow menu and choose **Release history**. Select a release to replace the card's current target; LocalAndroidStore records that foreground choice, then requires the same APK inspection, publisher-trust, permission, and explicit downgrade checks used by any other install. It never queues a historical selection automatically.
 

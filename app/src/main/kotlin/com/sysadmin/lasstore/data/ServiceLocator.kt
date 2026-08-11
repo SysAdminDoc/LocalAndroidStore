@@ -37,6 +37,8 @@ object ServiceLocator {
         private set
     lateinit var appIdCache: AppIdCache
         private set
+    lateinit var preferredSources: PreferredSourceStore
+        private set
     lateinit var ignoreList: IgnoreListStore
         private set
     lateinit var backgroundUpdates: BackgroundUpdateScheduler
@@ -88,6 +90,7 @@ object ServiceLocator {
             installer = PackageInstallerService(appContext, logger)
             audit = InstallAuditLog(appContext)
             appIdCache = AppIdCache(appContext)
+            preferredSources = PreferredSourceStore(appContext)
             ignoreList = IgnoreListStore(appContext)
             queuedUpdateStatus = QueuedUpdateStatusStore(appContext)
             backgroundUpdates = BackgroundUpdateScheduler(appContext, logger)

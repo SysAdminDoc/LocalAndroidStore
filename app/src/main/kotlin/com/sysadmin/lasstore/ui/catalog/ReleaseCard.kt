@@ -101,6 +101,7 @@ fun ReleaseCard(
     onBrowseHistory: () -> Unit = {},
     onLoadMoreHistory: () -> Unit = {},
     onSelectHistoricalRelease: (HistoricalRelease) -> Unit = {},
+    onSelectPreferredSource: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isReleaseStale = remember(state.info.publishedAt) {
@@ -125,6 +126,10 @@ fun ReleaseCard(
         state.unmanagedInstall?.installedSignerSha256,
     ) { mutableStateOf(false) }
     var historyVisible by rememberSaveable(state.info.handle) { mutableStateOf(false) }
+    var sourceSelectionVisible by rememberSaveable(
+        state.info.applicationId,
+        state.alternativeSources.size,
+    ) { mutableStateOf(false) }
     val cardShape = RoundedCornerShape(24.dp)
 
     if (assetSelectionVisible) {
@@ -373,6 +378,60 @@ fun ReleaseCard(
         )
     }
 
+    if (sourceSelectionVisible && state.alternativeSources.isNotEmpty()) {
+        val sourceOptions = listOf(state.info) + state.alternativeSources
+        AlertDialog(
+            onDismissRequest = { sourceSelectionVisible = false },
+            title = { Text(stringResource(R.string.preferred_source_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = stringResource(R.string.preferred_source_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Subtext,
+                    )
+                    sourceOptions.forEach { candidate ->
+                        TextButton(
+                            onClick = {
+                                sourceSelectionVisible = false
+                                onSelectPreferredSource(candidate.sourceKey)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    text = sourceDisplayName(candidate),
+                                    color = Catppuccin.TextStrong,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = listOfNotNull(
+                                        candidate.versionName ?: candidate.tagName,
+                                        candidate.asset.name,
+                                    ).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Catppuccin.Subtext,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { sourceSelectionVisible = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = cardShape,
@@ -450,6 +509,7 @@ fun ReleaseCard(
                             historyVisible = true
                             onBrowseHistory()
                         },
+                        onChooseSource = { sourceSelectionVisible = true },
                     )
                 }
 
@@ -999,6 +1059,7 @@ private fun ReleaseOverflowMenu(
     onUninstall: () -> Unit,
     onManualInstall: () -> Unit,
     onBrowseHistory: () -> Unit,
+    onChooseSource: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -1104,6 +1165,16 @@ private fun ReleaseOverflowMenu(
                     },
                 )
             }
+            if (state.alternativeSources.isNotEmpty()) {
+                ReleaseMenuItem(
+                    text = stringResource(R.string.choose_preferred_source),
+                    icon = Icons.Default.Security,
+                    onClick = {
+                        expanded = false
+                        onChooseSource()
+                    },
+                )
+            }
             ReleaseMenuItem(
                 text = stringResource(R.string.release_history),
                 icon = Icons.Default.Schedule,
@@ -1143,6 +1214,9 @@ private fun CardStatus.hasInstalledApp(): Boolean = this in setOf(
     CardStatus.ReinstallAvailable,
     CardStatus.DowngradeAvailable,
 )
+
+private fun sourceDisplayName(info: com.sysadmin.lasstore.domain.AppInfo): String =
+    if (info.sourceLabel == info.owner) info.handle else "${info.sourceLabel} · ${info.handle}"
 
 private fun CardStatus.hasManagedInstall(): Boolean =
     hasInstalledApp() && this != CardStatus.Unmanaged

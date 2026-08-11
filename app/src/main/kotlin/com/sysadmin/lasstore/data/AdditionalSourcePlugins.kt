@@ -101,6 +101,7 @@ data class FdroidVersion(
     val fileName: String,
     val sizeBytes: Long,
     val sha256: String?,
+    val minSdk: Int? = null,
 )
 
 data class FdroidPackage(
@@ -177,6 +178,8 @@ object FdroidIndexV2Parser {
         val fileName = file.string("name")?.trim()?.takeIf { it.isNotBlank() } ?: return null
         val versionCode = manifest.long("versionCode") ?: versionKey.toLongOrNull() ?: return null
         val versionName = manifest.string("versionName") ?: value.string("versionName")
+        val minSdk = manifest["usesSdk"]?.jsonObject?.long("minSdkVersion")
+            ?: manifest.long("minSdkVersion")
         val downloadUrl = resolveAssetUrl(repositoryAddress, fileName)
         return FdroidVersion(
             versionCode = versionCode,
@@ -185,6 +188,7 @@ object FdroidIndexV2Parser {
             fileName = fileName,
             sizeBytes = file.long("size") ?: 0L,
             sha256 = file.string("sha256"),
+            minSdk = minSdk?.toInt(),
         )
     }
 
@@ -276,6 +280,7 @@ class FDroidIndexV2Plugin(
                     applicationId = applicationId,
                     versionName = version.versionName,
                     versionCode = version.versionCode,
+                    minSdk = version.minSdk,
                     body = null,
                     assets = listOf(
                         ReleaseAsset(

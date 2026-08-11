@@ -21,6 +21,7 @@ import com.sysadmin.lasstore.domain.AppInfo
 import com.sysadmin.lasstore.domain.ApkAssetSelection
 import com.sysadmin.lasstore.domain.ApkAssetClassifier
 import com.sysadmin.lasstore.domain.CardStatus
+import com.sysadmin.lasstore.domain.aggregateCatalogApps
 import com.sysadmin.lasstore.domain.CatalogDiscoveryResult
 import com.sysadmin.lasstore.domain.CatalogFailureKind
 import com.sysadmin.lasstore.domain.CatalogSourceIssue
@@ -77,6 +78,7 @@ data class CardState(
     val unmanagedInstall: UnmanagedInstallDetails? = null,
     val releaseHistory: ReleaseHistoryState? = null,
     val historicalSelection: Boolean = false,
+    val alternativeSources: List<AppInfo> = emptyList(),
 )
 
 data class UnmanagedInstallDetails(
@@ -203,6 +205,7 @@ class CatalogViewModel : ViewModel() {
     @Volatile private var refreshJob: Job? = null
     @Volatile private var resumeReconcileJob: Job? = null
     @Volatile private var refreshGeneration = 0L
+    @Volatile private var sourceCandidatesByApplicationId: Map<String, List<AppInfo>> = emptyMap()
 
     /** APK + metadata held after inspection when waiting for permission review (Item 34). */
     private data class PendingInstallData(
@@ -410,7 +413,7 @@ class CatalogViewModel : ViewModel() {
                     )
                 }
                 ensureActive()
-                val infos = discoveryResult.apps
+                val infos = aggregateCatalogInfos(discoveryResult.apps)
                 sl.logger.info(
                     "Catalog",
                     "Discovered ${infos.size} APK-bearing repos across " +
@@ -550,8 +553,77 @@ class CatalogViewModel : ViewModel() {
                 }
             }
         }
-        return withForegroundInstallState(withQueuedUpdateStatus(baseState))
+        val alternatives = applicationId
+            ?.let { sourceCandidatesByApplicationId[it.lowercase(Locale.US)] }
+            .orEmpty()
+            .filterNot { candidate -> cardKey(candidate) == cardKey(info) }
+        return withForegroundInstallState(
+            withQueuedUpdateStatus(
+                baseState.copy(alternativeSources = alternatives),
+            ),
+        )
     }
+
+    private fun aggregateCatalogInfos(infos: List<AppInfo>): List<AppInfo> {
+        val hydrated = infos.map { info ->
+            if (info.applicationId != null) {
+                info
+            } else {
+                sl.appIdCache.get(info.sourceKey, info.owner, info.repo)
+                    ?.applicationId
+                    ?.let { info.copy(applicationId = it) }
+                    ?: info
+            }
+        }
+        val aggregated = aggregateCatalogApps(
+            infos = hydrated,
+            preferredSourceFor = sl.preferredSources::get,
+            candidateAllowed = { candidate ->
+                candidate.minSdk == null || candidate.minSdk <= Build.VERSION.SDK_INT
+            },
+        )
+        sourceCandidatesByApplicationId = aggregated
+            .filter { !it.primary.applicationId.isNullOrBlank() }
+            .associate { it.primary.applicationId!!.lowercase(Locale.US) to it.candidates }
+        return aggregated.map { it.primary }
+    }
+
+    fun selectPreferredSource(card: CardState, sourceKey: String) {
+        if (card.status == CardStatus.Working) {
+            _state.update { it.copy(warning = "Finish the current action before changing source preference.") }
+            return
+        }
+        val applicationId = card.info.applicationId
+            ?: sl.appIdCache.get(card.info.sourceKey, card.info.owner, card.info.repo)?.applicationId
+        if (applicationId.isNullOrBlank()) {
+            _state.update {
+                it.copy(warning = "Inspect this APK once before pinning a preferred source.")
+            }
+            return
+        }
+        val candidate = (listOf(card.info) + card.alternativeSources)
+            .firstOrNull { it.sourceKey == sourceKey }
+        if (candidate == null) {
+            _state.update { it.copy(warning = "That source is no longer available in the catalog.") }
+            return
+        }
+        sl.preferredSources.set(applicationId, candidate.sourceKey)
+        val cached = sl.appIdCache.get(candidate.sourceKey, candidate.owner, candidate.repo)
+        val freshState = buildCardState(candidate.copy(applicationId = applicationId), cached)
+        _state.update { current ->
+            current.copy(
+                cards = current.cards.map { existing ->
+                    if (sameApplication(existing.info, applicationId)) freshState else existing
+                },
+                warning = "Preferred source set to ${candidate.sourceLabel}.",
+            )
+        }
+    }
+
+    private fun sameApplication(info: AppInfo, applicationId: String): Boolean =
+        info.applicationId?.equals(applicationId, ignoreCase = true) == true ||
+            sourceCandidatesByApplicationId[applicationId.lowercase(Locale.US)]
+                ?.any { candidate -> cardKey(candidate) == cardKey(info) } == true
 
     private fun unmanagedCardState(
         info: AppInfo,

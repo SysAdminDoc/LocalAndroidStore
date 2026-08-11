@@ -31,6 +31,7 @@ data class Release(
     val publishedAt: String? = null,
     val prerelease: Boolean = false,
     val body: String? = null,
+    val minSdk: Int? = null,
     val assets: List<ReleaseAsset> = emptyList(),
 )
 

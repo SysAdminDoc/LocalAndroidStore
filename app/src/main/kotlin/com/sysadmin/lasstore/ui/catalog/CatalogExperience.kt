@@ -228,6 +228,9 @@ fun CatalogExperience(
                                 onSelectHistoricalRelease = { historical ->
                                     viewModel.selectHistoricalRelease(card, historical)
                                 },
+                                onSelectPreferredSource = { sourceKey ->
+                                    viewModel.selectPreferredSource(card, sourceKey)
+                                },
                             )
                         }
                     }
