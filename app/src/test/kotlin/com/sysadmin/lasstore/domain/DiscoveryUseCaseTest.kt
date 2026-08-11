@@ -427,6 +427,20 @@ class DiscoveryUseCaseTest {
     }
 
     @Test
+    fun assetClassifierIgnoresConfigMetadataBesideBaseApk() {
+        assertEquals(
+            "base.apk",
+            ApkAssetClassifier.select(
+                assets = listOf(
+                    asset("base.apk", size = 100),
+                    asset("config.json", size = 10),
+                ),
+                supportedAbis = listOf("arm64-v8a"),
+            )?.name,
+        )
+    }
+
+    @Test
     fun assetClassifierKeepsSingleUnlabeledApkConvention() {
         assertEquals(
             "app-release.apk",

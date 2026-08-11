@@ -33,6 +33,7 @@
 - Added bounded, paged historical release browsing with explicit foreground selection; selected older releases retain available version/digest/signer evidence, use the normal inspection/trust/downgrade gates, are audit-recorded, and cannot enter the background queue.
 
 ### Fixed
+- Restricted split-config detection to strict APK asset names, so metadata such as `config.json` no longer hides an installable `base.apk` while real split APK sets remain blocked.
 - Restored GitHub API and release-download connectivity by removing the stale static root-CA pinset and relying on Android's maintained system trust store. Cleartext traffic remains disabled, and a regression test prevents static pins from returning.
 - Corrected Developer Verification guidance: package presence, registration (`Unknown`), and rollout applicability are now separate facts, and the app no longer claims its independent sideload route is covered by the initial 2026-09-30 participating-store enforcement.
 - Routed every mutable `PackageInstaller` result through an explicit non-exported receiver with a persisted random session capability, package/session validation, and single-use terminal delivery.

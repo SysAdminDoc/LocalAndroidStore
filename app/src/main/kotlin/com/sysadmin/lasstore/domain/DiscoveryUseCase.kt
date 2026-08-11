@@ -356,13 +356,13 @@ internal object ApkAssetClassifier {
         assets: List<GhAsset>,
         supportedAbis: List<String>,
     ): ApkAssetSelection {
-        val splitSetPresent = assets.any { isSplitConfig(it.name) }
-        val apks = assets.filter { asset ->
+        val apkAssets = assets.filter { asset ->
             val name = asset.name.lowercase(Locale.US)
             name.endsWith(".apk") &&
-                !name.endsWith(".apk.idsig") &&
-                !isSplitConfig(name)
+                !name.endsWith(".apk.idsig")
         }
+        val splitSetPresent = apkAssets.any { isSplitConfig(it.name) }
+        val apks = apkAssets.filterNot { isSplitConfig(it.name) }
         if (apks.isEmpty()) return ApkAssetSelection.Unavailable
         if (splitSetPresent && apks.any { it.name.equals("base.apk", ignoreCase = true) }) {
             return ApkAssetSelection.Unavailable
@@ -413,7 +413,7 @@ internal object ApkAssetClassifier {
         UNIVERSAL.containsMatchIn(name.lowercase(Locale.US))
 
     private fun isSplitConfig(name: String): Boolean =
-        SPLIT_CONFIG.containsMatchIn(name.lowercase(Locale.US))
+        SPLIT_CONFIG.matches(name.lowercase(Locale.US))
 
     private fun normalizeAbi(abi: String): String? = when (abi.lowercase(Locale.US)) {
         "arm64-v8a", "arm64_v8a", "aarch64" -> "arm64-v8a"
@@ -428,7 +428,7 @@ internal object ApkAssetClassifier {
     private val X86_64 = Regex("(^|[^a-z0-9])(?:x86[-_]?64|amd64)([^a-z0-9]|$)")
     private val X86 = Regex("(^|[^a-z0-9])(?:x86|i686)([^a-z0-9]|$)")
     private val UNIVERSAL = Regex("(^|[^a-z0-9])(?:universal|noarch|all)([^a-z0-9]|$)")
-    private val SPLIT_CONFIG = Regex("(^|[._-])(?:split[._-])?config[._-]")
+    private val SPLIT_CONFIG = Regex("^split_config\\.[a-z0-9]+(?:[._-][a-z0-9]+)*\\.apk$")
 }
 
 internal sealed interface ApkAssetSelection {
