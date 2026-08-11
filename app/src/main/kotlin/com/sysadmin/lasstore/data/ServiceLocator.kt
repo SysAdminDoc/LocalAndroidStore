@@ -40,6 +40,8 @@ object ServiceLocator {
         private set
     lateinit var appIdCache: AppIdCache
         private set
+    lateinit var apkLockfile: ApkLockfileStore
+        private set
     lateinit var preferredSources: PreferredSourceStore
         private set
     lateinit var ignoreList: IgnoreListStore
@@ -98,6 +100,7 @@ object ServiceLocator {
             installer = PackageInstallerService(appContext, logger)
             audit = InstallAuditLog(appContext)
             appIdCache = AppIdCache(appContext)
+            apkLockfile = ApkLockfileStore(appContext)
             preferredSources = PreferredSourceStore(appContext)
             ignoreList = IgnoreListStore(appContext)
             channelPreferences = ChannelPreferenceStore(appContext)

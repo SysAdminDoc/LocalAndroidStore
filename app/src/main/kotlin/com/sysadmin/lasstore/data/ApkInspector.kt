@@ -36,6 +36,8 @@ data class ApkMetadata(
      * legacy persisted metadata and is deliberately ineligible for first-pin enrollment.
      */
     val verifiedSignatureSchemes: Set<ApkSignatureScheme> = emptySet(),
+    val apkSha256: String? = null,
+    val manifestSha256: String? = null,
 ) {
     val isEligibleForPinEnrollment: Boolean
         get() =
@@ -171,6 +173,7 @@ class ApkInspector(private val context: Context) {
         checkNotNull(parsed)
         val currentSigner = evidence.signerSha256.single()
         val lineage = evidence.lineageSha256.takeIf { it.size > 1 }.orEmpty()
+        val digests = runCatching { digestApkFile(apk) }.getOrNull()
         return ApkInspectionResult.Verified(
             ApkMetadata(
                 applicationId = parsed.applicationId,
@@ -181,6 +184,8 @@ class ApkInspector(private val context: Context) {
                 lineageSha256 = lineage,
                 requestedPermissions = parsed.requestedPermissions,
                 verifiedSignatureSchemes = evidence.schemes,
+                apkSha256 = digests?.apkSha256,
+                manifestSha256 = digests?.manifestSha256,
             ),
         )
     }

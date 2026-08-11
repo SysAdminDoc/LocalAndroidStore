@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added an atomic app-private `las.lock` capture on successful installs, recording APK/manifest hashes, version code, source URL, and signer certificate for each installed package.
 - Added optional HTTPS AltStore-compatible publisher feeds with bounded icon/header loading, source tint, featured-app labels, and safe news links; branding failures leave catalog discovery intact.
 - Added an opt-in Android 12+ Material You color mode. It uses the system dynamic light/dark scheme and maps custom catalog tokens to the same wallpaper-derived surfaces while leaving Catppuccin as the default.
 - Added persisted Catppuccin Mocha dark and Latte light themes, eight selectable primary accents, and per-source accent overrides for GitHub and F-Droid catalog cards.

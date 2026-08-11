@@ -48,6 +48,14 @@ internal object InstallTrustStateFinalizer {
                 )
             }
             sl.appIdCache.recordInstalled(info, metadata)
+            runCatching { sl.apkLockfile.recordInstalled(info, metadata) }
+                .onFailure { failure ->
+                    logger.warn(
+                        "Install",
+                        "Could not update APK lockfile for ${metadata.applicationId}: " +
+                            (failure.message ?: "write failed"),
+                    )
+                }
         }
         if (stateUpdate.isFailure) {
             logger.error(
