@@ -225,6 +225,9 @@ fun CatalogExperience(
                                 },
                                 onCancelPermissions = { viewModel.cancelPermissionReview(card) },
                                 onIgnore = { viewModel.toggleIgnore(card) },
+                                onSetUpdateCadence = { cadence ->
+                                    viewModel.setUpdateCadence(card, cadence)
+                                },
                                 onSaveApk = { viewModel.saveApk(card) },
                                 onReplacePublisherPin = { typedApplicationId, independentlyVerified ->
                                     viewModel.replacePublisherPin(

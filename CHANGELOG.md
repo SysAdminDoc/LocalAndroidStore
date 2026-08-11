@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- Added durable per-app update cadence controls: auto (daily-cap eligible), notify-only, pinned
+  priority (cap bypass), and dated holds. Settings now exposes the global daily automatic-update
+  cap, and failed automatic queue reservations are released safely.
 - Added a durable 24-hour WorkManager catalog check constrained to unmetered network, healthy
   battery, and available storage. It queues only changed, digest-published releases for managed
   installs through the existing APK/signature/version gates and notifies when updates are queued;

@@ -187,11 +187,33 @@
     <string name="background_update_notifications">Background update notifications</string>
     <string name="background_update_notifications_body">Android may hide queued-update progress or results if notifications are off. Foreground installs are unaffected.</string>
     <string name="open_android_notification_settings">Open Android notification settings</string>
+    <string name="background_update_policy_title">Background update policy</string>
+    <string name="background_update_policy_body">Automatic updates use the daily cap below. Per-app cadence controls can switch an app to notify-only, priority, or a dated hold.</string>
+    <string name="daily_update_cap">Automatic updates per day</string>
+    <string name="daily_update_cap_off">Off</string>
+    <string name="daily_update_cap_value">%1$d / day</string>
+    <string name="background_update_cadence_hint">Use each installed card’s actions menu to choose auto, notify, pinned priority, or hold until a date.</string>
+    <string name="update_cadence_menu">Update cadence</string>
+    <string name="update_cadence_title">Update cadence · %1$s</string>
+    <string name="update_cadence_body">Auto follows the daily cap. Notify reports releases without queueing. Pinned priority bypasses the cap. A hold pauses this app until its stored date.</string>
+    <string name="update_cadence_auto">Auto</string>
+    <string name="update_cadence_notify">Notify only</string>
+    <string name="update_cadence_pinned">Pinned priority</string>
+    <string name="update_cadence_hold_one_day">Hold for one day</string>
+    <string name="update_cadence_hold_one_week">Hold for one week</string>
+    <string name="update_cadence_resume">Resume automatic updates</string>
+    <string name="update_cadence_held_until">Held until %1$s</string>
     <string name="periodic_update_channel_name">Scheduled update checks</string>
     <string name="periodic_updates_queued_title">Updates queued</string>
+    <string name="periodic_updates_available_title">Updates available</string>
+    <string name="periodic_updates_mixed_body">%1$d queued · %2$d available to review.</string>
     <plurals name="periodic_updates_queued_body">
         <item quantity="one">1 managed app update is queued for a safe background install.</item>
         <item quantity="other">%1$d managed app updates are queued for safe background installs.</item>
+    </plurals>
+    <plurals name="periodic_updates_available_body">
+        <item quantity="one">1 update is available for review.</item>
+        <item quantity="other">%1$d updates are available for review.</item>
     </plurals>
     <string name="hide_unverified_sources_setting">Hide unverified sources</string>
     <string name="hide_unverified_sources_subtitle">Remove catalog cards without a pinned publisher key. Unknown sources remain visible.</string>

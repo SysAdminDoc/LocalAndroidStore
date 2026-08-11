@@ -19,6 +19,7 @@ import com.sysadmin.lasstore.data.InstallProvenance
 import com.sysadmin.lasstore.data.InstalledInfo
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.SourceBranding
+import com.sysadmin.lasstore.data.UpdateCadence
 import com.sysadmin.lasstore.data.signerMatchesArtifactOrLineage
 import com.sysadmin.lasstore.data.signerMatchesPin
 import com.sysadmin.lasstore.domain.AppInfo
@@ -84,6 +85,7 @@ data class CardState(
     val newDangerousPermissions: List<String> = emptyList(),
     /** True when the user has silenced update notifications for this app (Item 35). */
     val isIgnored: Boolean = false,
+    val updateCadence: UpdateCadence = UpdateCadence(),
     val queuedUpdateStatus: QueuedUpdateStatus? = null,
     val publisherTrustDetails: PublisherTrustDetails? = null,
     val publisherTrustRecoveryBusy: Boolean = false,
@@ -686,6 +688,9 @@ class CatalogViewModel : ViewModel() {
         return withForegroundInstallState(
             withQueuedUpdateStatus(
                 baseState.copy(
+                    updateCadence = sl.updateCadences.get(
+                        info.copy(applicationId = applicationId),
+                    ),
                     sourceVerification = sourceVerificationStatus(
                         applicationId = applicationId,
                         knownSignerSha256 = installed?.currentSignerSha256
@@ -1673,6 +1678,14 @@ class CatalogViewModel : ViewModel() {
                     c.info.repo == card.info.repo
                 ) freshState else c
             })
+        }
+    }
+
+    fun setUpdateCadence(card: CardState, cadence: UpdateCadence) {
+        sl.updateCadences.set(card.info, cadence)
+        updateCard(card.info) { current -> current.copy(updateCadence = cadence) }
+        _state.update {
+            it.copy(warning = "${card.info.displayName} update cadence set to ${cadence.mode.name.lowercase(Locale.US)}")
         }
     }
 

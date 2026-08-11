@@ -114,6 +114,9 @@ fun SettingsScreen(
     var dynamicColor by remember(state.settings.dynamicColor) {
         mutableStateOf(state.settings.dynamicColor)
     }
+    var dailyUpdateCap by remember(state.settings.dailyUpdateCap) {
+        mutableStateOf(state.settings.dailyUpdateCap)
+    }
     val draftFdroidSources = fdroidDrafts.map(FdroidSourceDraft::toSource)
     val fdroidValidationError = validateFdroidSources(draftFdroidSources)
     val normalizedFdroidSources = normalizeFdroidSources(draftFdroidSources)
@@ -130,7 +133,8 @@ fun SettingsScreen(
         hideUnverifiedSources != state.settings.hideUnverifiedSources ||
         themeMode != state.settings.themeMode ||
         accentColor != state.settings.accentColor ||
-        dynamicColor != state.settings.dynamicColor
+        dynamicColor != state.settings.dynamicColor ||
+        dailyUpdateCap != state.settings.dailyUpdateCap
 
     Column(
         modifier = Modifier
@@ -152,6 +156,11 @@ fun SettingsScreen(
             onThemeModeChange = { themeMode = it },
             onAccentColorChange = { accentColor = it },
             onDynamicColorChange = { dynamicColor = it },
+        )
+
+        BackgroundUpdatePolicySettings(
+            dailyUpdateCap = dailyUpdateCap,
+            onDailyUpdateCapChange = { dailyUpdateCap = it },
         )
 
         SourceVerificationPosture(
@@ -322,6 +331,7 @@ fun SettingsScreen(
                         themeMode = themeMode,
                         accentColor = accentColor,
                         dynamicColor = dynamicColor,
+                        dailyUpdateCap = dailyUpdateCap,
                     )
                 },
                 enabled = validationError == null && fdroidValidationError == null && !state.saving &&
@@ -345,6 +355,7 @@ fun SettingsScreen(
                     themeMode = themeMode,
                     accentColor = accentColor,
                     dynamicColor = dynamicColor,
+                    dailyUpdateCap = dailyUpdateCap,
                 )
             },
             enabled = validationError == null && fdroidValidationError == null &&
@@ -532,6 +543,64 @@ private fun AppearanceSettings(
                 onSelected = { selected ->
                     if (selected != null) onAccentColorChange(selected)
                 },
+            )
+        }
+    }
+}
+
+@Composable
+private fun BackgroundUpdatePolicySettings(
+    dailyUpdateCap: Int,
+    onDailyUpdateCapChange: (Int) -> Unit,
+) {
+    val capChoices = listOf(0, 1, 3, 5, 10)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = Catppuccin.Surface1,
+        border = BorderStroke(1.dp, Catppuccin.Stroke),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.background_update_policy_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = Catppuccin.TextStrong,
+            )
+            Text(
+                text = stringResource(R.string.background_update_policy_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Subtext,
+            )
+            Text(
+                text = stringResource(R.string.daily_update_cap),
+                style = MaterialTheme.typography.labelMedium,
+                color = Catppuccin.TextStrong,
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                capChoices.forEach { cap ->
+                    val label = if (cap == 0) {
+                        stringResource(R.string.daily_update_cap_off)
+                    } else {
+                        stringResource(R.string.daily_update_cap_value, cap)
+                    }
+                    ThemeChoice(
+                        label = label,
+                        selected = dailyUpdateCap == cap,
+                        onClick = { onDailyUpdateCapChange(cap) },
+                    )
+                }
+            }
+            Text(
+                text = stringResource(R.string.background_update_cadence_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Subtext,
             )
         }
     }

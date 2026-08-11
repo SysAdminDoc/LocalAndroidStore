@@ -7,6 +7,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -108,6 +109,7 @@ class SettingsStore(
     private val keyThemeMode = stringPreferencesKey("theme_mode")
     private val keyAccentColor = stringPreferencesKey("accent_color")
     private val keyDynamicColor = booleanPreferencesKey("dynamic_color")
+    private val keyDailyUpdateCap = intPreferencesKey("daily_update_cap")
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -276,6 +278,7 @@ class SettingsStore(
             prefs[keyThemeMode] = canonical.themeMode.name
             prefs[keyAccentColor] = canonical.accentColor.name
             prefs[keyDynamicColor] = canonical.dynamicColor
+            prefs[keyDailyUpdateCap] = canonical.dailyUpdateCap
         }
     }
 
@@ -300,6 +303,7 @@ class SettingsStore(
                     ?.let { value -> runCatching { AccentColor.valueOf(value) }.getOrNull() }
                     ?: AccentColor.Mauve,
                 dynamicColor = prefs[keyDynamicColor] ?: false,
+                dailyUpdateCap = (prefs[keyDailyUpdateCap] ?: 3).coerceIn(0, MAX_DAILY_UPDATE_CAP),
             ),
             payloadState = decoded.state,
             malformedPayload = decoded.rawPayload,
@@ -320,6 +324,7 @@ class SettingsStore(
             themeMode = settings.themeMode,
             accentColor = settings.accentColor,
             dynamicColor = settings.dynamicColor,
+            dailyUpdateCap = settings.dailyUpdateCap.coerceIn(0, MAX_DAILY_UPDATE_CAP),
         )
     }
 
@@ -407,6 +412,7 @@ class SettingsStore(
         const val KEY_PENDING_TRANSACTION = "pending_source_registry_save"
         const val KEY_MALFORMED_SOURCES_BACKUP = "malformed_github_sources_v1"
         const val KEY_MALFORMED_SOURCES_BACKUP_AT = "malformed_github_sources_v1_at"
+        const val MAX_DAILY_UPDATE_CAP = 50
     }
 }
 

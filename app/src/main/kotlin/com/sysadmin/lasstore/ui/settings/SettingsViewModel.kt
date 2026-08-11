@@ -121,6 +121,7 @@ class SettingsViewModel : ViewModel() {
         themeMode: AppThemeMode = _state.value.settings.themeMode,
         accentColor: AccentColor = _state.value.settings.accentColor,
         dynamicColor: Boolean = _state.value.settings.dynamicColor,
+        dailyUpdateCap: Int = _state.value.settings.dailyUpdateCap,
     ) {
         saveInternal(
             sources = sources,
@@ -130,6 +131,7 @@ class SettingsViewModel : ViewModel() {
             themeMode = themeMode,
             accentColor = accentColor,
             dynamicColor = dynamicColor,
+            dailyUpdateCap = dailyUpdateCap,
             replaceMalformedRegistry = false,
         )
     }
@@ -153,6 +155,7 @@ class SettingsViewModel : ViewModel() {
         themeMode: AppThemeMode = _state.value.settings.themeMode,
         accentColor: AccentColor = _state.value.settings.accentColor,
         dynamicColor: Boolean = _state.value.settings.dynamicColor,
+        dailyUpdateCap: Int = _state.value.settings.dailyUpdateCap,
     ) {
         saveInternal(
             sources = sources,
@@ -162,6 +165,7 @@ class SettingsViewModel : ViewModel() {
             themeMode = themeMode,
             accentColor = accentColor,
             dynamicColor = dynamicColor,
+            dailyUpdateCap = dailyUpdateCap,
             replaceMalformedRegistry = true,
         )
     }
@@ -174,6 +178,7 @@ class SettingsViewModel : ViewModel() {
         themeMode: AppThemeMode,
         accentColor: AccentColor,
         dynamicColor: Boolean,
+        dailyUpdateCap: Int,
         replaceMalformedRegistry: Boolean,
     ) {
         if (_state.value.saveStatus == SettingsSaveStatus.Saving) return
@@ -231,6 +236,7 @@ class SettingsViewModel : ViewModel() {
                     themeMode = themeMode,
                     accentColor = accentColor,
                     dynamicColor = dynamicColor,
+                    dailyUpdateCap = dailyUpdateCap,
                 )
                 val persistedSourcePats = sourcePats
                     .filter { (key, value) ->

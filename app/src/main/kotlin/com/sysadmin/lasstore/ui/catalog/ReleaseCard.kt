@@ -77,6 +77,8 @@ import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.data.DeveloperVerificationCopy
 import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.normalizeSha256Digest
+import com.sysadmin.lasstore.data.UpdateCadence
+import com.sysadmin.lasstore.data.UpdateCadenceMode
 import com.sysadmin.lasstore.domain.AntiFeatureBadge
 import com.sysadmin.lasstore.domain.AntiFeatureSeverity
 import com.sysadmin.lasstore.domain.CardStatus
@@ -103,6 +105,7 @@ fun ReleaseCard(
     onProceedPermissions: () -> Unit,
     onCancelPermissions: () -> Unit,
     onIgnore: () -> Unit,
+    onSetUpdateCadence: (UpdateCadence) -> Unit = {},
     onSaveApk: () -> Unit,
     onReplacePublisherPin: (typedApplicationId: String, independentlyVerified: Boolean) -> Unit,
     onSelectAsset: (GhAsset) -> Unit,
@@ -596,6 +599,7 @@ fun ReleaseCard(
                         onRepo = onRepo,
                         onCancelPermissions = onCancelPermissions,
                         onIgnore = onIgnore,
+                        onSetUpdateCadence = onSetUpdateCadence,
                         onSaveApk = onSaveApk,
                         onUninstall = onUninstall,
                         onManualInstall = onManualInstall,
@@ -1221,6 +1225,7 @@ private fun ReleaseOverflowMenu(
     onRepo: () -> Unit,
     onCancelPermissions: () -> Unit,
     onIgnore: () -> Unit,
+    onSetUpdateCadence: (UpdateCadence) -> Unit,
     onSaveApk: () -> Unit,
     onUninstall: () -> Unit,
     onManualInstall: () -> Unit,
@@ -1230,6 +1235,7 @@ private fun ReleaseOverflowMenu(
     onOpenLanguageSettings: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var cadenceDialogVisible by remember { mutableStateOf(false) }
 
     Box {
         IconButton(onClick = { expanded = true }) {
@@ -1299,6 +1305,14 @@ private fun ReleaseOverflowMenu(
                     onClick = {
                         expanded = false
                         onIgnore()
+                    },
+                )
+                ReleaseMenuItem(
+                    text = stringResource(R.string.update_cadence_menu),
+                    icon = Icons.Default.Refresh,
+                    onClick = {
+                        expanded = false
+                        cadenceDialogVisible = true
                     },
                 )
             }
@@ -1397,8 +1411,125 @@ private fun ReleaseOverflowMenu(
                 )
             }
         }
+        if (cadenceDialogVisible) {
+            UpdateCadenceDialog(
+                state = state,
+                onDismiss = { cadenceDialogVisible = false },
+                onSelect = { cadence ->
+                    onSetUpdateCadence(cadence)
+                    cadenceDialogVisible = false
+                },
+            )
+        }
     }
 }
+
+@Composable
+private fun UpdateCadenceDialog(
+    state: CardState,
+    onDismiss: () -> Unit,
+    onSelect: (UpdateCadence) -> Unit,
+) {
+    val heldUntil = state.updateCadence.heldUntilEpochMillis
+        ?.takeIf { it > System.currentTimeMillis() }
+    val heldLabel = heldUntil?.let {
+        DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(it))
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(stringResource(R.string.update_cadence_title, state.info.displayName))
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = stringResource(R.string.update_cadence_body),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                CadenceChoice(
+                    label = stringResource(R.string.update_cadence_auto),
+                    selected = state.updateCadence.mode == UpdateCadenceMode.Auto && heldUntil == null,
+                    onClick = { onSelect(UpdateCadence(UpdateCadenceMode.Auto)) },
+                )
+                CadenceChoice(
+                    label = stringResource(R.string.update_cadence_notify),
+                    selected = state.updateCadence.mode == UpdateCadenceMode.Notify,
+                    onClick = { onSelect(UpdateCadence(UpdateCadenceMode.Notify)) },
+                )
+                CadenceChoice(
+                    label = stringResource(R.string.update_cadence_pinned),
+                    selected = state.updateCadence.mode == UpdateCadenceMode.Pinned,
+                    onClick = { onSelect(UpdateCadence(UpdateCadenceMode.Pinned)) },
+                )
+                if (heldLabel != null) {
+                    Text(
+                        text = stringResource(R.string.update_cadence_held_until, heldLabel),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Peach,
+                    )
+                }
+                CadenceChoice(
+                    label = stringResource(R.string.update_cadence_hold_one_day),
+                    selected = false,
+                    onClick = {
+                        onSelect(
+                            UpdateCadence(
+                                mode = UpdateCadenceMode.Auto,
+                                heldUntilEpochMillis = System.currentTimeMillis() + DAY_MILLIS,
+                            ),
+                        )
+                    },
+                )
+                CadenceChoice(
+                    label = stringResource(R.string.update_cadence_hold_one_week),
+                    selected = false,
+                    onClick = {
+                        onSelect(
+                            UpdateCadence(
+                                mode = UpdateCadenceMode.Auto,
+                                heldUntilEpochMillis = System.currentTimeMillis() + WEEK_MILLIS,
+                            ),
+                        )
+                    },
+                )
+                if (heldUntil != null) {
+                    CadenceChoice(
+                        label = stringResource(R.string.update_cadence_resume),
+                        selected = false,
+                        onClick = { onSelect(UpdateCadence(UpdateCadenceMode.Auto)) },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun CadenceChoice(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = label },
+    ) {
+        Text(
+            text = if (selected) "✓ $label" else label,
+            color = if (selected) Catppuccin.MauveStrong else Catppuccin.TextStrong,
+        )
+    }
+}
+
+private const val DAY_MILLIS = 24L * 60L * 60L * 1000L
+private const val WEEK_MILLIS = 7L * DAY_MILLIS
 
 private fun CardStatus.hasInstalledApp(): Boolean = this in setOf(
     CardStatus.Unmanaged,

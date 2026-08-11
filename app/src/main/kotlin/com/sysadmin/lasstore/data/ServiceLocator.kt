@@ -46,6 +46,8 @@ object ServiceLocator {
         private set
     lateinit var ignoreList: IgnoreListStore
         private set
+    lateinit var updateCadences: UpdateCadenceStore
+        private set
     lateinit var channelPreferences: ChannelPreferenceStore
         private set
     lateinit var backgroundUpdates: BackgroundUpdateScheduler
@@ -103,6 +105,7 @@ object ServiceLocator {
             apkLockfile = ApkLockfileStore(appContext)
             preferredSources = PreferredSourceStore(appContext)
             ignoreList = IgnoreListStore(appContext)
+            updateCadences = UpdateCadenceStore(appContext)
             channelPreferences = ChannelPreferenceStore(appContext)
             queuedUpdateStatus = QueuedUpdateStatusStore(appContext)
             backgroundUpdates = BackgroundUpdateScheduler(appContext, logger)

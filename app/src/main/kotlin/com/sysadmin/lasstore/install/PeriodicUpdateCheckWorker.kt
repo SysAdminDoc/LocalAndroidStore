@@ -9,6 +9,7 @@ import com.sysadmin.lasstore.data.InstallProvenance
 import com.sysadmin.lasstore.data.InstalledInfo
 import com.sysadmin.lasstore.data.ReleaseAssetIdentity
 import com.sysadmin.lasstore.data.ServiceLocator
+import com.sysadmin.lasstore.data.UpdateCadenceMode
 import com.sysadmin.lasstore.data.normalizeSha256Digest
 import com.sysadmin.lasstore.domain.AppInfo
 import com.sysadmin.lasstore.domain.CatalogFailureKind
@@ -74,6 +75,7 @@ class PeriodicUpdateCheckWorker(
                 }
 
             var queuedCount = 0
+            var availableCount = 0
             candidates.forEach { info ->
                 val cached = sl.appIdCache.get(info.sourceKey, info.owner, info.repo)
                     ?: return@forEach
@@ -91,14 +93,34 @@ class PeriodicUpdateCheckWorker(
                 ) {
                     return@forEach
                 }
-                if (sl.backgroundUpdates.enqueuePeriodic(info.copy(applicationId = reconciled.applicationId))) {
+                val cadence = sl.updateCadences.get(info.copy(applicationId = reconciled.applicationId))
+                if (cadence.isHeld()) return@forEach
+                if (cadence.mode == UpdateCadenceMode.Notify) {
+                    availableCount += 1
+                    return@forEach
+                }
+                val reserved = cadence.mode == UpdateCadenceMode.Pinned ||
+                    sl.updateCadences.tryReserveDailySlot(settings.dailyUpdateCap)
+                if (!reserved) {
+                    availableCount += 1
+                    return@forEach
+                }
+                val queued = sl.backgroundUpdates.enqueuePeriodic(
+                    info.copy(applicationId = reconciled.applicationId),
+                )
+                if (queued) {
                     queuedCount += 1
+                } else if (cadence.mode != UpdateCadenceMode.Pinned) {
+                    sl.updateCadences.releaseDailySlot()
                 }
             }
 
-            if (queuedCount > 0) {
-                PeriodicUpdateNotification.show(applicationContext, queuedCount)
-                sl.logger.info("PeriodicUpdate", "Queued $queuedCount catalog update(s)")
+            if (queuedCount > 0 || availableCount > 0) {
+                PeriodicUpdateNotification.show(applicationContext, queuedCount, availableCount)
+                sl.logger.info(
+                    "PeriodicUpdate",
+                    "Queued $queuedCount catalog update(s); $availableCount available for review",
+                )
             }
 
             val transientSourceFailure = discovered.apps.isEmpty() && discovered.issues.any {

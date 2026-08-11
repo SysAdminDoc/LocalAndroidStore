@@ -320,6 +320,8 @@ verification command fails, treat the binary as untrusted and do not distribute 
   digest-published releases for apps already managed by LocalAndroidStore and posts a notification
   when work is added. Ambiguous variants, stale snapshots, ignored apps, and externally installed
   packages remain foreground-only.
+- Automatic update policy is configurable: choose a daily cap in Settings, then set individual
+  managed apps to auto, notify-only, pinned priority, or a dated hold from the card actions menu.
 - GitHub Releases and pinned F-Droid index-v2 repositories are supported today. GitLab and HTML source plugins remain adapter-level work rather than configured catalog sources.
 
 ---
