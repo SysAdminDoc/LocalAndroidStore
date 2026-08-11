@@ -128,6 +128,12 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
 
+    // Optional shell-privileged installer transport. The normal PackageInstaller path remains
+    // available when Shizuku is absent, stopped, or not approved for this app.
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
+
     implementation("com.google.crypto.tink:tink-android:1.23.0")
     implementation("com.squareup.okhttp3:okhttp")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")

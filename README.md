@@ -18,7 +18,7 @@ This is the Android sibling of [LocalChromeStore](https://github.com/SysAdminDoc
 
 ## Why it exists
 
-Stock Android won't let you "silent-install" anything unless you're a device-owner / Work Profile admin. Every other app on the device — including this one — has to go through the system PackageInstaller dialog, which the user must confirm. That's by design. What we *can* do is:
+Stock Android won't let an ordinary installer silently install anything. LocalAndroidStore uses the normal system PackageInstaller dialog by default, and offers an explicit Shizuku shell-installer tier for users who have already configured Shizuku. What we *can* do is:
 
 - discover every APK release across your GitHub repos,
 - download the latest one and drive `PackageInstaller.Session` so the system dialog appears once per install,
@@ -45,6 +45,7 @@ That's what this is.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black or Catppuccin Latte light. Repo handle, star count, version tag, status badge, two-line description.
 - **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
 - **One-tap install** — APK is downloaded to app cache, then driven through `PackageInstaller.Session`. The system shows its install dialog, the user confirms once, done.
+- **Optional Shizuku installer** — Settings can opt foreground and queued installs into a shell-privileged `IPackageInstaller` bridge. Shizuku must be running and approved for LocalAndroidStore; otherwise the normal installer is used. APK digest, package identity, signer, version, and audit gates still run before the session is created.
 - **Recoverable foreground installs** — download, preapproval, permission review, and installer-session ownership are persisted. Restart restores review/commit work when safe, and interrupted downloads keep a source/release-keyed partial in `cacheDir/apks/.partial/` for an explicit **Resume download** action; cancellation reaches the OkHttp call and terminal paths remove transient files.
 - **One-tap uninstall** — fires `Intent.ACTION_DELETE`, lands on the system uninstall confirmation. Catalog refreshes after.
 - **One-tap open** — launches the installed app's main activity.
@@ -67,7 +68,8 @@ That's what this is.
 
 1. Grab the latest `LocalAndroidStore-vX.Y.Z.apk` from the [Releases page](https://github.com/SysAdminDoc/LocalAndroidStore/releases).
 2. Sideload it to your device however you sideload (`adb install`, file manager, Sync to phone, etc.).
-3. The first time you open it and try to install something, Android will prompt for **"Install unknown apps"** — grant it. The app deep-links to the right setting.
+3. The first time you open it and use the normal installer, Android will prompt for **"Install unknown apps"** — grant it. The app deep-links to the right setting.
+4. *(Optional)* Install and start [Shizuku](https://shizuku.rikka.app/), grant LocalAndroidStore access from the Shizuku prompt, then enable **Use Shizuku for no-prompt installs** in Settings. Shizuku may need to be restarted after reboot unless Sui/root keeps it available.
 
 ### From source
 
@@ -93,7 +95,7 @@ attested release artifacts; release signing is a deliberate local release-owner 
 6. *(Optional)* Add one or more **F-Droid repositories** by pasting the repository's HTTPS `index-v2.json?fingerprint=...` URL. The fingerprint is required as a local trust pin; only repositories whose published fingerprint matches are shown.
 7. Tap **Save settings**, hop back to **Catalog**, hit **Refresh**.
 
-Every qualifying repo appears as a card. Tap **Install** — the APK downloads, the system install dialog appears, you confirm. Tap **Open** to launch. Tap **Uninstall** to land on the system uninstall confirmation.
+Every qualifying repo appears as a card. Tap **Install** — the APK downloads, then uses the selected installer path. With the default path, the system install dialog appears and you confirm; with an active Shizuku path, Android may complete the shell-owned session without that dialog. Tap **Open** to launch. Tap **Uninstall** to land on the system uninstall confirmation.
 
 When the same package is available from more than one source, open the card overflow menu and choose
 **Choose preferred source**. The preference is stored per package on this device; cards without a
@@ -158,6 +160,7 @@ a refresh.
 | SharedPreferences `foreground_install_state` | Recoverable foreground install phase, installer session, APK metadata, and pending MediaStore cleanup |
 | SharedPreferences `queued_update_status` | Attempt count and durable queued-update terminal state |
 | SharedPreferences `las_release_channels_v1` | Per-source repository release-channel preferences |
+| SharedPreferences `las_shizuku_install_v1` | Explicit opt-in for the optional Shizuku shell installer |
 
 The app declares `android:allowBackup="false"` and excludes everything from cloud / device-transfer backups — secrets stay on the device.
 
@@ -186,7 +189,8 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 │   ├── AppInfo.kt             Discovered model + CardStatus enum
 │   └── DiscoveryUseCase.kt    Listing → release → APK-asset picker
 ├── install/
-│   ├── PackageInstallerService.kt   Session-backed install, intent-based uninstall, launch
+│   ├── PackageInstallerService.kt   Session-backed install, Shizuku fallback, uninstall, launch
+│   ├── ShizukuInstaller.kt           Optional shell/root IPackageInstaller bridge
 │   ├── ForegroundInstallStore.kt    Process-safe download/review/commit ownership + cleanup
 │   └── QueuedUpdate*.kt             UIDT/WorkManager scheduling, constraints, durable outcomes
 ├── ui/
@@ -277,7 +281,7 @@ LocalAndroidStore is in your trust boundary — once you grant it "Install unkno
 **What we're not in the business of:**
 
 - We don't ship telemetry. Diagnostics, install audit, and crash evidence stay local unless you explicitly use **Export redacted support bundle** from Activity.
-- We don't run silent installs. Stock Android doesn't allow it without device-owner status; the system dialog is unavoidable on first install of every catalog app. v0.4 will offer Shizuku as an opt-in tier-2 path.
+- We don't run privileged installs by default. The optional Shizuku path is disabled until the user enables it and grants Shizuku access; if it is unavailable, the normal Android installer remains the fallback.
 - We don't fetch a second APK at runtime. The APK staged for install is the APK published on GitHub Releases; nothing else.
 - We don't share your installed-app list with anyone.
 
@@ -313,7 +317,7 @@ verification command fails, treat the binary as untrusted and do not distribute 
 
 ## Limitations
 
-- No silent install. Stock Android doesn't allow it for non-device-owner apps. The system install dialog appears once per install. v0.4 will add Shizuku as an opt-in tier-2 path.
+- No privileged install without user setup. The default path uses Android's install dialog; the optional Shizuku path requires a running, approved Shizuku service and can still be rejected by device policy or OEM restrictions.
 - Uninstall opens the system uninstall confirmation. We can't bypass it without device-owner / Work Profile admin.
 - Catalog refresh still happens on-tap for the foreground view. A durable WorkManager check also
   runs every 24 hours on unmetered Wi-Fi while battery and storage are healthy; it queues only

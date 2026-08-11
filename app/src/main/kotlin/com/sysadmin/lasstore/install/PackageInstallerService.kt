@@ -26,12 +26,47 @@ class PackageInstallerService(
     private val logger: Logger,
 ) {
     private val resultRegistry = InstallResultRegistry(context)
+    private val shizukuInstaller = ShizukuInstaller(context, logger)
+
+    private data class InstallerHandle(
+        val packageInstaller: PackageInstaller,
+        val shizuku: ShizukuInstaller.Handle? = null,
+    ) {
+        val isSilent: Boolean get() = shizuku != null
+    }
 
     /**
      * Whether the current app is allowed to drive the system installer dialog.
      * On Android 8.0+ this is the per-app "Install unknown apps" toggle the user must enable.
      */
-    fun canRequestInstalls(): Boolean = context.packageManager.canRequestPackageInstalls()
+    fun canRequestInstalls(): Boolean = isSilentInstallActive() ||
+        context.packageManager.canRequestPackageInstalls()
+
+    fun shizukuStatus(): ShizukuStatus = shizukuInstaller.status()
+
+    fun shizukuSilentInstallEnabled(): Boolean = shizukuInstaller.settings.isEnabled()
+
+    fun setShizukuSilentInstallEnabled(enabled: Boolean): Boolean =
+        shizukuInstaller.settings.setEnabled(enabled)
+
+    fun requestShizukuPermission(): Boolean = shizukuInstaller.requestPermission()
+
+    fun isSilentInstallActive(): Boolean =
+        shizukuSilentInstallEnabled() && shizukuStatus() == ShizukuStatus.Ready
+
+    /** Open Shizuku's manager when it is installed, without making it a hard dependency. */
+    fun openShizukuManager(): ExternalLaunchResult {
+        val intent = context.packageManager
+            .getLaunchIntentForPackage(SHIZUKU_MANAGER_PACKAGE)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ?: return ExternalLaunchResult.Failed(
+                "Install and start Shizuku before enabling no-prompt installs.",
+            )
+        return launchExternalIntent(
+            intent = intent,
+            failureMessage = "Could not open Shizuku.",
+        )
+    }
 
     /** Open the system Settings page where the user grants "Install unknown apps". */
     fun openInstallPermissionSettings(): ExternalLaunchResult {
@@ -139,11 +174,13 @@ class PackageInstallerService(
         onSessionCreated: (Int) -> Unit = {},
         operationId: String? = null,
     ): InstallResult = suspendCancellableCoroutine { cont ->
-        val pi = context.packageManager.packageInstaller
+        val installer = newInstallerHandle()
+        val pi = installer.packageInstaller
         val params = buildSessionParams(
             firstInstall = firstInstall,
             referrerUri = referrerUri,
             applicationId = applicationId,
+            silentInstall = installer.isSilent,
         )
 
         val sessionId = try {
@@ -166,7 +203,6 @@ class PackageInstallerService(
             applicationId = applicationId,
             route = InstallResultRoute.Foreground,
             operationId = operationId,
-            pi = pi,
             cont = cont,
         )
 
@@ -177,7 +213,7 @@ class PackageInstallerService(
         }
 
         try {
-            streamAndCommit(pi, sessionId, apk, installResultIntent(context, registration))
+            streamAndCommit(installer, sessionId, apk, installResultIntent(context, registration))
         } catch (t: Throwable) {
             logger.error("Installer", "session commit failed", t)
             ForegroundInstallResultRouter.detach(registration.capability)
@@ -206,12 +242,18 @@ class PackageInstallerService(
         onSessionCreated: (Int) -> Unit = {},
         operationId: String? = null,
     ): PreapprovalSessionResult = suspendCancellableCoroutine { cont ->
-        val pi = context.packageManager.packageInstaller
+        if (isSilentInstallActive()) {
+            cont.resume(PreapprovalSessionResult.Declined)
+            return@suspendCancellableCoroutine
+        }
+        val installer = newInstallerHandle()
+        val pi = installer.packageInstaller
         // Pre-approval requires knowing the package name in advance.
         val params = buildSessionParams(
             firstInstall = false,
             referrerUri = referrerUri,
             applicationId = applicationId,
+            silentInstall = installer.isSilent,
         )
         val sessionId = try {
             pi.createSession(params)
@@ -266,7 +308,7 @@ class PackageInstallerService(
                 .setLabel(label)
                 .setLocale(ULocale.getDefault())
                 .build()
-            pi.openSession(sessionId).use { session ->
+            openSession(installer, sessionId).use { session ->
                 session.requestUserPreapproval(details, pending.intentSender)
             }
         } catch (t: Throwable) {
@@ -290,13 +332,17 @@ class PackageInstallerService(
         operationId: String? = null,
     ): InstallResult =
         suspendCancellableCoroutine { cont ->
-            val pi = context.packageManager.packageInstaller
+            val installer = findSessionHandle(sessionId)
+            if (installer == null) {
+                cont.resume(InstallResult.Failure("Could not reopen install session $sessionId"))
+                return@suspendCancellableCoroutine
+            }
+            val pi = installer.packageInstaller
             val registration = registerForegroundResult(
                 sessionId = sessionId,
                 applicationId = applicationId,
                 route = InstallResultRoute.Foreground,
                 operationId = operationId,
-                pi = pi,
                 cont = cont,
             )
 
@@ -307,7 +353,7 @@ class PackageInstallerService(
             }
 
             try {
-                streamAndCommit(pi, sessionId, apk, installResultIntent(context, registration))
+                streamAndCommit(installer, sessionId, apk, installResultIntent(context, registration))
             } catch (t: Throwable) {
                 logger.error("Installer", "commitSession failed", t)
                 ForegroundInstallResultRouter.detach(registration.capability)
@@ -320,11 +366,15 @@ class PackageInstallerService(
     /** Abandon an open session — call on download failure or cancellation. */
     fun abandonSession(sessionId: Int) {
         resultRegistry.cancelSession(sessionId)
-        runCatching { context.packageManager.packageInstaller.abandonSession(sessionId) }
+        abandonWithAllInstallers(sessionId)
     }
 
     fun hasOpenSession(sessionId: Int): Boolean =
-        context.packageManager.packageInstaller.mySessions.any { it.sessionId == sessionId }
+        handlesForSession().any { handle ->
+            runCatching {
+                handle.packageInstaller.mySessions.any { it.sessionId == sessionId }
+            }.getOrDefault(false)
+        }
 
     /**
      * Android 14+: stage [apk], then ask PackageInstaller to commit only after gentle
@@ -341,11 +391,13 @@ class PackageInstallerService(
         operationId: String? = null,
         onSessionCreated: (Int) -> Unit = {},
     ): InstallResult {
-        val pi = context.packageManager.packageInstaller
+        val installer = newInstallerHandle()
+        val pi = installer.packageInstaller
         val params = buildSessionParams(
             firstInstall = firstInstall,
             referrerUri = referrerUri,
             applicationId = applicationId,
+            silentInstall = installer.isSilent,
         )
         val sessionId = try {
             pi.createSession(params)
@@ -374,7 +426,7 @@ class PackageInstallerService(
 
         return try {
             streamAndCommitAfterConstraints(
-                pi,
+                installer,
                 sessionId,
                 apk,
                 installResultIntent(context, registration, resultData),
@@ -402,11 +454,13 @@ class PackageInstallerService(
         operationId: String? = null,
         onSessionCreated: (Int) -> Unit = {},
     ): InstallResult {
-        val pi = context.packageManager.packageInstaller
+        val installer = newInstallerHandle()
+        val pi = installer.packageInstaller
         val params = buildSessionParams(
             firstInstall = firstInstall,
             referrerUri = referrerUri,
             applicationId = applicationId,
+            silentInstall = installer.isSilent,
         )
         val sessionId = try {
             pi.createSession(params)
@@ -435,7 +489,7 @@ class PackageInstallerService(
 
         return try {
             streamAndCommit(
-                pi,
+                installer,
                 sessionId,
                 apk,
                 installResultIntent(context, registration, resultData),
@@ -451,17 +505,65 @@ class PackageInstallerService(
 
     // ── Shared helpers ────────────────────────────────────────────────────────
 
+    private fun newInstallerHandle(): InstallerHandle {
+        if (shizukuSilentInstallEnabled()) {
+            shizukuInstaller.createHandle()?.let { handle ->
+                return InstallerHandle(
+                    packageInstaller = handle.packageInstaller,
+                    shizuku = handle,
+                )
+            }
+        }
+        return InstallerHandle(context.packageManager.packageInstaller)
+    }
+
+    /**
+     * A queued session may belong to either the app installer or Android shell after a process
+     * restart. Try both identities so a temporary Shizuku outage does not make recovery forget a
+     * durable session.
+     */
+    private fun handlesForSession(): List<InstallerHandle> = buildList {
+        shizukuInstaller.createHandle()?.let { handle ->
+            add(InstallerHandle(handle.packageInstaller, handle))
+        }
+        add(InstallerHandle(context.packageManager.packageInstaller))
+    }
+
+    private fun findSessionHandle(sessionId: Int): InstallerHandle? = handlesForSession()
+        .firstOrNull { handle ->
+            runCatching {
+                openSession(handle, sessionId).use { }
+            }.isSuccess
+        }
+
+    private fun openSession(handle: InstallerHandle, sessionId: Int): PackageInstaller.Session =
+        handle.shizuku?.let { shizukuInstaller.openSession(it, sessionId) }
+            ?: handle.packageInstaller.openSession(sessionId)
+
+    private fun abandonWithAllInstallers(sessionId: Int) {
+        handlesForSession().forEach { handle ->
+            runCatching { handle.packageInstaller.abandonSession(sessionId) }
+        }
+    }
+
     private fun buildSessionParams(
         firstInstall: Boolean,
         referrerUri: Uri?,
         applicationId: String? = null,
+        silentInstall: Boolean = false,
     ): PackageInstaller.SessionParams {
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         params.setAppPackageName(applicationId)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
+            params.setRequireUserAction(
+                if (silentInstall) {
+                    PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED
+                } else {
+                    PackageInstaller.SessionParams.USER_ACTION_REQUIRED
+                },
+            )
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && !silentInstall) {
             params.setInstallerPackageName(context.packageName)
         }
         params.setOriginatingUid(Process.myUid())
@@ -469,7 +571,7 @@ class PackageInstallerService(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             params.setPackageSource(PackageInstaller.PACKAGE_SOURCE_STORE)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && firstInstall) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && firstInstall && !silentInstall) {
             params.setRequestUpdateOwnership(true)
         }
         return params
@@ -480,7 +582,6 @@ class PackageInstallerService(
         applicationId: String,
         route: InstallResultRoute,
         operationId: String?,
-        pi: PackageInstaller,
         cont: kotlinx.coroutines.CancellableContinuation<InstallResult>,
     ): InstallResultRegistration {
         val registration = resultRegistry.register(
@@ -549,37 +650,38 @@ class PackageInstallerService(
     }
 
     private fun streamAndCommit(
-        pi: PackageInstaller,
+        installer: InstallerHandle,
         sessionId: Int,
         apk: File,
         statusIntent: Intent,
     ) {
-        pi.openSession(sessionId).use { session ->
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        val pending: PendingIntent = PendingIntent.getBroadcast(context, sessionId, statusIntent, flags)
+        val sender: IntentSender = pending.intentSender
+        openSession(installer, sessionId).use { session ->
             apk.inputStream().use { input ->
                 session.openWrite("base.apk", 0, apk.length()).use { out ->
                     input.copyTo(out)
                     session.fsync(out)
                 }
             }
-            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-            } else {
-                PendingIntent.FLAG_UPDATE_CURRENT
-            }
-            val pending: PendingIntent = PendingIntent.getBroadcast(context, sessionId, statusIntent, flags)
-            val sender: IntentSender = pending.intentSender
             session.commit(sender)
         }
     }
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun streamAndCommitAfterConstraints(
-        pi: PackageInstaller,
+        installer: InstallerHandle,
         sessionId: Int,
         apk: File,
         statusIntent: Intent,
     ) {
-        pi.openSession(sessionId).use { session ->
+        val pi = installer.packageInstaller
+        openSession(installer, sessionId).use { session ->
             apk.inputStream().use { input ->
                 session.openWrite("base.apk", 0, apk.length()).use { out ->
                     input.copyTo(out)
@@ -605,6 +707,7 @@ class PackageInstallerService(
     private companion object {
         val CONSTRAINT_TIMEOUT_MILLIS: Long = TimeUnit.HOURS.toMillis(24)
         const val STATUS_UNKNOWN = -999
+        const val SHIZUKU_MANAGER_PACKAGE = "moe.shizuku.privileged.api"
     }
 
 }

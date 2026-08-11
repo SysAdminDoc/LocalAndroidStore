@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added
+- Added an opt-in Shizuku shell-installer tier for foreground and queued APK sessions. Settings
+  detects binder availability and permission state, while the installer keeps APK/signature gates,
+  falls back to Android's normal PackageInstaller when Shizuku is unavailable, and can recover
+  either app-owned or shell-owned sessions after a process restart.
 - Added a bounded, process-death-safe staged update batch. Card actions can add managed updates
   without starting transport work; Confirm submits persisted generations sequentially, recovers
   already-submitted actions after restart, and leaves scheduling failures staged for retry.

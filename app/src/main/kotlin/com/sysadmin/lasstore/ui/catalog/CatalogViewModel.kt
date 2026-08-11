@@ -997,7 +997,8 @@ class CatalogViewModel : ViewModel() {
                     card.status == CardStatus.UpdateAvailable &&
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
                     knownApplicationId != null &&
-                    sl.installState.info(knownApplicationId) != null
+                    sl.installState.info(knownApplicationId) != null &&
+                    !sl.installer.isSilentInstallActive()
                 ) {
                     updateCardForAction(card.info, operationId) {
                         it.copy(

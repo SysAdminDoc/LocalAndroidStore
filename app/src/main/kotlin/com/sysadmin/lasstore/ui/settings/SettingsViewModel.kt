@@ -16,6 +16,8 @@ import com.sysadmin.lasstore.data.sourceKey
 import com.sysadmin.lasstore.data.validateSources
 import com.sysadmin.lasstore.data.normalizeFdroidSources
 import com.sysadmin.lasstore.data.validateFdroidSources
+import com.sysadmin.lasstore.install.ExternalLaunchResult
+import com.sysadmin.lasstore.install.ShizukuStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +43,8 @@ data class SettingsUiState(
     val registryRecoveryRequired: Boolean = false,
     val registryRecoveryBackupAvailable: Boolean = false,
     val connectionChecks: Map<String, ConnectionCheckState> = emptyMap(),
+    val shizukuSilentInstallEnabled: Boolean = false,
+    val shizukuStatus: ShizukuStatus = ShizukuStatus.Unavailable,
 ) {
     val saving: Boolean get() = saveStatus == SettingsSaveStatus.Saving
 }
@@ -75,6 +79,8 @@ class SettingsViewModel : ViewModel() {
                         encryptedAtRest = sl.secrets.encrypted,
                         registryRecoveryRequired = inspection.requiresRecovery,
                         registryRecoveryBackupAvailable = inspection.backupAvailable,
+                        shizukuSilentInstallEnabled = sl.installer.shizukuSilentInstallEnabled(),
+                        shizukuStatus = sl.installer.shizukuStatus(),
                     )
                 }
                 sl.settings.flow.collect { current ->
@@ -366,6 +372,37 @@ class SettingsViewModel : ViewModel() {
                     )
                 }
             }
+        }
+    }
+
+    fun refreshShizuku() {
+        _state.update {
+            it.copy(
+                shizukuSilentInstallEnabled = sl.installer.shizukuSilentInstallEnabled(),
+                shizukuStatus = sl.installer.shizukuStatus(),
+            )
+        }
+    }
+
+    fun setShizukuSilentInstallEnabled(enabled: Boolean) {
+        if (!sl.installer.setShizukuSilentInstallEnabled(enabled)) {
+            _state.update {
+                it.copy(saveError = "Could not persist the Shizuku install preference.")
+            }
+            return
+        }
+        refreshShizuku()
+    }
+
+    fun requestShizukuPermission() {
+        sl.installer.requestShizukuPermission()
+        refreshShizuku()
+    }
+
+    fun openShizukuManager() {
+        when (val result: ExternalLaunchResult = sl.installer.openShizukuManager()) {
+            is ExternalLaunchResult.Failed -> _state.update { it.copy(saveError = result.message) }
+            ExternalLaunchResult.Started -> Unit
         }
     }
 }

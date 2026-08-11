@@ -58,6 +58,14 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- Shizuku injects its shell/root binder through this provider when the user opts in. -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
         <service
             android:name=".install.QueuedUpdateJobService"
             android:exported="false"

@@ -42,6 +42,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,14 +72,23 @@ import com.sysadmin.lasstore.data.normalizeSources
 import com.sysadmin.lasstore.data.validateFdroidSources
 import com.sysadmin.lasstore.data.validateSources
 import com.sysadmin.lasstore.R
+import com.sysadmin.lasstore.install.ShizukuStatus
 import com.sysadmin.lasstore.ui.theme.Catppuccin
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel(),
     onOpenNotificationSettings: () -> Unit = {},
+    activityResumed: Flow<Unit> = emptyFlow(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    LaunchedEffect(activityResumed) {
+        viewModel.refreshShizuku()
+        activityResumed.collect { viewModel.refreshShizuku() }
+    }
 
     var drafts by remember(state.settings.sources, state.sourcePats) {
         mutableStateOf(
@@ -161,6 +171,14 @@ fun SettingsScreen(
         BackgroundUpdatePolicySettings(
             dailyUpdateCap = dailyUpdateCap,
             onDailyUpdateCapChange = { dailyUpdateCap = it },
+        )
+
+        ShizukuInstallSettings(
+            enabled = state.shizukuSilentInstallEnabled,
+            status = state.shizukuStatus,
+            onEnabledChange = viewModel::setShizukuSilentInstallEnabled,
+            onRequestPermission = viewModel::requestShizukuPermission,
+            onOpenManager = viewModel::openShizukuManager,
         )
 
         SourceVerificationPosture(
@@ -762,6 +780,78 @@ private fun SecurityPosture(encryptedAtRest: Boolean) {
                     style = MaterialTheme.typography.bodySmall,
                     color = Catppuccin.Subtext,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShizukuInstallSettings(
+    enabled: Boolean,
+    status: ShizukuStatus,
+    onEnabledChange: (Boolean) -> Unit,
+    onRequestPermission: () -> Unit,
+    onOpenManager: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = Catppuccin.Surface1,
+        border = BorderStroke(1.dp, Catppuccin.Stroke),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.shizuku_install_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = Catppuccin.TextStrong,
+            )
+            Text(
+                text = stringResource(R.string.shizuku_install_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Subtext,
+            )
+            Text(
+                text = when (status) {
+                    ShizukuStatus.Unavailable -> stringResource(R.string.shizuku_status_unavailable)
+                    ShizukuStatus.PermissionRequired -> stringResource(R.string.shizuku_status_permission_required)
+                    ShizukuStatus.Ready -> stringResource(R.string.shizuku_status_ready)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (status == ShizukuStatus.Ready) {
+                    Catppuccin.Green
+                } else {
+                    Catppuccin.Subtext
+                },
+            )
+            SettingRow(
+                title = stringResource(R.string.shizuku_no_prompt_toggle),
+                subtitle = stringResource(R.string.shizuku_no_prompt_toggle_subtitle),
+                value = enabled,
+                onChange = onEnabledChange,
+            )
+            when (status) {
+                ShizukuStatus.Unavailable -> OutlinedButton(
+                    onClick = onOpenManager,
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, Catppuccin.StrokeBright),
+                    contentPadding = PaddingValues(vertical = 11.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Catppuccin.MauveStrong),
+                ) {
+                    Text(stringResource(R.string.open_shizuku))
+                }
+                ShizukuStatus.PermissionRequired -> OutlinedButton(
+                    onClick = onRequestPermission,
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, Catppuccin.StrokeBright),
+                    contentPadding = PaddingValues(vertical = 11.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Catppuccin.MauveStrong),
+                ) {
+                    Text(stringResource(R.string.grant_shizuku_access))
+                }
+                ShizukuStatus.Ready -> Unit
             }
         }
     }

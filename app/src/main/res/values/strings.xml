@@ -202,6 +202,15 @@
     <string name="daily_update_cap_off">Off</string>
     <string name="daily_update_cap_value">%1$d / day</string>
     <string name="background_update_cadence_hint">Use each installed card’s actions menu to choose auto, notify, pinned priority, or hold until a date.</string>
+    <string name="shizuku_install_title">No-prompt installs (Shizuku)</string>
+    <string name="shizuku_install_body">Optional shell-privileged installs can avoid Android’s per-package confirmation. LocalAndroidStore keeps the verified APK and signer checks; when Shizuku is unavailable, the normal Android installer is used.</string>
+    <string name="shizuku_status_unavailable">Shizuku is not running. The normal Android installer remains active.</string>
+    <string name="shizuku_status_permission_required">Shizuku is running. Grant LocalAndroidStore access before enabling no-prompt installs.</string>
+    <string name="shizuku_status_ready">Shizuku is ready. New installs and queued updates can use the shell installer.</string>
+    <string name="shizuku_no_prompt_toggle">Use Shizuku for no-prompt installs</string>
+    <string name="shizuku_no_prompt_toggle_subtitle">Opt in to the shell installer for foreground and background sessions. Shizuku may need to be restarted after reboot unless Sui/root keeps it alive.</string>
+    <string name="open_shizuku">Open Shizuku</string>
+    <string name="grant_shizuku_access">Grant Shizuku access</string>
     <string name="update_cadence_menu">Update cadence</string>
     <string name="update_cadence_title">Update cadence · %1$s</string>
     <string name="update_cadence_body">Auto follows the daily cap. Notify reports releases without queueing. Pinned priority bypasses the cap. A hold pauses this app until its stored date.</string>

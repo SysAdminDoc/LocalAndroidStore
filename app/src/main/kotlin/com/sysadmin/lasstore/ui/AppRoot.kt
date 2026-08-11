@@ -93,7 +93,10 @@ fun AppRoot(
                 )
             }
             composable(ROUTE_SETTINGS) {
-                SettingsScreen(onOpenNotificationSettings = openNotificationSettings)
+                SettingsScreen(
+                    onOpenNotificationSettings = openNotificationSettings,
+                    activityResumed = activityResumed,
+                )
             }
             composable(ROUTE_LOG) { LogScreen() }
         }
