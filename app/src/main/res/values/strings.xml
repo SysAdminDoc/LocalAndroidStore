@@ -292,4 +292,6 @@
     <string name="accent_pink">Pink</string>
     <string name="accent_teal">Teal</string>
     <string name="accent_lavender">Lavender</string>
+    <string name="dynamic_color_setting">Use device dynamic colors</string>
+    <string name="dynamic_color_subtitle">Android 12+ only. Opt in to wallpaper-derived Material You colors; off keeps the Catppuccin identity.</string>
 </resources>

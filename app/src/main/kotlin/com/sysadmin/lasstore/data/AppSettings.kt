@@ -62,6 +62,7 @@ data class AppSettings(
     val hideUnverifiedSources: Boolean = false,
     val themeMode: AppThemeMode = AppThemeMode.Dark,
     val accentColor: AccentColor = AccentColor.Mauve,
+    val dynamicColor: Boolean = false,
 )
 
 const val DEFAULT_GITHUB_USER = "SysAdminDoc"

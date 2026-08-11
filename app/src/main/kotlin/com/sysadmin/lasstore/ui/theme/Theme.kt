@@ -1,12 +1,16 @@
 package com.sysadmin.lasstore.ui.theme
 
+import android.os.Build
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -129,12 +133,22 @@ fun LocalAndroidStoreTheme(
     darkTheme: Boolean = appSettings.themeMode == AppThemeMode.Dark,
     content: @Composable () -> Unit,
 ) {
+    val dynamicScheme = if (appSettings.dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        if (darkTheme) {
+            dynamicDarkColorScheme(LocalContext.current)
+        } else {
+            dynamicLightColorScheme(LocalContext.current)
+        }
+    } else {
+        null
+    }
     Catppuccin.configure(
         themeMode = if (darkTheme) AppThemeMode.Dark else AppThemeMode.Light,
         accentColor = appSettings.accentColor,
+        dynamicScheme = dynamicScheme,
     )
     MaterialTheme(
-        colorScheme = appColorScheme(darkTheme, appSettings),
+        colorScheme = dynamicScheme ?: appColorScheme(darkTheme, appSettings),
         typography = AppTypography,
         shapes = AppShapes,
         content = content,

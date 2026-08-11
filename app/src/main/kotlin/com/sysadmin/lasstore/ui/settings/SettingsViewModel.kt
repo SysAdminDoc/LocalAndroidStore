@@ -120,6 +120,7 @@ class SettingsViewModel : ViewModel() {
         hideUnverifiedSources: Boolean = _state.value.settings.hideUnverifiedSources,
         themeMode: AppThemeMode = _state.value.settings.themeMode,
         accentColor: AccentColor = _state.value.settings.accentColor,
+        dynamicColor: Boolean = _state.value.settings.dynamicColor,
     ) {
         saveInternal(
             sources = sources,
@@ -128,6 +129,7 @@ class SettingsViewModel : ViewModel() {
             hideUnverifiedSources = hideUnverifiedSources,
             themeMode = themeMode,
             accentColor = accentColor,
+            dynamicColor = dynamicColor,
             replaceMalformedRegistry = false,
         )
     }
@@ -150,6 +152,7 @@ class SettingsViewModel : ViewModel() {
         hideUnverifiedSources: Boolean = _state.value.settings.hideUnverifiedSources,
         themeMode: AppThemeMode = _state.value.settings.themeMode,
         accentColor: AccentColor = _state.value.settings.accentColor,
+        dynamicColor: Boolean = _state.value.settings.dynamicColor,
     ) {
         saveInternal(
             sources = sources,
@@ -158,6 +161,7 @@ class SettingsViewModel : ViewModel() {
             hideUnverifiedSources = hideUnverifiedSources,
             themeMode = themeMode,
             accentColor = accentColor,
+            dynamicColor = dynamicColor,
             replaceMalformedRegistry = true,
         )
     }
@@ -169,6 +173,7 @@ class SettingsViewModel : ViewModel() {
         hideUnverifiedSources: Boolean,
         themeMode: AppThemeMode,
         accentColor: AccentColor,
+        dynamicColor: Boolean,
         replaceMalformedRegistry: Boolean,
     ) {
         if (_state.value.saveStatus == SettingsSaveStatus.Saving) return
@@ -225,6 +230,7 @@ class SettingsViewModel : ViewModel() {
                     hideUnverifiedSources = hideUnverifiedSources,
                     themeMode = themeMode,
                     accentColor = accentColor,
+                    dynamicColor = dynamicColor,
                 )
                 val persistedSourcePats = sourcePats
                     .filter { (key, value) ->

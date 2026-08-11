@@ -1,6 +1,7 @@
 package com.sysadmin.lasstore.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ColorScheme
 import com.sysadmin.lasstore.data.AccentColor
 import com.sysadmin.lasstore.data.AppThemeMode
 
@@ -39,11 +40,14 @@ object Catppuccin {
     val Mantle: Color get() = activePalette.mantle
     val Crust: Color get() = activePalette.crust
 
-    fun accent(color: AccentColor): Color = activePalette.accent(color)
+    fun accent(color: AccentColor): Color = activeDynamicScheme?.dynamicAccent(color)
+        ?: activePalette.accent(color)
 
-    fun accentStrong(color: AccentColor): Color = activePalette.accentStrong(color)
+    fun accentStrong(color: AccentColor): Color = activeDynamicScheme?.dynamicAccent(color)
+        ?: activePalette.accentStrong(color)
 
-    fun onAccent(color: AccentColor): Color = activePalette.onAccent(color)
+    fun onAccent(color: AccentColor): Color = activeDynamicScheme?.dynamicOnAccent(color)
+        ?: activePalette.onAccent(color)
 
     private data class Palette(
         val mauve: Color,
@@ -96,6 +100,34 @@ object Catppuccin {
         }
 
         fun onAccent(color: AccentColor): Color = if (light) textStrong else crust
+
+        fun withDynamicColors(scheme: ColorScheme): Palette = copy(
+            mauve = scheme.primary,
+            mauveStrong = scheme.primary,
+            sapphire = scheme.secondary,
+            sky = scheme.tertiary,
+            green = scheme.tertiary,
+            mint = scheme.secondaryContainer,
+            teal = scheme.secondary,
+            yellow = scheme.primaryContainer,
+            peach = scheme.tertiaryContainer,
+            red = scheme.error,
+            pink = scheme.secondaryContainer,
+            lavender = scheme.tertiaryContainer,
+            textStrong = scheme.onBackground,
+            text = scheme.onBackground,
+            subtext = scheme.onSurfaceVariant,
+            overlay = scheme.outline,
+            strokeBright = scheme.outline,
+            stroke = scheme.outlineVariant,
+            surface2 = scheme.surfaceVariant,
+            surface1 = scheme.surface,
+            surface0 = scheme.surface,
+            panel = scheme.surface,
+            panelRaised = scheme.surface,
+            mantle = scheme.background,
+            crust = scheme.background,
+        )
 
         private val sapphireStrong: Color
             get() = if (light) Color(0xFF16879D) else Color(0xFF89D5F1)
@@ -177,9 +209,40 @@ object Catppuccin {
     @Volatile
     private var activeAccent = AccentColor.Mauve
 
+    @Volatile
+    private var activeDynamicScheme: ColorScheme? = null
+
     @Synchronized
-    fun configure(themeMode: AppThemeMode, accentColor: AccentColor) {
-        activePalette = if (themeMode == AppThemeMode.Light) LightPalette else DarkPalette
+    fun configure(
+        themeMode: AppThemeMode,
+        accentColor: AccentColor,
+        dynamicScheme: ColorScheme? = null,
+    ) {
+        val basePalette = if (themeMode == AppThemeMode.Light) LightPalette else DarkPalette
+        activePalette = dynamicScheme?.let(basePalette::withDynamicColors) ?: basePalette
         activeAccent = accentColor
+        activeDynamicScheme = dynamicScheme
+    }
+
+    private fun ColorScheme.dynamicAccent(color: AccentColor): Color = when (color) {
+        AccentColor.Mauve -> primary
+        AccentColor.Sapphire -> secondary
+        AccentColor.Green -> tertiary
+        AccentColor.Yellow -> primaryContainer
+        AccentColor.Red -> error
+        AccentColor.Pink -> secondaryContainer
+        AccentColor.Teal -> secondary
+        AccentColor.Lavender -> tertiaryContainer
+    }
+
+    private fun ColorScheme.dynamicOnAccent(color: AccentColor): Color = when (color) {
+        AccentColor.Mauve -> onPrimary
+        AccentColor.Sapphire -> onSecondary
+        AccentColor.Green -> onTertiary
+        AccentColor.Yellow -> onPrimaryContainer
+        AccentColor.Red -> onError
+        AccentColor.Pink -> onSecondaryContainer
+        AccentColor.Teal -> onSecondary
+        AccentColor.Lavender -> onTertiaryContainer
     }
 }

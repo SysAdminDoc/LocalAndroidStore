@@ -84,6 +84,7 @@ class SettingsStoreTransactionRobolectricTest {
             hideUnverifiedSources = true,
             themeMode = AppThemeMode.Light,
             accentColor = AccentColor.Lavender,
+            dynamicColor = true,
         )
 
         store.update(target)
@@ -92,6 +93,7 @@ class SettingsStoreTransactionRobolectricTest {
         assertTrue(saved.hideUnverifiedSources)
         assertEquals(AppThemeMode.Light, saved.themeMode)
         assertEquals(AccentColor.Lavender, saved.accentColor)
+        assertTrue(saved.dynamicColor)
         assertEquals(AccentColor.Teal, saved.sources.single().accent)
     }
 

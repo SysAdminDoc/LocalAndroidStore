@@ -107,6 +107,7 @@ class SettingsStore(
     private val keyHideUnverifiedSources = booleanPreferencesKey("hide_unverified_sources")
     private val keyThemeMode = stringPreferencesKey("theme_mode")
     private val keyAccentColor = stringPreferencesKey("accent_color")
+    private val keyDynamicColor = booleanPreferencesKey("dynamic_color")
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -274,6 +275,7 @@ class SettingsStore(
             prefs[keyHideUnverifiedSources] = canonical.hideUnverifiedSources
             prefs[keyThemeMode] = canonical.themeMode.name
             prefs[keyAccentColor] = canonical.accentColor.name
+            prefs[keyDynamicColor] = canonical.dynamicColor
         }
     }
 
@@ -297,6 +299,7 @@ class SettingsStore(
                 accentColor = prefs[keyAccentColor]
                     ?.let { value -> runCatching { AccentColor.valueOf(value) }.getOrNull() }
                     ?: AccentColor.Mauve,
+                dynamicColor = prefs[keyDynamicColor] ?: false,
             ),
             payloadState = decoded.state,
             malformedPayload = decoded.rawPayload,
@@ -316,6 +319,7 @@ class SettingsStore(
             hideUnverifiedSources = settings.hideUnverifiedSources,
             themeMode = settings.themeMode,
             accentColor = settings.accentColor,
+            dynamicColor = settings.dynamicColor,
         )
     }
 

@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added an opt-in Android 12+ Material You color mode. It uses the system dynamic light/dark scheme and maps custom catalog tokens to the same wallpaper-derived surfaces while leaving Catppuccin as the default.
 - Added persisted Catppuccin Mocha dark and Latte light themes, eight selectable primary accents, and per-source accent overrides for GitHub and F-Droid catalog cards.
 - Added per-source verification badges with an in-app explanation, an Android developer-options entry point for advanced sideloading, and a Settings preference to hide locally unverified catalog cards while leaving unknown cards visible.
 - Added package-identity aggregation across configured sources with a persisted preferred-source chooser for duplicate releases.

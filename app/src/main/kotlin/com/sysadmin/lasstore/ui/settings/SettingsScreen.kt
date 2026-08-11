@@ -111,6 +111,9 @@ fun SettingsScreen(
     var accentColor by remember(state.settings.accentColor) {
         mutableStateOf(state.settings.accentColor)
     }
+    var dynamicColor by remember(state.settings.dynamicColor) {
+        mutableStateOf(state.settings.dynamicColor)
+    }
     val draftFdroidSources = fdroidDrafts.map(FdroidSourceDraft::toSource)
     val fdroidValidationError = validateFdroidSources(draftFdroidSources)
     val normalizedFdroidSources = normalizeFdroidSources(draftFdroidSources)
@@ -126,7 +129,8 @@ fun SettingsScreen(
         normalizedFdroidSources != normalizeFdroidSources(state.settings.fdroidSources) ||
         hideUnverifiedSources != state.settings.hideUnverifiedSources ||
         themeMode != state.settings.themeMode ||
-        accentColor != state.settings.accentColor
+        accentColor != state.settings.accentColor ||
+        dynamicColor != state.settings.dynamicColor
 
     Column(
         modifier = Modifier
@@ -144,8 +148,10 @@ fun SettingsScreen(
         AppearanceSettings(
             themeMode = themeMode,
             accentColor = accentColor,
+            dynamicColor = dynamicColor,
             onThemeModeChange = { themeMode = it },
             onAccentColorChange = { accentColor = it },
+            onDynamicColorChange = { dynamicColor = it },
         )
 
         SourceVerificationPosture(
@@ -315,6 +321,7 @@ fun SettingsScreen(
                         hideUnverifiedSources = hideUnverifiedSources,
                         themeMode = themeMode,
                         accentColor = accentColor,
+                        dynamicColor = dynamicColor,
                     )
                 },
                 enabled = validationError == null && fdroidValidationError == null && !state.saving &&
@@ -337,6 +344,7 @@ fun SettingsScreen(
                     hideUnverifiedSources = hideUnverifiedSources,
                     themeMode = themeMode,
                     accentColor = accentColor,
+                    dynamicColor = dynamicColor,
                 )
             },
             enabled = validationError == null && fdroidValidationError == null &&
@@ -460,8 +468,10 @@ private fun SettingsHeader() {
 private fun AppearanceSettings(
     themeMode: AppThemeMode,
     accentColor: AccentColor,
+    dynamicColor: Boolean,
     onThemeModeChange: (AppThemeMode) -> Unit,
     onAccentColorChange: (AccentColor) -> Unit,
+    onDynamicColorChange: (Boolean) -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -505,6 +515,13 @@ private fun AppearanceSettings(
                     modifier = Modifier.weight(1f),
                 )
             }
+            SettingRow(
+                title = stringResource(R.string.dynamic_color_setting),
+                subtitle = stringResource(R.string.dynamic_color_subtitle),
+                value = dynamicColor,
+                onChange = onDynamicColorChange,
+                enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
+            )
             Text(
                 text = stringResource(R.string.accent_color),
                 style = MaterialTheme.typography.labelMedium,
@@ -1127,6 +1144,7 @@ private fun SettingRow(
     subtitle: String,
     value: Boolean,
     onChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1137,17 +1155,18 @@ private fun SettingRow(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleSmall,
-                color = Catppuccin.TextStrong,
+                color = if (enabled) Catppuccin.TextStrong else Catppuccin.Overlay,
             )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = Catppuccin.Subtext,
+                color = if (enabled) Catppuccin.Subtext else Catppuccin.Overlay,
             )
         }
         Switch(
             checked = value,
             onCheckedChange = onChange,
+            enabled = enabled,
             modifier = Modifier.semantics { contentDescription = title },
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Catppuccin.Crust,
