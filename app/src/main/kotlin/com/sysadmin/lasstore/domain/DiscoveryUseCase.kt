@@ -326,7 +326,7 @@ class DiscoveryUseCase(
         val repoIssue = repoResult.truncationIssue(source)
 
         val candidates = repos
-            .filter { !it.archived && !it.fork }
+            .filter { !it.fork }
             .filter {
                 !source.filterByTopic ||
                     it.topics.any { topic -> topic.equals(source.topic.trim(), ignoreCase = true) }
@@ -391,6 +391,8 @@ class DiscoveryUseCase(
                             releaseBody = release.body?.takeIf { it.isNotBlank() },
                             assetChoices = assetChoices,
                             tags = repo.topics.mapNotNull(::githubTopicTag).toSet(),
+                            repositoryArchived = repo.archived,
+                            repositoryLastActivityAt = repo.pushedAt,
                         )
                     )
                 } catch (throwable: Throwable) {

@@ -75,6 +75,42 @@ class DiscoveryUseCaseTest {
     }
 
     @Test
+    fun archivedGithubRepositoryWithAnApkRemainsVisibleWithLifecycleMetadata() = runBlocking {
+        val gateway = object : GitHubGateway {
+            override suspend fun listUserRepos(
+                user: String,
+                patOverride: String?,
+                sourceKey: String,
+            ): List<GhRepo> = listOf(
+                repo(
+                    owner = user,
+                    name = "archived-app",
+                    archived = true,
+                    pushedAt = "2020-01-01T00:00:00Z",
+                ),
+            )
+
+            override suspend fun latestRelease(
+                owner: String,
+                repo: String,
+                includePrereleases: Boolean,
+                patOverride: String?,
+                sourceKey: String,
+            ): GhRelease = release(repo)
+        }
+
+        val result = DiscoveryUseCase(
+            github = gateway,
+            logger = null,
+            snapshots = MemorySnapshots(),
+        ).discover(listOf(GitHubSource(user = "alice")))
+
+        assertEquals(1, result.apps.size)
+        assertTrue(result.apps.single().repositoryArchived)
+        assertEquals("2020-01-01T00:00:00Z", result.apps.single().repositoryLastActivityAt)
+    }
+
+    @Test
     fun cancellationDoesNotRecoverOrPersistAPartialDiscovery() = runBlocking {
         val enteredLookup = CompletableDeferred<Unit>()
         val releaseLookup = CompletableDeferred<Unit>()
@@ -634,10 +670,18 @@ class DiscoveryUseCaseTest {
             ): GhRelease? = null
         }
 
-        fun repo(owner: String, name: String, topics: List<String> = emptyList()) = GhRepo(
+        fun repo(
+            owner: String,
+            name: String,
+            topics: List<String> = emptyList(),
+            archived: Boolean = false,
+            pushedAt: String? = null,
+        ) = GhRepo(
             name = name,
             fullName = "$owner/$name",
             htmlUrl = "https://github.com/$owner/$name",
+            archived = archived,
+            pushedAt = pushedAt,
             topics = topics,
             owner = GhOwner(owner),
         )

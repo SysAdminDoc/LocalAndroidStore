@@ -25,7 +25,7 @@ class GitHubReleasesPlugin(
             patOverride = patOverride,
             sourceKey = source.key,
         ).repos
-            .filter { !it.archived && !it.fork }
+            .filter { !it.fork }
             .filter {
                 !source.filterByTopic || it.topics.any { topic ->
                     topic.equals(source.topic.trim(), ignoreCase = true)
@@ -38,6 +38,8 @@ class GitHubReleasesPlugin(
                     description = repo.description,
                     homepageUrl = repo.htmlUrl,
                     tags = repo.topics.mapNotNull(::githubTopicTag).toSet(),
+                    repositoryArchived = repo.archived,
+                    repositoryLastActivityAt = repo.pushedAt,
                 )
             }
 

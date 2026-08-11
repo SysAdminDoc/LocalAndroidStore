@@ -182,6 +182,7 @@ data class GhRepo(
     val archived: Boolean = false,
     val fork: Boolean = false,
     val private: Boolean = false,
+    @SerialName("pushed_at") val pushedAt: String? = null,
     @SerialName("stargazers_count") val stars: Int = 0,
     val topics: List<String> = emptyList(),
     @SerialName("default_branch") val defaultBranch: String = "main",

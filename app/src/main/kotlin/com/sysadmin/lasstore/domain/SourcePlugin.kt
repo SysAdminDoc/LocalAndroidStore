@@ -14,6 +14,8 @@ data class DiscoveredApp(
     val homepageUrl: String? = null,
     val antiFeatures: Set<String> = emptySet(),
     val tags: Set<String> = emptySet(),
+    val repositoryArchived: Boolean = false,
+    val repositoryLastActivityAt: String? = null,
 )
 
 data class ReleaseAsset(

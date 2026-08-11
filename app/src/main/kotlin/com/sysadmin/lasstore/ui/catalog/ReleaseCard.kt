@@ -94,6 +94,8 @@ import com.sysadmin.lasstore.domain.ApkAssetClassifier
 import com.sysadmin.lasstore.domain.ReleaseChannel
 import com.sysadmin.lasstore.domain.SourceVerificationStatus
 import com.sysadmin.lasstore.domain.antiFeatureBadges
+import com.sysadmin.lasstore.domain.repositoryMaintenanceWarning
+import com.sysadmin.lasstore.domain.RepositoryWarningKind
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import java.time.Instant
 import java.text.DateFormat
@@ -759,6 +761,42 @@ fun ReleaseCard(
                     ) {
                         antiFeatureBadges.forEach { badge ->
                             AntiFeaturePill(badge)
+                        }
+                    }
+                }
+
+                repositoryMaintenanceWarning(
+                    archived = state.info.repositoryArchived,
+                    lastActivityAt = state.info.repositoryLastActivityAt,
+                )?.let { warning ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = Catppuccin.Peach.copy(alpha = 0.08f),
+                        border = BorderStroke(1.dp, Catppuccin.Peach.copy(alpha = 0.34f)),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = Catppuccin.Peach,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                text = stringResource(
+                                    if (warning.kind == RepositoryWarningKind.Archived) {
+                                        R.string.repository_archived_warning
+                                    } else {
+                                        R.string.repository_inactive_warning
+                                    },
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Catppuccin.Peach,
+                            )
                         }
                     }
                 }

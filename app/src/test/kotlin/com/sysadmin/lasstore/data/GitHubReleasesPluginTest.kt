@@ -9,7 +9,7 @@ import org.junit.Test
 
 class GitHubReleasesPluginTest {
     @Test
-    fun mapsRepositoriesAndFiltersConfiguredTopics() = runBlocking {
+    fun mapsRepositoriesAndFiltersConfiguredTopicsWhileRetainingArchivedApps() = runBlocking {
         val gateway = FakeGateway(
             repos = listOf(
                 repo("owner/first", topics = listOf("android")),
@@ -22,7 +22,9 @@ class GitHubReleasesPluginTest {
             source = GitHubSource(user = "owner", topic = "android", filterByTopic = true),
         )
 
-        assertEquals(listOf("owner/first"), plugin.listApps().map { it.applicationId })
+        val apps = plugin.listApps()
+        assertEquals(listOf("owner/first", "owner/archived"), apps.map { it.applicationId })
+        assertTrue(apps.last().repositoryArchived)
     }
 
     @Test
