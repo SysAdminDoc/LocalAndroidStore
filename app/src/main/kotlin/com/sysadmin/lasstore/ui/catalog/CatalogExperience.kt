@@ -231,6 +231,9 @@ fun CatalogExperience(
                                 onSelectPreferredSource = { sourceKey ->
                                     viewModel.selectPreferredSource(card, sourceKey)
                                 },
+                                onSetChannelPreference = { channel ->
+                                    viewModel.setChannelPreference(card, channel)
+                                },
                             )
                         }
                     }

@@ -74,6 +74,7 @@ import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.normalizeSha256Digest
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.domain.ApkAssetClassifier
+import com.sysadmin.lasstore.domain.ReleaseChannel
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import java.time.Instant
 import java.text.DateFormat
@@ -102,6 +103,7 @@ fun ReleaseCard(
     onLoadMoreHistory: () -> Unit = {},
     onSelectHistoricalRelease: (HistoricalRelease) -> Unit = {},
     onSelectPreferredSource: (String) -> Unit = {},
+    onSetChannelPreference: (ReleaseChannel?) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isReleaseStale = remember(state.info.publishedAt) {
@@ -129,6 +131,10 @@ fun ReleaseCard(
     var sourceSelectionVisible by rememberSaveable(
         state.info.applicationId,
         state.alternativeSources.size,
+    ) { mutableStateOf(false) }
+    var channelSelectionVisible by rememberSaveable(
+        state.info.handle,
+        state.channelPreference,
     ) { mutableStateOf(false) }
     val cardShape = RoundedCornerShape(24.dp)
 
@@ -432,6 +438,62 @@ fun ReleaseCard(
         )
     }
 
+    if (channelSelectionVisible) {
+        AlertDialog(
+            onDismissRequest = { channelSelectionVisible = false },
+            title = { Text(stringResource(R.string.release_channel_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = stringResource(R.string.release_channel_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Subtext,
+                    )
+                    TextButton(
+                        onClick = {
+                            channelSelectionVisible = false
+                            onSetChannelPreference(null)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                    ) {
+                        channelOptionText(
+                            label = stringResource(R.string.release_channel_any),
+                            selected = state.channelPreference == null,
+                        )
+                    }
+                    listOf(
+                        ReleaseChannel.STABLE,
+                        ReleaseChannel.BETA,
+                        ReleaseChannel.ALPHA,
+                        ReleaseChannel.NIGHTLY,
+                        ReleaseChannel.RC,
+                        ReleaseChannel.DEV,
+                    ).forEach { channel ->
+                        TextButton(
+                            onClick = {
+                                channelSelectionVisible = false
+                                onSetChannelPreference(channel)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                        ) {
+                            channelOptionText(
+                                label = releaseChannelName(channel),
+                                selected = state.channelPreference == channel,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { channelSelectionVisible = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = cardShape,
@@ -510,6 +572,7 @@ fun ReleaseCard(
                             onBrowseHistory()
                         },
                         onChooseSource = { sourceSelectionVisible = true },
+                        onChooseChannel = { channelSelectionVisible = true },
                     )
                 }
 
@@ -1060,6 +1123,7 @@ private fun ReleaseOverflowMenu(
     onManualInstall: () -> Unit,
     onBrowseHistory: () -> Unit,
     onChooseSource: () -> Unit,
+    onChooseChannel: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -1176,6 +1240,19 @@ private fun ReleaseOverflowMenu(
                 )
             }
             ReleaseMenuItem(
+                text = state.channelPreference?.let {
+                    stringResource(
+                        R.string.release_channel_pinned_menu,
+                        releaseChannelName(it),
+                    )
+                } ?: stringResource(R.string.release_channel_set_menu),
+                icon = Icons.Default.Schedule,
+                onClick = {
+                    expanded = false
+                    onChooseChannel()
+                },
+            )
+            ReleaseMenuItem(
                 text = stringResource(R.string.release_history),
                 icon = Icons.Default.Schedule,
                 onClick = {
@@ -1217,6 +1294,31 @@ private fun CardStatus.hasInstalledApp(): Boolean = this in setOf(
 
 private fun sourceDisplayName(info: com.sysadmin.lasstore.domain.AppInfo): String =
     if (info.sourceLabel == info.owner) info.handle else "${info.sourceLabel} · ${info.handle}"
+
+@Composable
+private fun releaseChannelName(channel: ReleaseChannel): String = when (channel) {
+    ReleaseChannel.STABLE -> stringResource(R.string.release_channel_stable)
+    ReleaseChannel.BETA -> stringResource(R.string.release_channel_beta)
+    ReleaseChannel.ALPHA -> stringResource(R.string.release_channel_alpha)
+    ReleaseChannel.NIGHTLY -> stringResource(R.string.release_channel_nightly)
+    ReleaseChannel.RC -> stringResource(R.string.release_channel_rc)
+    ReleaseChannel.DEV -> stringResource(R.string.release_channel_dev)
+    ReleaseChannel.PREVIEW -> stringResource(R.string.release_channel_preview)
+}
+
+@Composable
+private fun channelOptionText(label: String, selected: Boolean) {
+    Text(
+        text = if (selected) {
+            stringResource(R.string.release_channel_selected, label)
+        } else {
+            label
+        },
+        modifier = Modifier.fillMaxWidth(),
+        color = if (selected) Catppuccin.Mint else Catppuccin.TextStrong,
+        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+    )
+}
 
 private fun CardStatus.hasManagedInstall(): Boolean =
     hasInstalledApp() && this != CardStatus.Unmanaged

@@ -4,6 +4,7 @@
 
 ### Added
 - Added package-identity aggregation across configured sources with a persisted preferred-source chooser for duplicate releases.
+- Added normalized release-channel derivation and per-repository channel pinning; GitHub discovery now selects the newest matching stable, beta, alpha, nightly, release-candidate, or development release within its bounded history.
 - Added a Wear OS companion module with an update-count Tile, short-text complication, phone capability registration, and user-initiated watch-to-phone refresh messages.
 - Added persisted F-Droid repository settings with HTTPS-plus-fingerprint validation, signed `entry.jar` verification, catalog consumption, and anti-feature filter chips.
 - Added GitLab, F-Droid index-v2, and IzzyOnDroid source-plugin adapters with HTTPS-only asset resolution, repository fingerprint TOFU validation, anti-feature parsing, and signed `entry.jar` verification.

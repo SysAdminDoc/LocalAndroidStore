@@ -4,6 +4,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import com.sysadmin.lasstore.domain.ReleaseChannel
+import com.sysadmin.lasstore.domain.deriveReleaseChannel
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -138,6 +140,25 @@ interface GitHubGateway {
         patOverride: String? = null,
         sourceKey: String = owner,
     ): GhRelease?
+
+    /**
+     * Returns the newest release in [channel], falling back to the newest published release when
+     * the bounded history has no matching channel. The default keeps test and alternate gateways
+     * compatible while production GitHub discovery can honor a stored channel preference.
+     */
+    suspend fun latestReleaseForChannel(
+        owner: String,
+        repo: String,
+        channel: ReleaseChannel,
+        patOverride: String? = null,
+        sourceKey: String = owner,
+    ): GhRelease? = latestRelease(
+        owner = owner,
+        repo = repo,
+        includePrereleases = true,
+        patOverride = patOverride,
+        sourceKey = sourceKey,
+    )
 
     suspend fun listReleaseHistory(
         owner: String,
@@ -297,6 +318,25 @@ class GitHubClient(
                 json.decodeFromString<GhRelease>(body)
             }
         }
+
+    override suspend fun latestReleaseForChannel(
+        owner: String,
+        repo: String,
+        channel: ReleaseChannel,
+        patOverride: String?,
+        sourceKey: String,
+    ): GhRelease? = withContext(Dispatchers.IO) {
+        val body = getJson(
+            "$apiBaseUrl/repos/${encodePathSegment(owner)}/${encodePathSegment(repo)}" +
+                "/releases?per_page=10",
+            patOverride,
+            sourceKey,
+        ) ?: return@withContext null
+        val published = json.decodeFromString<List<GhRelease>>(body).filterNot { it.draft }
+        published.firstOrNull {
+            deriveReleaseChannel(it.tagName, it.prerelease) == channel
+        } ?: published.firstOrNull()
+    }
 
     override suspend fun listReleaseHistory(
         owner: String,

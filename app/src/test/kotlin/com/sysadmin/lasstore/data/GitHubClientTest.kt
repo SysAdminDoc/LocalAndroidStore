@@ -19,6 +19,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import com.sysadmin.lasstore.domain.ReleaseChannel
 
 class GitHubClientTest {
     private lateinit var server: MockWebServer
@@ -77,6 +78,32 @@ class GitHubClientTest {
 
         server.takeRequest()
         assertEquals(null, server.takeRequest().getHeader("If-None-Match"))
+    }
+
+    @Test
+    fun channelLookupChoosesNewestMatchingRelease() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    [
+                      {"tag_name":"v3-beta1","prerelease":true,"html_url":"https://example.invalid/beta"},
+                      {"tag_name":"v2","prerelease":false,"html_url":"https://example.invalid/stable"}
+                    ]
+                    """.trimIndent(),
+                ),
+        )
+
+        val release = client().latestReleaseForChannel(
+            owner = "alice",
+            repo = "app",
+            channel = ReleaseChannel.BETA,
+            sourceKey = "source-a",
+        )
+
+        assertEquals("v3-beta1", release?.tagName)
+        assertTrue(server.takeRequest().path.orEmpty().contains("/releases?per_page=10"))
     }
 
     @Test

@@ -3,6 +3,37 @@ package com.sysadmin.lasstore.domain
 import com.sysadmin.lasstore.data.GhAsset
 import kotlinx.serialization.Serializable
 
+enum class ReleaseChannel(val key: String, val label: String) {
+    STABLE("stable", "stable"),
+    BETA("beta", "beta"),
+    ALPHA("alpha", "alpha"),
+    NIGHTLY("nightly", "nightly"),
+    RC("rc", "rc"),
+    DEV("dev", "dev"),
+    PREVIEW("preview", "pre"),
+    ;
+
+    companion object {
+        fun fromKey(key: String?): ReleaseChannel? =
+            entries.firstOrNull { it.key == key?.trim()?.lowercase() }
+    }
+}
+
+fun deriveReleaseChannel(tagName: String, prerelease: Boolean): ReleaseChannel {
+    val tag = tagName.lowercase()
+    return when {
+        tag.contains("nightly") || tag.contains("canary") -> ReleaseChannel.NIGHTLY
+        tag.contains("alpha") -> ReleaseChannel.ALPHA
+        tag.contains("beta") -> ReleaseChannel.BETA
+        RC_TAG_PATTERN.containsMatchIn(tag) -> ReleaseChannel.RC
+        tag.contains("dev") -> ReleaseChannel.DEV
+        prerelease -> ReleaseChannel.PREVIEW
+        else -> ReleaseChannel.STABLE
+    }
+}
+
+private val RC_TAG_PATTERN = Regex("""(^|[-_.])rc([0-9]|[-_.]|$)""")
+
 @Serializable
 data class AppInfo(
     val owner: String,
@@ -29,22 +60,12 @@ data class AppInfo(
 ) {
     val handle: String get() = "$owner/$repo"
 
-    /**
-     * Derive a human-readable channel label from the release tag and the prerelease flag.
-     * Returns null for ordinary stable releases.
-     */
+    val releaseChannel: ReleaseChannel
+        get() = deriveReleaseChannel(tagName, prerelease)
+
+    /** Returns a human-readable label for non-stable releases. */
     val channelLabel: String?
-        get() {
-            val t = tagName.lowercase()
-            return when {
-                t.contains("nightly") || t.contains("canary") -> "nightly"
-                t.contains("alpha") -> "alpha"
-                t.contains("beta") -> "beta"
-                t.contains("-rc") || t.contains(".rc") || Regex("""[-.]rc\d""").containsMatchIn(t) -> "rc"
-                prerelease -> "pre"
-                else -> null
-            }
-        }
+        get() = releaseChannel.label.takeUnless { releaseChannel == ReleaseChannel.STABLE }
 }
 
 enum class CardStatus {

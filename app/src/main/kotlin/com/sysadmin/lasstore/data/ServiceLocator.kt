@@ -42,6 +42,8 @@ object ServiceLocator {
         private set
     lateinit var ignoreList: IgnoreListStore
         private set
+    lateinit var channelPreferences: ChannelPreferenceStore
+        private set
     lateinit var backgroundUpdates: BackgroundUpdateScheduler
         private set
     lateinit var queuedUpdateStatus: QueuedUpdateStatusStore
@@ -95,6 +97,7 @@ object ServiceLocator {
             appIdCache = AppIdCache(appContext)
             preferredSources = PreferredSourceStore(appContext)
             ignoreList = IgnoreListStore(appContext)
+            channelPreferences = ChannelPreferenceStore(appContext)
             queuedUpdateStatus = QueuedUpdateStatusStore(appContext)
             backgroundUpdates = BackgroundUpdateScheduler(appContext, logger)
             foregroundInstalls = ForegroundInstallStore(appContext)

@@ -27,6 +27,7 @@ import com.sysadmin.lasstore.domain.CatalogFailureKind
 import com.sysadmin.lasstore.domain.CatalogSourceIssue
 import com.sysadmin.lasstore.domain.DiscoveryUseCase
 import com.sysadmin.lasstore.domain.ReleaseVersionRelation
+import com.sysadmin.lasstore.domain.ReleaseChannel
 import com.sysadmin.lasstore.domain.classifyReleaseVersion
 import com.sysadmin.lasstore.install.InstallResult
 import com.sysadmin.lasstore.install.ForegroundInstallFinalizer
@@ -79,6 +80,7 @@ data class CardState(
     val releaseHistory: ReleaseHistoryState? = null,
     val historicalSelection: Boolean = false,
     val alternativeSources: List<AppInfo> = emptyList(),
+    val channelPreference: ReleaseChannel? = null,
 )
 
 data class UnmanagedInstallDetails(
@@ -187,6 +189,9 @@ class CatalogViewModel : ViewModel() {
         patForSource = { sourceKey -> sl.settings.getPat(sourceKey) },
         supportedAbis = Build.SUPPORTED_ABIS.toList(),
         fdroidIndexProvider = sl.fdroidIndex,
+        preferredChannelFor = { source, owner, repo ->
+            sl.channelPreferences.get(source.key, owner, repo)
+        },
     )
 
     private val _state = MutableStateFlow(CatalogUiState())
@@ -378,6 +383,12 @@ class CatalogViewModel : ViewModel() {
         }
     }
 
+    fun setChannelPreference(card: CardState, channel: ReleaseChannel?) {
+        sl.channelPreferences.set(card.info, channel)
+        updateCard(card.info) { current -> current.copy(channelPreference = channel) }
+        refresh()
+    }
+
     fun refresh() {
         refreshJob?.cancel()
         val generation = ++refreshGeneration
@@ -562,7 +573,10 @@ class CatalogViewModel : ViewModel() {
             .filterNot { candidate -> cardKey(candidate) == cardKey(info) }
         return withForegroundInstallState(
             withQueuedUpdateStatus(
-                baseState.copy(alternativeSources = alternatives),
+                baseState.copy(
+                    alternativeSources = alternatives,
+                    channelPreference = sl.channelPreferences.get(info),
+                ),
             ),
         )
     }

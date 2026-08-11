@@ -35,6 +35,7 @@ That's what this is.
 - **Multi-source GitHub discovery** — every enabled GitHub user / org source with a `.apk` asset on its latest release. Each source has its own enable toggle, optional topic filter, pre-release toggle, and optional PAT.
 - **Pinned F-Droid repositories** — add any HTTPS F-Droid index-v2 endpoint by pasting its `?fingerprint=` URL. The repository fingerprint is checked before metadata is exposed, and signed `entry.jar` metadata is verified when the repository provides it. APK SHA-256 digests and F-Droid anti-features travel into the catalog.
 - **Multi-source package aggregation** — once an Android package identity is known, releases from multiple configured sources share one card. Open the card's source chooser to inspect every candidate and pin the preferred source for that package.
+- **Per-app release channels** — release tags and pre-release metadata derive stable, beta, alpha, nightly, release-candidate, and development labels. Use a card's overflow menu to pin the channel; GitHub discovery searches the bounded release history for that channel and falls back safely when none is published.
 - **Wear OS companion** — the separate `wear` module provides an update-count Tile and short-text complication. A paired watch can send a user-initiated refresh request back to the phone; no APK is installed on-watch.
 - **Rate-aware offline catalog** — repository discovery continues through a bounded 50-page policy, release lookups are capped at four concurrent requests, GitHub ETags reuse unchanged responses, partial sources retain only current candidates whose release lookup failed transiently, and a dated on-device snapshot remains usable offline for up to seven days. Retained cards are marked stale; removed, archived, topic-excluded, missing-release, and non-transiently failed repositories are not resurrected. A source that exceeds the repository bound is marked truncated with fetched/omitted evidence instead of appearing complete; use a topic filter to narrow it. TLS, token, authorization, rate-limit, network, server, malformed-response, truncation, and valid-empty outcomes are shown distinctly.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black. Repo handle, star count, version tag, status badge, two-line description.
@@ -93,6 +94,10 @@ When the same package is available from more than one source, open the card over
 **Choose preferred source**. The preference is stored per package on this device; cards without a
 verified package identity remain source-specific until an APK has been inspected.
 
+To follow a release track, open a card's overflow menu and choose **Set release channel**. The
+preference is stored per source repository; **Follow source default** removes the pin. Stable,
+beta, alpha, nightly, release-candidate, and development tags are recognized automatically.
+
 To inspect or restore an older published version, open a card's overflow menu and choose **Release history**. Select a release to replace the card's current target; LocalAndroidStore records that foreground choice, then requires the same APK inspection, publisher-trust, permission, and explicit downgrade checks used by any other install. It never queues a historical selection automatically.
 
 ---
@@ -140,6 +145,7 @@ a refresh.
 | SharedPreferences `las_appid_cache` | Source/repository-scoped installed package, version, signer, and release-asset identity |
 | SharedPreferences `foreground_install_state` | Recoverable foreground install phase, installer session, APK metadata, and pending MediaStore cleanup |
 | SharedPreferences `queued_update_status` | Attempt count and durable queued-update terminal state |
+| SharedPreferences `las_release_channels_v1` | Per-source repository release-channel preferences |
 
 The app declares `android:allowBackup="false"` and excludes everything from cloud / device-transfer backups — secrets stay on the device.
 

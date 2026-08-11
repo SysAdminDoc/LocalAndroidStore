@@ -141,6 +141,8 @@ class DiscoveryUseCase(
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
     private val supportedAbis: List<String> = emptyList(),
     private val fdroidIndexProvider: FdroidIndexProvider? = null,
+    private val preferredChannelFor: (GitHubSource, String, String) -> ReleaseChannel? =
+        { _, _, _ -> null },
 ) {
     suspend fun discover(
         sources: List<GitHubSource>,
@@ -310,14 +312,29 @@ class DiscoveryUseCase(
         val lookups = candidates.map { repo ->
             async {
                 try {
+                    val preferredChannel = preferredChannelFor(
+                        source,
+                        repo.owner.login,
+                        repo.name,
+                    )
                     val release = requestBudget.withPermit {
-                        github.latestRelease(
-                            owner = repo.owner.login,
-                            repo = repo.name,
-                            includePrereleases = source.showPrereleases,
-                            patOverride = pat,
-                            sourceKey = source.key,
-                        )
+                        if (preferredChannel == null) {
+                            github.latestRelease(
+                                owner = repo.owner.login,
+                                repo = repo.name,
+                                includePrereleases = source.showPrereleases,
+                                patOverride = pat,
+                                sourceKey = source.key,
+                            )
+                        } else {
+                            github.latestReleaseForChannel(
+                                owner = repo.owner.login,
+                                repo = repo.name,
+                                channel = preferredChannel,
+                                patOverride = pat,
+                                sourceKey = source.key,
+                            )
+                        }
                     } ?: return@async ReleaseLookup.Missing
                     val selection = ApkAssetClassifier.classify(
                         release.assets,
