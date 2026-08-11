@@ -110,6 +110,7 @@ fun ReleaseCard(
     onSelectHistoricalRelease: (HistoricalRelease) -> Unit = {},
     onSelectPreferredSource: (String) -> Unit = {},
     onSetChannelPreference: (ReleaseChannel?) -> Unit = {},
+    onOpenLanguageSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isReleaseStale = remember(state.info.publishedAt) {
@@ -582,6 +583,7 @@ fun ReleaseCard(
                         },
                         onChooseSource = { sourceSelectionVisible = true },
                         onChooseChannel = { channelSelectionVisible = true },
+                        onOpenLanguageSettings = onOpenLanguageSettings,
                     )
                 }
 
@@ -1201,6 +1203,7 @@ private fun ReleaseOverflowMenu(
     onBrowseHistory: () -> Unit,
     onChooseSource: () -> Unit,
     onChooseChannel: () -> Unit,
+    onOpenLanguageSettings: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -1272,6 +1275,19 @@ private fun ReleaseOverflowMenu(
                     onClick = {
                         expanded = false
                         onIgnore()
+                    },
+                )
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                state.status.hasInstalledApp() &&
+                !state.info.applicationId.isNullOrBlank()
+            ) {
+                ReleaseMenuItem(
+                    text = stringResource(R.string.app_language_settings),
+                    icon = Icons.Default.Info,
+                    onClick = {
+                        expanded = false
+                        onOpenLanguageSettings()
                     },
                 )
             }

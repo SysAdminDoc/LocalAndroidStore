@@ -372,6 +372,25 @@ class CatalogViewModel : ViewModel() {
         }
     }
 
+    /** Open Android's per-app language settings for the installed package represented by a card. */
+    fun openAppLanguageSettings(card: CardState) {
+        val applicationId = card.info.applicationId ?: sl.appIdCache.get(
+            card.info.sourceKey,
+            card.info.owner,
+            card.info.repo,
+        )?.applicationId
+        if (applicationId.isNullOrBlank()) {
+            _state.update {
+                it.copy(warning = "Inspect or install this app before choosing its language.")
+            }
+            return
+        }
+        when (val result = sl.installer.openAppLanguageSettings(applicationId)) {
+            ExternalLaunchResult.Started -> Unit
+            is ExternalLaunchResult.Failed -> _state.update { it.copy(warning = result.message) }
+        }
+    }
+
     fun updateSearchQuery(query: String) {
         _state.update { it.copy(searchQuery = query) }
     }

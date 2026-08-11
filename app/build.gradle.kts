@@ -66,6 +66,10 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        generateLocaleConfig = true
+    }
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true

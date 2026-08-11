@@ -5,6 +5,7 @@
 ### Added
 - Added package-identity aggregation across configured sources with a persisted preferred-source chooser for duplicate releases.
 - Added normalized release-channel derivation and per-repository channel pinning; GitHub discovery now selects the newest matching stable, beta, alpha, nightly, release-candidate, or development release within its bounded history.
+- Added per-app language controls that open Android 13+'s package-scoped language settings from installed catalog cards, plus automatic locale configuration generation for future translations.
 - Added a Wear OS companion module with an update-count Tile, short-text complication, phone capability registration, and user-initiated watch-to-phone refresh messages.
 - Added resumable foreground APK downloads with source/release-keyed partial files, HTTP byte-range continuation, complete-file digest verification, and an explicit Resume download card action.
 - Added persisted F-Droid repository settings with HTTPS-plus-fingerprint validation, signed `entry.jar` verification, catalog consumption, taxonomy-aware filter chips, and red/yellow anti-feature badges.

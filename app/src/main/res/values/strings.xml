@@ -12,6 +12,7 @@
     <string name="update">Update</string>
     <string name="uninstall">Uninstall</string>
     <string name="open">Open</string>
+    <string name="app_language_settings">App language</string>
     <string name="cancel">Cancel</string>
     <string name="grant">Grant</string>
     <string name="continue_label">Continue</string>

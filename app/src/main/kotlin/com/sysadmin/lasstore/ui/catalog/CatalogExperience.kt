@@ -235,6 +235,9 @@ fun CatalogExperience(
                                 onSetChannelPreference = { channel ->
                                     viewModel.setChannelPreference(card, channel)
                                 },
+                                onOpenLanguageSettings = {
+                                    viewModel.openAppLanguageSettings(card)
+                                },
                             )
                         }
                     }

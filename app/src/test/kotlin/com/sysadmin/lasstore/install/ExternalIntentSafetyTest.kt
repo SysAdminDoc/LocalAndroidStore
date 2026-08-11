@@ -1,7 +1,9 @@
 package com.sysadmin.lasstore.install
 
 import android.content.Intent
+import android.provider.Settings
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,5 +57,15 @@ class ExternalIntentSafetyTest {
         )
 
         assertEquals(ExternalLaunchResult.Started, result)
+    }
+
+    @Test
+    fun appLanguageSettingsIntentIsPackageScopedAndValidatesThePackageId() {
+        val intent = appLanguageSettingsIntent("com.example.reader")
+
+        assertEquals(Settings.ACTION_APP_LOCALE_SETTINGS, intent?.action)
+        assertEquals("package:com.example.reader", intent?.dataString)
+        assertTrue(intent!!.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+        assertNull(appLanguageSettingsIntent("not a package"))
     }
 }

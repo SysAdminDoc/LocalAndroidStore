@@ -17,6 +17,10 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 
+private val PACKAGE_NAME_PATTERN = Regex(
+    "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$",
+)
+
 class PackageInstallerService(
     private val context: Context,
     private val logger: Logger,
@@ -53,6 +57,23 @@ class PackageInstallerService(
         return launchExternalIntent(
             intent = intent,
             failureMessage = "Could not open Android's uninstall screen.",
+        )
+    }
+
+    /** Open Android 13+'s per-app language page for an installed catalog app. */
+    fun openAppLanguageSettings(applicationId: String): ExternalLaunchResult {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return ExternalLaunchResult.Failed(
+                "Per-app language settings require Android 13 or newer.",
+            )
+        }
+        val intent = appLanguageSettingsIntent(applicationId)
+            ?: return ExternalLaunchResult.Failed(
+                "Could not open app language settings: the package id is invalid.",
+            )
+        return launchExternalIntent(
+            intent = intent,
+            failureMessage = "Could not open Android's app-language settings.",
         )
     }
 
@@ -570,13 +591,17 @@ class PackageInstallerService(
     }
 
     private companion object {
-        private val PACKAGE_NAME_PATTERN = Regex(
-            "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$",
-        )
         val CONSTRAINT_TIMEOUT_MILLIS: Long = TimeUnit.HOURS.toMillis(24)
         const val STATUS_UNKNOWN = -999
     }
 
+}
+
+internal fun appLanguageSettingsIntent(applicationId: String): Intent? {
+    if (!PACKAGE_NAME_PATTERN.matches(applicationId)) return null
+    return Intent(Settings.ACTION_APP_LOCALE_SETTINGS)
+        .setData(Uri.fromParts("package", applicationId, null))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 }
 
 sealed interface InstallResult {
