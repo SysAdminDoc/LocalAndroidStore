@@ -13,6 +13,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -56,28 +57,33 @@ internal object SupportRedactor {
     private const val MAX_ENTRY_CHARS = 32 * 1024
 }
 
-class SupportBundleExporter(private val context: Context) {
+class SupportBundleExporter(
+    private val context: Context,
+    private val outputDirectory: File = File(context.cacheDir, "support"),
+) {
     fun create(): File {
-        val outputDir = File(context.cacheDir, SUPPORT_DIR).apply { mkdirs() }
-        outputDir.listFiles()
-            ?.filter { it.isFile && it.extension.equals("zip", ignoreCase = true) }
-            ?.forEach(File::delete)
-
-        val output = File(outputDir, "las-support-${fileTimestamp()}.zip")
-        ZipOutputStream(FileOutputStream(output)).use { zip ->
-            zip.addText("metadata.txt", metadata())
-            zip.addText(
-                "diagnostics.log",
-                boundedSanitizedLogs("diagnostics.log.1", "diagnostics.log"),
-            )
-            zip.addText(
-                "install-audit.jsonl",
-                boundedSanitizedLogs("install.log.1", "install.log"),
-            )
-            zip.addText(
-                "crash.log",
-                boundedSanitizedLogs("crash.log.1", "crash.log"),
-            )
+        outputDirectory.mkdirs()
+        pruneOldBundles()
+        val output = reserveOutputFile()
+        try {
+            ZipOutputStream(FileOutputStream(output)).use { zip ->
+                zip.addText("metadata.txt", metadata())
+                zip.addText(
+                    "diagnostics.log",
+                    boundedSanitizedLogs("diagnostics.log.1", "diagnostics.log"),
+                )
+                zip.addText(
+                    "install-audit.jsonl",
+                    boundedSanitizedLogs("install.log.1", "install.log"),
+                )
+                zip.addText(
+                    "crash.log",
+                    boundedSanitizedLogs("crash.log.1", "crash.log"),
+                )
+            }
+        } catch (throwable: Throwable) {
+            output.delete()
+            throw throwable
         }
         return output
     }
@@ -163,9 +169,38 @@ class SupportBundleExporter(private val context: Context) {
             timeZone = TimeZone.getTimeZone("UTC")
         }
 
+    private fun reserveOutputFile(): File {
+        repeat(8) {
+            val output = File(
+                outputDirectory,
+                "las-support-${fileTimestamp()}-${UUID.randomUUID().toString().take(8)}.zip",
+            )
+            if (output.createNewFile()) return output
+        }
+        throw java.io.IOException("Could not allocate a unique support-bundle filename")
+    }
+
+    private fun pruneOldBundles() {
+        val now = System.currentTimeMillis()
+        val bundles = outputDirectory.listFiles()
+            ?.filter { it.isFile && it.name.startsWith("las-support-") && it.extension.equals("zip", true) }
+            .orEmpty()
+        val recent = bundles.filter { bundle ->
+            val age = now - bundle.lastModified()
+            bundle.lastModified() <= 0L || age < SUPPORT_BUNDLE_SHARE_SAFETY_MILLIS
+        }
+        val stale = bundles
+            .filterNot { it in recent }
+            .sortedByDescending(File::lastModified)
+        val staleKeepCount = (MAX_RETAINED_SUPPORT_BUNDLES - 1 - recent.size).coerceAtLeast(0)
+        stale.drop(staleKeepCount).forEach { it.delete() }
+    }
+
     private companion object {
-        const val SUPPORT_DIR = "support"
         const val MAX_SOURCE_BYTES = 128 * 1024
         const val MAX_ARCHIVE_ENTRY_CHARS = 384 * 1024
     }
 }
+
+internal const val MAX_RETAINED_SUPPORT_BUNDLES = 8
+internal const val SUPPORT_BUNDLE_SHARE_SAFETY_MILLIS = 24L * 60L * 60L * 1000L

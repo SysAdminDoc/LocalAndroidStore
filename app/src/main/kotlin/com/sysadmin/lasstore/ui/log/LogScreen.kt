@@ -60,6 +60,8 @@ import com.sysadmin.lasstore.data.LogEntry
 import com.sysadmin.lasstore.data.LogLevel
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.SupportBundleExporter
+import com.sysadmin.lasstore.install.ExternalLaunchResult
+import com.sysadmin.lasstore.install.safeLaunchExternalIntent
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import java.text.DateFormat
 import java.util.Date
@@ -140,8 +142,8 @@ fun LogScreen() {
                     exportReady = false
                     exportError = null
                     scope.launch {
-                        runCatching {
-                            withContext(Dispatchers.IO) {
+                        try {
+                            val chooser = withContext(Dispatchers.IO) {
                                 val exporter = SupportBundleExporter(context)
                                 val bundle = exporter.create()
                                 Intent.createChooser(
@@ -149,11 +151,21 @@ fun LogScreen() {
                                     shareSupportBundleTitle,
                                 )
                             }
-                        }.onSuccess { chooser ->
-                            context.startActivity(chooser)
-                            exportReady = true
-                        }.onFailure {
-                            exportError = it.message ?: unknownError
+                            when (
+                                val result = safeLaunchExternalIntent(
+                                    intent = chooser,
+                                    canResolve = { candidate ->
+                                        candidate.resolveActivity(context.packageManager) != null
+                                    },
+                                    start = { candidate -> context.startActivity(candidate) },
+                                    failureMessage = "Could not open the support-bundle share sheet.",
+                                )
+                            ) {
+                                ExternalLaunchResult.Started -> exportReady = true
+                                is ExternalLaunchResult.Failed -> exportError = result.message
+                            }
+                        } catch (throwable: Throwable) {
+                            exportError = throwable.message ?: unknownError
                         }
                         exporting = false
                     }
