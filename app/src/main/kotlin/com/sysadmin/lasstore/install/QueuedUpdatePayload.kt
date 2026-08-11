@@ -9,7 +9,9 @@ import com.sysadmin.lasstore.data.ApkSignatureScheme
 import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.domain.AppInfo
 import java.util.UUID
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class QueuedUpdatePayload(
     val owner: String,
     val repo: String,

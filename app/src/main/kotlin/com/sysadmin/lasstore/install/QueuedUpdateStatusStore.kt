@@ -65,6 +65,7 @@ data class QueuedUpdateStatus(
     val targetSignerSha256: String? = null,
     val targetLineageSha256: List<String> = emptyList(),
     val targetVerifiedSignatureSchemes: Set<ApkSignatureScheme> = emptySet(),
+    val queuedPayload: QueuedUpdatePayload? = null,
 ) {
     val isPending: Boolean
         get() = phase == QueuedUpdatePhase.Queued ||
@@ -251,6 +252,18 @@ class QueuedUpdateStatusStore(context: Context) {
         )
     }
 
+    fun markNeedsReschedule(payload: QueuedUpdatePayload, message: String): Boolean = synchronized(LOCK) {
+        val current = currentStatusLocked(payload) ?: return@synchronized false
+        if (!isCurrentLocked(payload) || current.phase.isTerminal) return@synchronized false
+        save(
+            payload,
+            phase = QueuedUpdatePhase.Queued,
+            attempt = current.attempt,
+            message = message,
+            packageInstallerSessionId = current.packageInstallerSessionId,
+        )
+    }
+
     fun shouldDeferForRateLimit(payload: QueuedUpdatePayload): Boolean =
         get(payload)?.retryAtEpochMillis?.let { it > System.currentTimeMillis() } == true
 
@@ -304,6 +317,11 @@ class QueuedUpdateStatusStore(context: Context) {
             targetLineageSha256 = targetLineageSha256 ?: previous?.targetLineageSha256.orEmpty(),
             targetVerifiedSignatureSchemes = targetVerifiedSignatureSchemes
                 ?: previous?.targetVerifiedSignatureSchemes.orEmpty(),
+            queuedPayload = if (allowGenerationReplacement) {
+                payload
+            } else {
+                previous?.queuedPayload ?: payload
+            },
         )
         check(prefs.edit().putString(key(payload.workName), json.encodeToString(status)).commit()) {
             "Could not persist queued update status"

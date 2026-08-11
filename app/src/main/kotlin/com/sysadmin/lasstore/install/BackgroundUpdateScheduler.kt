@@ -16,8 +16,10 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.BackoffPolicy
 import androidx.work.WorkManager
 import com.sysadmin.lasstore.data.Logger
+import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.domain.AppInfo
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeUnit.SECONDS
 
 internal enum class BackgroundUpdateTransport {
     WorkManager,
@@ -83,6 +85,38 @@ class BackgroundUpdateScheduler(
         logger.info("QueuedUpdate", "Cancelled queued update for ${payload.owner}/${payload.repo}")
     }
 
+    /** Restore pending queue work after JobScheduler loses non-persisted UIDT jobs at reboot. */
+    fun reconcilePersistedWork() {
+        ServiceLocator.queuedUpdateStatus.statuses.value
+            .filter { it.isPending }
+            .forEach { status ->
+                val payload = status.queuedPayload
+                if (payload == null) {
+                    logger.warn(
+                        "QueuedUpdate",
+                        "Queued ${status.owner}/${status.repo} needs rescheduling; payload is unavailable",
+                    )
+                    return@forEach
+                }
+                when (QueuedInstallReconciler.reconcile(context, payload)) {
+                    QueuedInstallReconciliation.Installed,
+                    is QueuedInstallReconciliation.AwaitingSession -> return@forEach
+                    QueuedInstallReconciliation.NotApplicable -> Unit
+                }
+                if (!ServiceLocator.queuedUpdateStatus.isCurrent(payload)) return@forEach
+                if (ServiceLocator.queuedUpdateStatus.get(payload)?.phase == QueuedUpdatePhase.AwaitingUserAction) {
+                    return@forEach
+                }
+                if (hasScheduledWork(payload)) return@forEach
+                if (!scheduleExistingPayload(payload)) {
+                    ServiceLocator.queuedUpdateStatus.markNeedsReschedule(
+                        payload,
+                        "Background update needs rescheduling. Tap retry from the catalog.",
+                    )
+                }
+            }
+    }
+
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun scheduleUidt(payload: QueuedUpdatePayload): Boolean {
         val scheduler = context.getSystemService(JobScheduler::class.java)
@@ -139,7 +173,43 @@ class BackgroundUpdateScheduler(
         logger.info("QueuedUpdate", "WorkManager update queued for ${payload.owner}/${payload.repo}")
     }
 
-    private fun jobIdFor(payload: QueuedUpdatePayload): Int =
+    private fun scheduleExistingPayload(payload: QueuedUpdatePayload): Boolean {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            runCatching { scheduleUidt(payload) }
+                .onFailure { logger.warn("QueuedUpdate", "Could not restore UIDT work: ${it.message}") }
+                .getOrDefault(false)
+        ) {
+            return true
+        }
+        return runCatching {
+            enqueueWorker(payload)
+            true
+        }.onFailure {
+            logger.warn("QueuedUpdate", "Could not restore WorkManager work: ${it.message}")
+        }.getOrDefault(false)
+    }
+
+    private fun hasScheduledWork(payload: QueuedUpdatePayload): Boolean {
+        val uidtScheduled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+            runCatching {
+                context.getSystemService(JobScheduler::class.java)
+                    .getPendingJob(jobIdFor(payload)) != null
+            }.getOrDefault(false)
+        if (uidtScheduled) return true
+        return runCatching {
+            WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWork(payload.workName)
+                .get(10, SECONDS)
+                .any { work ->
+                    work.state == androidx.work.WorkInfo.State.ENQUEUED ||
+                        work.state == androidx.work.WorkInfo.State.BLOCKED ||
+                        work.state == androidx.work.WorkInfo.State.RUNNING
+                }
+        }.getOrDefault(false)
+    }
+
+    internal fun jobIdFor(payload: QueuedUpdatePayload): Int =
         JOB_ID_BASE + ((payload.workName.hashCode() and Int.MAX_VALUE) % JOB_ID_RANGE)
 
     private companion object {
