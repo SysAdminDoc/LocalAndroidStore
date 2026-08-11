@@ -67,6 +67,8 @@ object ServiceLocator {
         private set
     lateinit var archiveRestores: ArchiveRestoreStore
         private set
+    lateinit var library: LibraryStore
+        private set
     lateinit var wearUpdates: WearUpdateMessenger
         private set
 
@@ -122,6 +124,7 @@ object ServiceLocator {
             batchUninstalls = BatchUninstallStore(appContext)
             foregroundInstalls = ForegroundInstallStore(appContext)
             archiveRestores = ArchiveRestoreStore(appContext)
+            library = LibraryStore(appContext)
             wearUpdates = WearUpdateMessenger(appContext) { throwable ->
                 logger.warn("Wear", "Could not deliver update count: ${throwable.message}")
             }

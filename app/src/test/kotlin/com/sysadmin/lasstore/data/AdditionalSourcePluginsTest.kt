@@ -24,6 +24,7 @@ class AdditionalSourcePluginsTest {
                       "metadata": {
                         "name": {"en-US": "Example"},
                         "summary": {"en-US": "A test app"},
+                        "categories": ["Internet", "Connectivity"],
                         "antiFeatures": {"Tracking": {}, "Ads": {}}
                       },
                       "versions": {
@@ -45,6 +46,7 @@ class AdditionalSourcePluginsTest {
         val app = index.packages.single()
         assertEquals("Example", app.displayName)
         assertEquals(setOf("Tracking", "Ads"), app.antiFeatures)
+        assertEquals(setOf("Internet", "Connectivity"), app.categories)
         assertEquals("4.2", app.versions.single().versionName)
         assertEquals(26, app.versions.single().minSdk)
         assertEquals("https://example.invalid/repo/repo/example.apk", app.versions.single().downloadUrl)

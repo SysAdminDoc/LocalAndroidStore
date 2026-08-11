@@ -13,6 +13,7 @@ data class DiscoveredApp(
     val description: String? = null,
     val homepageUrl: String? = null,
     val antiFeatures: Set<String> = emptySet(),
+    val tags: Set<String> = emptySet(),
 )
 
 data class ReleaseAsset(

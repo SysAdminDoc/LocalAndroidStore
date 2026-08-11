@@ -5,6 +5,7 @@ import com.sysadmin.lasstore.domain.Release
 import com.sysadmin.lasstore.domain.ReleaseAsset
 import com.sysadmin.lasstore.domain.SourcePlugin
 import com.sysadmin.lasstore.domain.VerifyResult
+import com.sysadmin.lasstore.domain.githubTopicTag
 import java.util.Locale
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
@@ -36,6 +37,7 @@ class GitHubReleasesPlugin(
                     displayName = repo.name,
                     description = repo.description,
                     homepageUrl = repo.htmlUrl,
+                    tags = repo.topics.mapNotNull(::githubTopicTag).toSet(),
                 )
             }
 

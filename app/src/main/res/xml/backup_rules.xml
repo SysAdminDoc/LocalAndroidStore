@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include
+        domain="sharedpref"
+        path="las_library_v1.xml"
+        requireFlags="clientSideEncryption" />
+</full-backup-content>

@@ -1,6 +1,7 @@
 package com.sysadmin.lasstore.ui.catalog
 
 import com.sysadmin.lasstore.domain.CardStatus
+import com.sysadmin.lasstore.domain.catalogTagLabel
 import java.util.Locale
 
 private val separatorRegex = Regex("[^a-z0-9]+")
@@ -51,6 +52,7 @@ private fun CardState.searchFields(): List<String> = listOfNotNull(
     info.tagName,
     info.versionName,
     info.applicationId,
+    *info.tags.map(::catalogTagLabel).toTypedArray(),
 ).map { it.normalizedSearchText() }
 
 private fun String.scoreToken(token: String): Int {

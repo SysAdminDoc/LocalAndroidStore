@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
-        <exclude domain="root" path="." />
-        <exclude domain="file" path="." />
-        <exclude domain="database" path="." />
-        <exclude domain="sharedpref" path="." />
+        <include
+            domain="sharedpref"
+            path="las_library_v1.xml"
+            requireFlags="clientSideEncryption" />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="root" path="." />
+        <include domain="sharedpref" path="las_library_v1.xml" />
     </device-transfer>
 </data-extraction-rules>

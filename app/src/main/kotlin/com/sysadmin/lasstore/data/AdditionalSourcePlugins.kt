@@ -5,6 +5,7 @@ import com.sysadmin.lasstore.domain.Release
 import com.sysadmin.lasstore.domain.ReleaseAsset
 import com.sysadmin.lasstore.domain.SourcePlugin
 import com.sysadmin.lasstore.domain.VerifyResult
+import com.sysadmin.lasstore.domain.fdroidCategoryTag
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -109,6 +110,7 @@ data class FdroidPackage(
     val displayName: String,
     val description: String?,
     val antiFeatures: Set<String>,
+    val categories: Set<String> = emptySet(),
     val versions: List<FdroidVersion>,
 )
 
@@ -161,6 +163,7 @@ object FdroidIndexV2Parser {
             description = metadata.localized("description")
                 ?: metadata.localized("summary"),
             antiFeatures = metadata.antiFeatures(),
+            categories = metadata.stringSet("categories"),
             versions = versions,
         )
     }
@@ -266,6 +269,7 @@ class FDroidIndexV2Plugin(
             description = app.description,
             homepageUrl = null,
             antiFeatures = app.antiFeatures,
+            tags = app.categories.mapNotNull(::fdroidCategoryTag).toSet(),
         )
     }
 
@@ -408,6 +412,16 @@ private fun JsonObject.antiFeatures(): Set<String> {
     return when (value) {
         is JsonObject -> value.keys
         is JsonArray -> value.mapNotNull { it.jsonPrimitive.contentOrNull }.toSet()
+        else -> emptySet()
+    }
+}
+
+private fun JsonObject.stringSet(key: String): Set<String> {
+    val value = this[key] ?: return emptySet()
+    return when (value) {
+        is JsonObject -> value.keys
+        is JsonArray -> value.mapNotNull { it.jsonPrimitive.contentOrNull }.toSet()
+        is JsonPrimitive -> value.contentOrNull?.let(::setOf).orEmpty()
         else -> emptySet()
     }
 }

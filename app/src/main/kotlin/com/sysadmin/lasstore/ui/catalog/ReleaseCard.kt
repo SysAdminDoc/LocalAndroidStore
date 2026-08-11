@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -41,6 +42,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.Warning
@@ -52,9 +54,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -79,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.data.DeveloperVerificationCopy
 import com.sysadmin.lasstore.data.GhAsset
+import com.sysadmin.lasstore.data.LibraryCollection
 import com.sysadmin.lasstore.data.normalizeSha256Digest
 import com.sysadmin.lasstore.data.UpdateCadence
 import com.sysadmin.lasstore.data.UpdateCadenceMode
@@ -109,6 +114,10 @@ fun ReleaseCard(
     onProceedPermissions: () -> Unit,
     onCancelPermissions: () -> Unit,
     onIgnore: () -> Unit,
+    libraryCollections: List<LibraryCollection> = emptyList(),
+    onToggleFavorite: () -> Unit = {},
+    onSetCollections: (Set<String>) -> Unit = {},
+    onCreateCollection: (String) -> LibraryCollection? = { null },
     onArchive: () -> Unit = {},
     onUnarchive: () -> Unit = {},
     onSetUpdateCadence: (UpdateCadence) -> Unit = {},
@@ -156,6 +165,7 @@ fun ReleaseCard(
     var archiveVisible by rememberSaveable(state.info.handle, state.status) {
         mutableStateOf(false)
     }
+    var collectionsVisible by rememberSaveable(state.info.handle) { mutableStateOf(false) }
     var historyVisible by rememberSaveable(state.info.handle) { mutableStateOf(false) }
     var sourceSelectionVisible by rememberSaveable(
         state.info.applicationId,
@@ -586,6 +596,16 @@ fun ReleaseCard(
         )
     }
 
+    if (collectionsVisible) {
+        LibraryMembershipDialog(
+            state = state,
+            collections = libraryCollections,
+            onDismiss = { collectionsVisible = false },
+            onSetCollections = onSetCollections,
+            onCreateCollection = onCreateCollection,
+        )
+    }
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -660,6 +680,19 @@ fun ReleaseCard(
                             )
                         }
                     }
+                    IconButton(onClick = onToggleFavorite) {
+                        Icon(
+                            imageVector = if (state.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = stringResource(
+                                if (state.isFavorite) {
+                                    R.string.remove_favorite
+                                } else {
+                                    R.string.add_favorite
+                                },
+                            ),
+                            tint = if (state.isFavorite) Catppuccin.Yellow else Catppuccin.Subtext,
+                        )
+                    }
                     ReleaseOverflowMenu(
                         state = state,
                         onQueueUpdate = onQueueUpdate,
@@ -668,6 +701,8 @@ fun ReleaseCard(
                         onRepo = onRepo,
                         onCancelPermissions = onCancelPermissions,
                         onIgnore = onIgnore,
+                        onEditCollections = { collectionsVisible = true },
+                        onToggleFavorite = onToggleFavorite,
                         onSetUpdateCadence = onSetUpdateCadence,
                         onSaveApk = onSaveApk,
                         onUninstall = onUninstall,
@@ -1415,6 +1450,105 @@ private fun AccentButton(
 }
 
 @Composable
+private fun LibraryMembershipDialog(
+    state: CardState,
+    collections: List<LibraryCollection>,
+    onDismiss: () -> Unit,
+    onSetCollections: (Set<String>) -> Unit,
+    onCreateCollection: (String) -> LibraryCollection?,
+) {
+    var selectedIds by remember(state.info.handle, state.collectionIds) {
+        mutableStateOf(state.collectionIds)
+    }
+    var newName by rememberSaveable(state.info.handle) { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.edit_collections)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.collections_for_app, state.info.displayName),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.Subtext,
+                )
+                if (collections.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.no_collections_yet),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Catppuccin.Subtext,
+                    )
+                }
+                collections.forEach { collection ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selectedIds = if (collection.id in selectedIds) {
+                                    selectedIds - collection.id
+                                } else {
+                                    selectedIds + collection.id
+                                }
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = collection.id in selectedIds,
+                            onCheckedChange = { checked ->
+                                selectedIds = if (checked) {
+                                    selectedIds + collection.id
+                                } else {
+                                    selectedIds - collection.id
+                                }
+                            },
+                        )
+                        Text(
+                            text = collection.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Catppuccin.TextStrong,
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.collection_name)) },
+                )
+                TextButton(
+                    onClick = {
+                        onCreateCollection(newName)?.let { created ->
+                            selectedIds = selectedIds + created.id
+                            newName = ""
+                        }
+                    },
+                    enabled = newName.isNotBlank(),
+                ) {
+                    Text(stringResource(R.string.create_collection))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSetCollections(selectedIds)
+                    onDismiss()
+                },
+            ) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
 private fun ReleaseOverflowMenu(
     state: CardState,
     onQueueUpdate: () -> Unit,
@@ -1423,6 +1557,8 @@ private fun ReleaseOverflowMenu(
     onRepo: () -> Unit,
     onCancelPermissions: () -> Unit,
     onIgnore: () -> Unit,
+    onEditCollections: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onSetUpdateCadence: (UpdateCadence) -> Unit,
     onSaveApk: () -> Unit,
     onUninstall: () -> Unit,
@@ -1455,6 +1591,24 @@ private fun ReleaseOverflowMenu(
             containerColor = Catppuccin.PanelRaised,
             border = BorderStroke(1.dp, Catppuccin.Stroke),
         ) {
+            ReleaseMenuItem(
+                text = stringResource(R.string.edit_collections),
+                icon = Icons.Default.Inventory2,
+                onClick = {
+                    expanded = false
+                    onEditCollections()
+                },
+            )
+            ReleaseMenuItem(
+                text = stringResource(
+                    if (state.isFavorite) R.string.remove_favorite else R.string.add_favorite,
+                ),
+                icon = if (state.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                onClick = {
+                    expanded = false
+                    onToggleFavorite()
+                },
+            )
             if (state.status.hasInstalledApp() && state.status != CardStatus.Archived) {
                 ReleaseMenuItem(
                     text = stringResource(R.string.open_app),

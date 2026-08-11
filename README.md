@@ -178,7 +178,7 @@ a refresh.
 | SharedPreferences `las_shizuku_install_v1` | Explicit opt-in for the optional Shizuku shell installer |
 | SharedPreferences `las_batch_uninstall_v1` | Persisted one-at-a-time Android confirmations for multi-select uninstall |
 
-The app declares `android:allowBackup="false"` and excludes everything from cloud / device-transfer backups — secrets stay on the device.
+Android backup/device transfer includes only the non-sensitive `las_library_v1.xml` favorites and collection file. Secrets, catalog caches, logs, and install state remain excluded.
 
 ---
 

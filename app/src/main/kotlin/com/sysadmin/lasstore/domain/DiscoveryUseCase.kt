@@ -251,6 +251,7 @@ class DiscoveryUseCase(
                     releaseBody = release.body,
                     minSdk = release.minSdk,
                     antiFeatures = discovered.antiFeatures,
+                    tags = discovered.tags,
                 )
             }
             runCatching {
@@ -370,6 +371,7 @@ class DiscoveryUseCase(
                             prerelease = release.prerelease,
                             releaseBody = release.body?.takeIf { it.isNotBlank() },
                             assetChoices = assetChoices,
+                            tags = repo.topics.mapNotNull(::githubTopicTag).toSet(),
                         )
                     )
                 } catch (throwable: Throwable) {

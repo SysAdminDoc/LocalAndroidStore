@@ -28,6 +28,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -39,6 +41,8 @@ import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,7 +57,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -69,9 +76,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.LaunchedEffect
 import com.sysadmin.lasstore.R
+import com.sysadmin.lasstore.data.LibraryCollection
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.domain.SourceVerificationStatus
 import com.sysadmin.lasstore.domain.antiFeatureBadge
+import com.sysadmin.lasstore.domain.catalogTagLabel
 import com.sysadmin.lasstore.install.QueuedUpdatePayload
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import kotlinx.coroutines.flow.Flow
@@ -87,6 +96,7 @@ fun CatalogExperience(
     },
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var libraryManagerVisible by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(viewModel, activityResumed) {
         activityResumed.collect { viewModel.onActivityResumed() }
     }
@@ -96,15 +106,32 @@ fun CatalogExperience(
             .distinct()
             .sorted()
     }
+    val catalogTagOptions = remember(state.cards) {
+        state.cards
+            .flatMap { it.info.tags }
+            .distinct()
+            .sorted()
+    }
     val visibleCards = remember(
         state.cards,
         state.searchQuery,
         state.selectedAntiFeatures,
+        state.selectedCatalogTags,
+        state.favoritesOnly,
+        state.selectedCollectionId,
         state.hideUnverifiedSources,
     ) {
         filterCards(state.cards, state.searchQuery)
             .filter { card ->
                 state.selectedAntiFeatures.all { it in card.info.antiFeatures }
+            }
+            .filter { card ->
+                state.selectedCatalogTags.all { it in card.info.tags }
+            }
+            .filter { card -> !state.favoritesOnly || card.isFavorite }
+            .filter { card ->
+                state.selectedCollectionId == null ||
+                    state.selectedCollectionId in card.collectionIds
             }
             .filter { card ->
                 !state.hideUnverifiedSources ||
@@ -163,6 +190,16 @@ fun CatalogExperience(
             CatalogNoticeStrip(text = notice)
         }
 
+        if (libraryManagerVisible) {
+            LibraryManagerDialog(
+                collections = state.libraryCollections,
+                onDismiss = { libraryManagerVisible = false },
+                onCreate = viewModel::createCollection,
+                onRename = viewModel::renameCollection,
+                onDelete = viewModel::deleteCollection,
+            )
+        }
+
         CatalogSearchSurface(
             query = state.searchQuery,
             totalCount = state.cards.size,
@@ -171,6 +208,15 @@ fun CatalogExperience(
             antiFeatureOptions = antiFeatureOptions,
             selectedAntiFeatures = state.selectedAntiFeatures,
             onToggleAntiFeature = viewModel::toggleAntiFeature,
+            catalogTagOptions = catalogTagOptions,
+            selectedCatalogTags = state.selectedCatalogTags,
+            onToggleCatalogTag = viewModel::toggleCatalogTag,
+            favoritesOnly = state.favoritesOnly,
+            onToggleFavoritesOnly = viewModel::toggleFavoritesOnly,
+            collections = state.libraryCollections,
+            selectedCollectionId = state.selectedCollectionId,
+            onSelectCollection = viewModel::selectCollection,
+            onManageCollections = { libraryManagerVisible = true },
         )
 
         if (state.stagedUpdates.isNotEmpty()) {
@@ -279,6 +325,10 @@ fun CatalogExperience(
                                 },
                                 onCancelPermissions = { viewModel.cancelPermissionReview(card) },
                                 onIgnore = { viewModel.toggleIgnore(card) },
+                                libraryCollections = state.libraryCollections,
+                                onToggleFavorite = { viewModel.toggleFavorite(card) },
+                                onSetCollections = { ids -> viewModel.setCollections(card, ids) },
+                                onCreateCollection = viewModel::createCollection,
                                 onSetUpdateCadence = { cadence ->
                                     viewModel.setUpdateCadence(card, cadence)
                                 },
@@ -774,6 +824,15 @@ private fun CatalogSearchSurface(
     antiFeatureOptions: List<String>,
     selectedAntiFeatures: Set<String>,
     onToggleAntiFeature: (String) -> Unit,
+    catalogTagOptions: List<String>,
+    selectedCatalogTags: Set<String>,
+    onToggleCatalogTag: (String) -> Unit,
+    favoritesOnly: Boolean,
+    onToggleFavoritesOnly: () -> Unit,
+    collections: List<LibraryCollection>,
+    selectedCollectionId: String?,
+    onSelectCollection: (String?) -> Unit,
+    onManageCollections: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -851,10 +910,163 @@ private fun CatalogSearchSurface(
                 }
             }
         }
+        if (catalogTagOptions.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.catalog_categories_title),
+                style = MaterialTheme.typography.labelSmall,
+                color = Catppuccin.Subtext,
+                modifier = Modifier.padding(horizontal = 8.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                catalogTagOptions.forEach { tag ->
+                    FilterChip(
+                        selected = tag in selectedCatalogTags,
+                        onClick = { onToggleCatalogTag(tag) },
+                        label = { Text(catalogTagLabel(tag)) },
+                    )
+                }
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterChip(
+                selected = favoritesOnly,
+                onClick = onToggleFavoritesOnly,
+                label = { Text(stringResource(R.string.favorites_filter)) },
+            )
+            collections.forEach { collection ->
+                FilterChip(
+                    selected = selectedCollectionId == collection.id,
+                    onClick = {
+                        onSelectCollection(
+                            collection.id.takeUnless { selectedCollectionId == it },
+                        )
+                    },
+                    label = { Text(collection.name) },
+                )
+            }
+            TextButton(onClick = onManageCollections) {
+                Text(stringResource(R.string.manage_collections))
+            }
+        }
     }
 }
 
 private fun formatAntiFeatureLabel(value: String): String = antiFeatureBadge(value)?.label ?: value
+
+@Composable
+private fun LibraryManagerDialog(
+    collections: List<LibraryCollection>,
+    onDismiss: () -> Unit,
+    onCreate: (String) -> LibraryCollection?,
+    onRename: (String, String) -> LibraryCollection?,
+    onDelete: (String) -> Unit,
+) {
+    var newName by rememberSaveable { mutableStateOf("") }
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingName by rememberSaveable { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.manage_collections)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.collections_body),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.Subtext,
+                )
+                collections.forEach { collection ->
+                    if (editingId == collection.id) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            OutlinedTextField(
+                                value = editingName,
+                                onValueChange = { editingName = it },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                label = { Text(stringResource(R.string.collection_name)) },
+                            )
+                            TextButton(
+                                onClick = {
+                                    if (onRename(collection.id, editingName) != null) {
+                                        editingId = null
+                                    }
+                                },
+                            ) {
+                                Text(stringResource(R.string.save))
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = collection.name,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Catppuccin.TextStrong,
+                            )
+                            IconButton(
+                                onClick = {
+                                    editingId = collection.id
+                                    editingName = collection.name
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = stringResource(R.string.rename_collection),
+                                )
+                            }
+                            IconButton(onClick = { onDelete(collection.id) }) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = stringResource(R.string.delete_collection),
+                                    tint = Catppuccin.Red,
+                                )
+                            }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.collection_name)) },
+                )
+                TextButton(
+                    onClick = {
+                        if (onCreate(newName) != null) newName = ""
+                    },
+                    enabled = newName.isNotBlank(),
+                ) {
+                    Text(stringResource(R.string.create_collection))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.done)) }
+        },
+    )
+}
 
 @Composable
 private fun CatalogLoading() {

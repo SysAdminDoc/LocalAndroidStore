@@ -19,12 +19,14 @@ import com.sysadmin.lasstore.data.GhRelease
 import com.sysadmin.lasstore.data.InstallProvenance
 import com.sysadmin.lasstore.data.InstalledInfo
 import com.sysadmin.lasstore.data.InstallArtifactKind
+import com.sysadmin.lasstore.data.LibraryCollection
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.SourceBranding
 import com.sysadmin.lasstore.data.UpdateCadence
 import com.sysadmin.lasstore.data.installArtifactKind
 import com.sysadmin.lasstore.data.signerMatchesArtifactOrLineage
 import com.sysadmin.lasstore.data.signerMatchesPin
+import com.sysadmin.lasstore.data.libraryKeysFor
 import com.sysadmin.lasstore.domain.AppInfo
 import com.sysadmin.lasstore.domain.ApkAssetSelection
 import com.sysadmin.lasstore.domain.ApkAssetClassifier
@@ -112,6 +114,8 @@ data class CardState(
     val transparencyBusy: Boolean = false,
     val transparencyError: String? = null,
     val splitSelection: SplitSelectionState? = null,
+    val isFavorite: Boolean = false,
+    val collectionIds: Set<String> = emptySet(),
 )
 
 data class SplitSelectionEntryState(
@@ -193,6 +197,10 @@ data class CatalogUiState(
     val noEnabledSources: Boolean = false,
     val warning: String? = null,
     val selectedAntiFeatures: Set<String> = emptySet(),
+    val selectedCatalogTags: Set<String> = emptySet(),
+    val favoritesOnly: Boolean = false,
+    val selectedCollectionId: String? = null,
+    val libraryCollections: List<LibraryCollection> = emptyList(),
     val hideUnverifiedSources: Boolean = false,
     val sourceBrandings: List<CatalogSourceBranding> = emptyList(),
     val stagedUpdates: List<QueuedUpdatePayload> = emptyList(),
@@ -264,7 +272,10 @@ class CatalogViewModel : ViewModel() {
     )
 
     private val _state = MutableStateFlow(
-        CatalogUiState(stagedUpdates = sl.downloadQueue.payloads()),
+        CatalogUiState(
+            stagedUpdates = sl.downloadQueue.payloads(),
+            libraryCollections = sl.library.collections(),
+        ),
     )
     val state: StateFlow<CatalogUiState> = _state.asStateFlow()
 
@@ -606,6 +617,66 @@ class CatalogViewModel : ViewModel() {
             val selected = current.selectedAntiFeatures.toMutableSet()
             if (!selected.add(feature)) selected.remove(feature)
             current.copy(selectedAntiFeatures = selected)
+        }
+    }
+
+    fun toggleCatalogTag(tag: String) {
+        _state.update { current ->
+            val selected = current.selectedCatalogTags.toMutableSet()
+            if (!selected.add(tag)) selected.remove(tag)
+            current.copy(selectedCatalogTags = selected)
+        }
+    }
+
+    fun toggleFavoritesOnly() {
+        _state.update { it.copy(favoritesOnly = !it.favoritesOnly) }
+    }
+
+    fun selectCollection(collectionId: String?) {
+        _state.update { current ->
+            current.copy(
+                selectedCollectionId = collectionId?.takeIf { id ->
+                    current.libraryCollections.any { it.id == id }
+                },
+            )
+        }
+    }
+
+    fun createCollection(name: String): LibraryCollection? {
+        val collection = sl.library.createCollection(name)
+        _state.update { it.copy(libraryCollections = sl.library.collections()) }
+        return collection
+    }
+
+    fun renameCollection(collectionId: String, name: String): LibraryCollection? {
+        val collection = sl.library.renameCollection(collectionId, name)
+        _state.update { it.copy(libraryCollections = sl.library.collections()) }
+        return collection
+    }
+
+    fun deleteCollection(collectionId: String) {
+        sl.library.deleteCollection(collectionId)
+        _state.update { current ->
+            current.copy(
+                selectedCollectionId = current.selectedCollectionId
+                    ?.takeUnless { it == collectionId },
+                libraryCollections = sl.library.collections(),
+                cards = current.cards.map { card ->
+                    card.copy(collectionIds = card.collectionIds - collectionId)
+                },
+            )
+        }
+    }
+
+    fun toggleFavorite(card: CardState) {
+        val favorite = sl.library.toggleFavorite(libraryKeys(card))
+        updateCardLibrary(card) { it.copy(isFavorite = favorite) }
+    }
+
+    fun setCollections(card: CardState, collectionIds: Set<String>) {
+        sl.library.setCollections(libraryKeys(card), collectionIds)
+        updateCardLibrary(card) {
+            it.copy(collectionIds = sl.library.collectionIds(libraryKeys(it)))
         }
     }
 
@@ -1004,6 +1075,7 @@ class CatalogViewModel : ViewModel() {
                             cards = cards,
                             hideUnverifiedSources = settings.hideUnverifiedSources,
                             sourceBrandings = sourceBrandings,
+                            libraryCollections = sl.library.collections(),
                             noEnabledSources = enabledSources.isEmpty() && enabledFdroidSources.isEmpty(),
                             errorMessage = catalogNotice.takeIf {
                                 cards.isEmpty() && discoveryResult.issues.isNotEmpty()
@@ -1045,6 +1117,9 @@ class CatalogViewModel : ViewModel() {
             } ?: entry
         }
         val isIgnored = sl.ignoreList.isIgnored(info.handle)
+        val libraryKeys = libraryKeys(info, cached)
+        val isFavorite = sl.library.isFavorite(libraryKeys)
+        val collectionIds = sl.library.collectionIds(libraryKeys)
         val baseState = when {
             installed == null -> CardState(info = info, status = CardStatus.NotInstalled)
             reconciled?.provenance == InstallProvenance.EXTERNAL_UNMANAGED ->
@@ -1136,6 +1211,8 @@ class CatalogViewModel : ViewModel() {
         return withForegroundInstallState(
             withQueuedUpdateStatus(
                 baseState.copy(
+                    isFavorite = isFavorite,
+                    collectionIds = collectionIds,
                     updateCadence = sl.updateCadences.get(
                         info.copy(applicationId = applicationId),
                     ),
@@ -2612,6 +2689,28 @@ class CatalogViewModel : ViewModel() {
     }
 
     private fun cardKey(info: AppInfo) = catalogCardKey(info)
+
+    private fun libraryKeys(info: AppInfo, cached: AppIdEntry? = null): List<String> =
+        libraryKeysFor(
+            applicationId = info.applicationId ?: cached?.applicationId,
+            sourceKey = info.sourceKey,
+            owner = info.owner,
+            repo = info.repo,
+        )
+
+    private fun libraryKeys(card: CardState): List<String> = libraryKeys(
+        info = card.info,
+        cached = sl.appIdCache.get(card.info.sourceKey, card.info.owner, card.info.repo),
+    )
+
+    private fun updateCardLibrary(card: CardState, transform: (CardState) -> CardState) {
+        val key = cardKey(card.info)
+        _state.update { current ->
+            current.copy(cards = current.cards.map { existing ->
+                if (cardKey(existing.info) == key) transform(existing) else existing
+            })
+        }
+    }
 
     private fun hasActiveOperation(card: CardState): Boolean {
         val key = cardKey(card.info)
