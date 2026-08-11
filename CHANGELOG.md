@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Added
+- Added an APKMirror-style standalone-variant matrix with ABI, density, minimum SDK, digest prefix,
+  and size columns; the device-compatible row is identified before download.
 - Added long-press multi-select actions for install, staged update, and uninstall batches. Android
   uninstall confirmations are persisted and advanced one package at a time after each return.
 - Added an on-device APK transparency report for installed cards. It decodes the binary manifest,

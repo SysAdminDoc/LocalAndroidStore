@@ -1,5 +1,6 @@
 package com.sysadmin.lasstore.ui.catalog
 
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -66,6 +67,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -91,6 +93,7 @@ import com.sysadmin.lasstore.ui.theme.Catppuccin
 import java.time.Instant
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 
 @Composable
 fun ReleaseCard(
@@ -167,6 +170,8 @@ fun ReleaseCard(
     val cardShape = RoundedCornerShape(24.dp)
 
     if (assetSelectionVisible) {
+        val densityDpi = LocalContext.current.resources.displayMetrics.densityDpi
+        val primaryAbi = Build.SUPPORTED_ABIS.firstOrNull()
         AlertDialog(
             onDismissRequest = { assetSelectionVisible = false },
             title = { Text(stringResource(R.string.choose_apk_variant)) },
@@ -176,7 +181,15 @@ fun ReleaseCard(
                         text = stringResource(R.string.choose_apk_variant_body),
                         color = Catppuccin.Subtext,
                     )
+                    VariantMatrixHeader()
                     state.info.assetChoices.forEach { candidate ->
+                        val abi = ApkAssetClassifier.abiForName(candidate.name)
+                        val dpi = variantDpi(candidate.name)
+                        val matchesDevice =
+                            (abi == null || abi == primaryAbi) &&
+                                (dpi == null || dpi == densityBucket(densityDpi)) &&
+                                (state.info.minSdk == null || state.info.minSdk <= Build.VERSION.SDK_INT)
+                        val signature = normalizeSha256Digest(candidate.digest)
                         TextButton(
                             onClick = {
                                 assetSelectionVisible = false
@@ -190,19 +203,22 @@ fun ReleaseCard(
                                 verticalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
                                 Text(
-                                    text = candidate.name,
+                                    text = listOfNotNull(
+                                        candidate.name,
+                                        if (matchesDevice) stringResource(R.string.apk_variant_device_match) else null,
+                                    ).joinToString(" · "),
                                     color = Catppuccin.TextStrong,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                Text(
-                                    text = stringResource(
-                                        R.string.apk_variant_details,
-                                        ApkAssetClassifier.variantLabel(candidate.name),
-                                        formatAssetSize(candidate.size),
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Catppuccin.Subtext,
+                                VariantMatrixRow(
+                                    abi = abi ?: stringResource(R.string.apk_variant_universal),
+                                    dpi = dpi ?: stringResource(R.string.apk_variant_any),
+                                    minSdk = state.info.minSdk?.toString()
+                                        ?: stringResource(R.string.unknown),
+                                    signature = signature?.take(12)
+                                        ?: stringResource(R.string.unknown),
+                                    size = formatAssetSize(candidate.size),
                                 )
                             }
                         }
@@ -958,6 +974,96 @@ fun ReleaseCard(
             }
         }
     }
+}
+
+@Composable
+private fun VariantMatrixHeader() {
+    VariantMatrixRow(
+        abi = stringResource(R.string.apk_variant_header_abi),
+        dpi = stringResource(R.string.apk_variant_header_dpi),
+        minSdk = stringResource(R.string.apk_variant_header_min_sdk),
+        signature = stringResource(R.string.apk_variant_header_signature),
+        size = stringResource(R.string.apk_variant_header_size),
+        header = true,
+    )
+}
+
+@Composable
+private fun VariantMatrixRow(
+    abi: String,
+    dpi: String,
+    minSdk: String,
+    signature: String,
+    size: String,
+    header: Boolean = false,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        VariantMatrixCell(
+            text = abi,
+            modifier = Modifier.weight(1.2f),
+            header = header,
+        )
+        VariantMatrixCell(
+            text = dpi,
+            modifier = Modifier.weight(0.8f),
+            header = header,
+        )
+        VariantMatrixCell(
+            text = minSdk,
+            modifier = Modifier.weight(0.75f),
+            header = header,
+        )
+        VariantMatrixCell(
+            text = signature,
+            modifier = Modifier.weight(1.25f),
+            header = header,
+        )
+        VariantMatrixCell(
+            text = size,
+            modifier = Modifier.weight(0.8f),
+            header = header,
+        )
+    }
+}
+
+@Composable
+private fun VariantMatrixCell(
+    text: String,
+    modifier: Modifier,
+    header: Boolean,
+) {
+    Text(
+        text = text,
+        modifier = modifier,
+        style = if (header) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall,
+        fontWeight = if (header) FontWeight.SemiBold else null,
+        color = if (header) Catppuccin.Overlay else Catppuccin.Subtext,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+private fun variantDpi(name: String): String? {
+    val normalized = name.lowercase(Locale.US)
+    return listOf("ldpi", "mdpi", "hdpi", "xhdpi", "xxhdpi", "xxxhdpi")
+        .firstOrNull { density ->
+            Regex("(^|[^a-z])${density}([^a-z]|$)").containsMatchIn(normalized)
+        }
+}
+
+private fun densityBucket(densityDpi: Int): String = when {
+    densityDpi <= 120 -> "ldpi"
+    densityDpi <= 160 -> "mdpi"
+    densityDpi <= 240 -> "hdpi"
+    densityDpi <= 320 -> "xhdpi"
+    densityDpi <= 480 -> "xxhdpi"
+    else -> "xxxhdpi"
 }
 
 @Composable

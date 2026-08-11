@@ -59,6 +59,14 @@
     <string name="choose_apk_variant">Choose APK variant</string>
     <string name="choose_apk_variant_body">Several standalone APKs match this release. Choose the file for your device before downloading.</string>
     <string name="apk_variant_details">%1$s · %2$s</string>
+    <string name="apk_variant_header_abi">ABI</string>
+    <string name="apk_variant_header_dpi">DPI</string>
+    <string name="apk_variant_header_min_sdk">min SDK</string>
+    <string name="apk_variant_header_signature">SHA-256</string>
+    <string name="apk_variant_header_size">size</string>
+    <string name="apk_variant_device_match">matches this device</string>
+    <string name="apk_variant_universal">universal</string>
+    <string name="apk_variant_any">any</string>
     <string name="no_release_description">No release description provided.</string>
     <string name="release_history">Release history</string>
     <string name="release_history_title">Release history</string>
