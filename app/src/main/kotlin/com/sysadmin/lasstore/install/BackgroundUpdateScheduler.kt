@@ -39,6 +39,9 @@ class BackgroundUpdateScheduler(
     private val context: Context,
     private val logger: Logger,
 ) {
+    private val jobIdPrefs = context.getSharedPreferences(JOB_ID_PREFS, Context.MODE_PRIVATE)
+    private val jobIdLock = Any()
+
     fun enqueue(info: AppInfo): Boolean {
         val payload = QueuedUpdatePayload.from(info)
         val statusStore = com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus
@@ -82,6 +85,7 @@ class BackgroundUpdateScheduler(
         WorkManager.getInstance(context).cancelUniqueWork(payload.workName)
         statusStore.markCancelled(payload)
         QueuedUpdateUserActionNotification.cancel(context, payload)
+        releaseJobId(payload)
         logger.info("QueuedUpdate", "Cancelled queued update for ${payload.owner}/${payload.repo}")
     }
 
@@ -210,10 +214,47 @@ class BackgroundUpdateScheduler(
     }
 
     internal fun jobIdFor(payload: QueuedUpdatePayload): Int =
-        JOB_ID_BASE + ((payload.workName.hashCode() and Int.MAX_VALUE) % JOB_ID_RANGE)
+        synchronized(jobIdLock) {
+            val key = jobIdKey(payload.workName)
+            jobIdPrefs.getInt(key, INVALID_JOB_ID)
+                .takeIf { it in JOB_ID_BASE until (JOB_ID_BASE + JOB_ID_RANGE) }
+                ?: allocateJobIdLocked(payload.workName, key)
+        }
+
+    private fun allocateJobIdLocked(workName: String, key: String): Int {
+        val used = jobIdPrefs.all
+            .filterKeys { it.startsWith(JOB_ID_PREFIX) }
+            .values
+            .mapNotNull { it as? Int }
+            .toSet()
+        val start = (workName.hashCode() and Int.MAX_VALUE) % JOB_ID_RANGE
+        for (offset in 0 until JOB_ID_RANGE) {
+            val candidate = JOB_ID_BASE + ((start + offset) % JOB_ID_RANGE)
+            if (candidate !in used) {
+                check(
+                    jobIdPrefs.edit()
+                        .putInt(key, candidate)
+                        .commit(),
+                ) { "Could not persist queued update JobScheduler ID" }
+                return candidate
+            }
+        }
+        error("No queued update JobScheduler IDs remain")
+    }
+
+    private fun releaseJobId(payload: QueuedUpdatePayload) {
+        synchronized(jobIdLock) {
+            jobIdPrefs.edit().remove(jobIdKey(payload.workName)).commit()
+        }
+    }
+
+    private fun jobIdKey(workName: String): String = "$JOB_ID_PREFIX$workName"
 
     private companion object {
         const val JOB_ID_BASE = 420_000
         const val JOB_ID_RANGE = 50_000
+        const val JOB_ID_PREFS = "queued_update_job_ids"
+        const val JOB_ID_PREFIX = "job."
+        const val INVALID_JOB_ID = -1
     }
 }
