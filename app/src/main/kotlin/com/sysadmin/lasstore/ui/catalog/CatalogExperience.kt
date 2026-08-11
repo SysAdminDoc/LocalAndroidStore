@@ -69,6 +69,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.LaunchedEffect
 import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.domain.CardStatus
+import com.sysadmin.lasstore.domain.antiFeatureBadge
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -600,12 +601,7 @@ private fun CatalogSearchSurface(
     }
 }
 
-private fun formatAntiFeatureLabel(value: String): String = value
-    .replace('_', ' ')
-    .replace('-', ' ')
-    .split(' ')
-    .filter { it.isNotBlank() }
-    .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
+private fun formatAntiFeatureLabel(value: String): String = antiFeatureBadge(value)?.label ?: value
 
 @Composable
 private fun CatalogLoading() {

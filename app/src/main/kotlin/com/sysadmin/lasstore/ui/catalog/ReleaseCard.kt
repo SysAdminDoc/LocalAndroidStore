@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -66,15 +67,20 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.normalizeSha256Digest
+import com.sysadmin.lasstore.domain.AntiFeatureBadge
+import com.sysadmin.lasstore.domain.AntiFeatureSeverity
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.domain.ApkAssetClassifier
 import com.sysadmin.lasstore.domain.ReleaseChannel
+import com.sysadmin.lasstore.domain.antiFeatureBadges
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import java.time.Instant
 import java.text.DateFormat
@@ -136,6 +142,9 @@ fun ReleaseCard(
         state.info.handle,
         state.channelPreference,
     ) { mutableStateOf(false) }
+    val antiFeatureBadges = remember(state.info.antiFeatures) {
+        antiFeatureBadges(state.info.antiFeatures)
+    }
     val cardShape = RoundedCornerShape(24.dp)
 
     if (assetSelectionVisible) {
@@ -594,6 +603,18 @@ fun ReleaseCard(
                     }
                 }
 
+                if (antiFeatureBadges.isNotEmpty()) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        antiFeatureBadges.forEach { badge ->
+                            AntiFeaturePill(badge)
+                        }
+                    }
+                }
+
                 if (state.historicalSelection) {
                     Text(
                         text = stringResource(R.string.historical_release_selected),
@@ -903,6 +924,35 @@ private fun MetaPill(
             color = accent,
             maxLines = 1,
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun AntiFeaturePill(badge: AntiFeatureBadge) {
+    val (accent, severityRes) = when (badge.severity) {
+        AntiFeatureSeverity.Warning -> Catppuccin.Yellow to R.string.anti_feature_warning
+        AntiFeatureSeverity.Danger -> Catppuccin.Red to R.string.anti_feature_danger
+    }
+    val severity = stringResource(severityRes)
+    val accessibilityLabel = stringResource(
+        R.string.anti_feature_badge_description,
+        severity,
+        badge.label,
+    )
+
+    Surface(
+        modifier = Modifier.semantics { contentDescription = accessibilityLabel },
+        shape = RoundedCornerShape(50),
+        color = accent.copy(alpha = 0.1f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.55f)),
+    ) {
+        Text(
+            text = badge.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = accent,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
         )
     }
 }

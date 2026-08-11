@@ -33,7 +33,7 @@ That's what this is.
 ## Features (current)
 
 - **Multi-source GitHub discovery** — every enabled GitHub user / org source with a `.apk` asset on its latest release. Each source has its own enable toggle, optional topic filter, pre-release toggle, and optional PAT.
-- **Pinned F-Droid repositories** — add any HTTPS F-Droid index-v2 endpoint by pasting its `?fingerprint=` URL. The repository fingerprint is checked before metadata is exposed, and signed `entry.jar` metadata is verified when the repository provides it. APK SHA-256 digests and F-Droid anti-features travel into the catalog.
+- **Pinned F-Droid repositories** — add any HTTPS F-Droid index-v2 endpoint by pasting its `?fingerprint=` URL. The repository fingerprint is checked before metadata is exposed, and signed `entry.jar` metadata is verified when the repository provides it. APK SHA-256 digests and F-Droid anti-features travel into the catalog, where filter chips and severity-colored badges make the published taxonomy visible.
 - **Multi-source package aggregation** — once an Android package identity is known, releases from multiple configured sources share one card. Open the card's source chooser to inspect every candidate and pin the preferred source for that package.
 - **Per-app release channels** — release tags and pre-release metadata derive stable, beta, alpha, nightly, release-candidate, and development labels. Use a card's overflow menu to pin the channel; GitHub discovery searches the bounded release history for that channel and falls back safely when none is published.
 - **Wear OS companion** — the separate `wear` module provides an update-count Tile and short-text complication. A paired watch can send a user-initiated refresh request back to the phone; no APK is installed on-watch.
@@ -119,8 +119,10 @@ There is no opinionated topic filter unless you turn one on — your own user / 
 
 F-Droid repositories are read through their pinned index-v2 metadata. The catalog keeps the newest
 version with a standalone APK for each package, verifies the repository fingerprint before parsing,
-and shows anti-feature filter chips when the index publishes them. HTTPS is required for index and
-APK URLs.
+and shows taxonomy-aware anti-feature filter chips and red/yellow app badges when the index publishes
+them. Security-sensitive entries such as tracking, known vulnerabilities, and disabled algorithms are
+red; licensing, advertising, network, and source-availability notices are yellow. HTTPS is required
+for index and APK URLs.
 
 The optional Wear OS companion is built with `./gradlew :wear:assembleDebug` and installed on a
 paired watch. Add the Tile or short-text complication from the watch face editor; the watch receives

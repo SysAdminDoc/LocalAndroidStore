@@ -25,6 +25,9 @@
     <string name="clear_search">Clear search</string>
     <string name="catalog_release_count">%1$d of %2$d releases</string>
     <string name="anti_features_filter_title">F-Droid anti-features</string>
+    <string name="anti_feature_warning">Warning</string>
+    <string name="anti_feature_danger">High risk</string>
+    <string name="anti_feature_badge_description">%1$s: %2$s</string>
     <string name="checking_private_releases">Checking private releases…</string>
     <string name="no_releases_on_shelf">No releases on the shelf</string>
     <string name="catalog_unavailable">Catalog unavailable</string>
