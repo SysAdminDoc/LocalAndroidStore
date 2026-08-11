@@ -1,11 +1,6 @@
 package com.sysadmin.lasstore.ui.catalog
 
-import android.content.ContentValues
 import android.content.Context
-import android.graphics.Bitmap
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
@@ -20,7 +15,9 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import com.sysadmin.lasstore.data.ApkMetadata
 import com.sysadmin.lasstore.data.ApkSignatureScheme
+import com.sysadmin.lasstore.test.PrivateScreenshotStore
 import com.sysadmin.lasstore.ui.theme.LocalAndroidStoreTheme
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -30,6 +27,12 @@ class PublisherTrustRecoveryDialogInstrumentedTest {
     val composeRule = createComposeRule()
 
     private val context: Context = ApplicationProvider.getApplicationContext()
+    private val screenshots = PrivateScreenshotStore(context)
+
+    @After
+    fun cleanup() {
+        screenshots.cleanup()
+    }
 
     @Test
     fun recoveryRequiresBothStagesAndRendersAllTrustEvidence() {
@@ -73,33 +76,10 @@ class PublisherTrustRecoveryDialogInstrumentedTest {
     }
 
     private fun saveScreenshot(name: String) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         val image = composeRule.onNodeWithTag("publisherTrustRecoveryDialog")
             .captureToImage()
             .asAndroidBitmap()
-        val uri = requireNotNull(
-            context.contentResolver.insert(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                ContentValues().apply {
-                    put(MediaStore.Images.Media.DISPLAY_NAME, name)
-                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-                    put(
-                        MediaStore.Images.Media.RELATIVE_PATH,
-                        "${Environment.DIRECTORY_PICTURES}/LocalAndroidStoreTest",
-                    )
-                    put(MediaStore.Images.Media.IS_PENDING, 1)
-                },
-            ),
-        )
-        requireNotNull(context.contentResolver.openOutputStream(uri)).use { output ->
-            image.compress(Bitmap.CompressFormat.PNG, 100, output)
-        }
-        context.contentResolver.update(
-            uri,
-            ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) },
-            null,
-            null,
-        )
+        screenshots.save(name, image)
     }
 
     private fun details() = PublisherTrustDetails(

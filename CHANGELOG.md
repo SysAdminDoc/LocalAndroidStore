@@ -33,6 +33,7 @@
 - Added bounded, paged historical release browsing with explicit foreground selection; selected older releases retain available version/digest/signer evidence, use the normal inspection/trust/downgrade gates, are audit-recorded, and cannot enter the background queue.
 
 ### Fixed
+- Instrumentation visual tests now write screenshots only to app-private test cache, clean them in teardown, and support an explicit CI artifact-directory argument without publishing images to the user's gallery.
 - Support and persisted-log redaction now processes complete entries before truncation, preventing bearer, GitHub PAT, URL-query, and named-credential prefixes from surviving an entry boundary.
 - Settings now derives a dirty draft state from persisted normalized sources and PATs, replaces stale “Registry saved” copy with an unsaved-changes notice, and immediately reflects canonical data after a successful save.
 - Catalog empty states now distinguish zero enabled sources from a successful no-release result and provide a direct Settings action plus refresh path.
