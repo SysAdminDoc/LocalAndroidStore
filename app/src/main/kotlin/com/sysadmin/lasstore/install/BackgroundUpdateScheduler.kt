@@ -79,6 +79,7 @@ class BackgroundUpdateScheduler(
         }
         WorkManager.getInstance(context).cancelUniqueWork(payload.workName)
         statusStore.markCancelled(payload)
+        QueuedUpdateUserActionNotification.cancel(context, payload)
         logger.info("QueuedUpdate", "Cancelled queued update for ${payload.owner}/${payload.repo}")
     }
 

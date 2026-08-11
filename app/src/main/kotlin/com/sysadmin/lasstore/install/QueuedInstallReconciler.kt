@@ -111,7 +111,9 @@ internal object QueuedInstallReconciler {
         val session = context.packageManager.packageInstaller.mySessions
             .firstOrNull { it.sessionId == sessionId }
         if (session != null) {
-            sl.queuedUpdateStatus.markAwaitingInstall(payload, status.attempt, sessionId)
+            if (status.phase != QueuedUpdatePhase.AwaitingUserAction) {
+                sl.queuedUpdateStatus.markAwaitingInstall(payload, status.attempt, sessionId)
+            }
             return QueuedInstallReconciliation.AwaitingSession(sessionId)
         }
         return QueuedInstallReconciliation.NotApplicable

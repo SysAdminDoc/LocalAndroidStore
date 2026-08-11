@@ -242,11 +242,15 @@ object QueuedUpdateRunner {
                     },
                 )
             } else {
-                sl.installer.installApk(
+                sl.installer.queueInstallWithoutConstraints(
                     apk = target,
                     applicationId = meta.applicationId,
                     firstInstall = false,
                     referrerUri = referrerUri,
+                    resultData = QueuedInstallResultHandler.resultData(
+                        payload.copy(applicationId = meta.applicationId),
+                        QueuedInstallMetadata.from(meta, pinned, lineageRotationAccepted),
+                    ),
                     operationId = payload.generationId,
                     onSessionCreated = { sessionId ->
                         check(

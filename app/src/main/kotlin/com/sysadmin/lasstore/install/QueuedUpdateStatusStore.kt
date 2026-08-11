@@ -17,6 +17,7 @@ enum class QueuedUpdatePhase {
     Running,
     Retrying,
     AuditPending,
+    AwaitingUserAction,
     Installed,
     Failed,
     Cancelled,
@@ -69,7 +70,8 @@ data class QueuedUpdateStatus(
         get() = phase == QueuedUpdatePhase.Queued ||
             phase == QueuedUpdatePhase.Running ||
             phase == QueuedUpdatePhase.Retrying ||
-            phase == QueuedUpdatePhase.AuditPending
+            phase == QueuedUpdatePhase.AuditPending ||
+            phase == QueuedUpdatePhase.AwaitingUserAction
 }
 
 class QueuedUpdateStatusStore(context: Context) {
@@ -153,8 +155,7 @@ class QueuedUpdateStatusStore(context: Context) {
         payload: QueuedUpdatePayload,
         attempt: Int,
         failure: QueuedUpdateResult.Failed,
-    ) {
-        save(
+    ): Boolean = save(
             payload,
             phase = if (failure.kind == QueuedUpdateFailureKind.UserCancelled) {
                 QueuedUpdatePhase.Cancelled
@@ -165,7 +166,6 @@ class QueuedUpdateStatusStore(context: Context) {
             message = failure.message,
             failureKind = failure.kind,
         )
-    }
 
     fun markInstalled(payload: QueuedUpdatePayload, message: String = "Background update installed.") {
         synchronized(LOCK) {
@@ -222,13 +222,34 @@ class QueuedUpdateStatusStore(context: Context) {
         payload: QueuedUpdatePayload,
         attempt: Int,
         packageInstallerSessionId: Int,
-    ): Boolean = save(
+    ): Boolean = synchronized(LOCK) {
+        val current = currentStatusLocked(payload) ?: return@synchronized false
+        if (!isCurrentLocked(payload) || current.phase.isTerminal) return@synchronized false
+        save(
             payload,
             phase = QueuedUpdatePhase.Queued,
             attempt = attempt,
             message = "Download verified; waiting for Android's gentle install constraints.",
             packageInstallerSessionId = packageInstallerSessionId,
         )
+    }
+
+    fun markAwaitingUserAction(
+        payload: QueuedUpdatePayload,
+        attempt: Int,
+        packageInstallerSessionId: Int,
+        message: String = "Android needs your confirmation to finish this background update.",
+    ): Boolean = synchronized(LOCK) {
+        val current = currentStatusLocked(payload) ?: return@synchronized false
+        if (!isCurrentLocked(payload) || current.phase.isTerminal) return@synchronized false
+        save(
+            payload,
+            phase = QueuedUpdatePhase.AwaitingUserAction,
+            attempt = attempt,
+            message = message,
+            packageInstallerSessionId = packageInstallerSessionId,
+        )
+    }
 
     fun shouldDeferForRateLimit(payload: QueuedUpdatePayload): Boolean =
         get(payload)?.retryAtEpochMillis?.let { it > System.currentTimeMillis() } == true

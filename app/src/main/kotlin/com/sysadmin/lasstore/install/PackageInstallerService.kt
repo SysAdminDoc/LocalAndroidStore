@@ -324,6 +324,67 @@ class PackageInstallerService(
         }
     }
 
+    /**
+     * Stage a queued install without Android 14+ gentle constraints. The manifest receiver owns
+     * the result, so API 26–33 workers never attempt to launch a confirmation Activity from a
+     * background context when PackageInstaller requests user action.
+     */
+    fun queueInstallWithoutConstraints(
+        apk: File,
+        applicationId: String,
+        firstInstall: Boolean,
+        referrerUri: Uri?,
+        resultData: Intent,
+        operationId: String? = null,
+        onSessionCreated: (Int) -> Unit = {},
+    ): InstallResult {
+        val pi = context.packageManager.packageInstaller
+        val params = buildSessionParams(
+            firstInstall = firstInstall,
+            referrerUri = referrerUri,
+            applicationId = applicationId,
+        )
+        val sessionId = try {
+            pi.createSession(params)
+        } catch (t: Throwable) {
+            logger.error("Installer", "createSession for queued install failed", t)
+            return InstallResult.Failure(t.message ?: "createSession failed")
+        }
+        try {
+            onSessionCreated(sessionId)
+        } catch (t: Throwable) {
+            runCatching { pi.abandonSession(sessionId) }
+            return InstallResult.Failure(t.message ?: "install state persistence failed")
+        }
+
+        val registration = try {
+            resultRegistry.register(
+                sessionId = sessionId,
+                applicationId = applicationId,
+                route = InstallResultRoute.Queued,
+                operationId = operationId,
+            )
+        } catch (t: Throwable) {
+            runCatching { pi.abandonSession(sessionId) }
+            return InstallResult.Failure(t.message ?: "result capability persistence failed")
+        }
+
+        return try {
+            streamAndCommit(
+                pi,
+                sessionId,
+                apk,
+                installResultIntent(context, registration, resultData),
+            )
+            InstallResult.Queued(sessionId)
+        } catch (t: Throwable) {
+            logger.error("Installer", "queued install commit failed", t)
+            resultRegistry.cancel(registration)
+            runCatching { pi.abandonSession(sessionId) }
+            InstallResult.Failure(t.message ?: "queued install commit failed")
+        }
+    }
+
     // ── Shared helpers ────────────────────────────────────────────────────────
 
     private fun buildSessionParams(

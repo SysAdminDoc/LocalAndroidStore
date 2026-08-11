@@ -42,15 +42,31 @@ internal object QueuedInstallResultHandler {
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirm = intent.pendingUserActionIntent()
-                if (confirm != null) {
-                    confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(confirm)
+                val sessionId = intent.getIntExtra(
+                    PackageInstaller.EXTRA_SESSION_ID,
+                    intent.getIntExtra(EXTRA_DECLARED_SESSION_ID, -1),
+                )
+                val attempt = sl.queuedUpdateStatus.get(payload)?.attempt ?: 1
+                if (confirm != null && sessionId >= 0) {
+                    if (sl.queuedUpdateStatus.markAwaitingUserAction(payload, attempt, sessionId)) {
+                        QueuedUpdateUserActionNotification.show(context, payload, confirm)
+                    }
+                } else {
+                    val failure = QueuedUpdateResult.Failed(
+                        "Android requested user confirmation, but no confirmation action was available. Retry from the catalog.",
+                        QueuedUpdateFailureKind.Policy,
+                    )
+                    if (sl.queuedUpdateStatus.markFailed(payload, attempt, failure)) {
+                        sl.audit.installFailed(info, meta, failure.message)
+                    }
+                    if (sessionId >= 0) sl.installer.abandonSession(sessionId)
                 }
             }
             PackageInstaller.STATUS_SUCCESS -> {
                 if (recordSuccess(payload, info, metadata, meta)) {
                     if (!sl.queuedUpdateStatus.isCurrent(payload)) return
                     sl.queuedUpdateStatus.markInstalled(payload)
+                    QueuedUpdateUserActionNotification.cancel(context, payload)
                     sl.logger.info("QueuedUpdate", "Installed ${metadata.applicationId} ${metadata.versionName.orEmpty()} after constraints")
                 } else {
                     if (!sl.queuedUpdateStatus.isCurrent(payload)) return
@@ -72,13 +88,15 @@ internal object QueuedInstallResultHandler {
             PackageInstaller.STATUS_FAILURE_TIMEOUT -> {
                 val decoded = decodeFailure(context, status, message)
                 if (!sl.queuedUpdateStatus.isCurrent(payload)) return
-                sl.queuedUpdateStatus.markFailed(
+                if (sl.queuedUpdateStatus.markFailed(
                     payload,
                     sl.queuedUpdateStatus.get(payload)?.attempt ?: 1,
                     QueuedUpdateFailureClassifier.fromInstaller(status, decoded),
-                )
-                sl.audit.installFailed(info, meta, decoded)
-                sl.logger.warn("QueuedUpdate", "Install failed for ${metadata.applicationId}: $decoded")
+                )) {
+                    sl.audit.installFailed(info, meta, decoded)
+                    QueuedUpdateUserActionNotification.cancel(context, payload)
+                    sl.logger.warn("QueuedUpdate", "Install failed for ${metadata.applicationId}: $decoded")
+                }
             }
             else -> sl.logger.warn("QueuedUpdate", "Unknown PackageInstaller status $status for ${metadata.applicationId}")
         }
