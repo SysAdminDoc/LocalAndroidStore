@@ -313,41 +313,40 @@ object QueuedUpdateRunner {
         lineageRotationAccepted: Boolean,
     ): Boolean {
         val sl = ServiceLocator
-        if (!sl.queuedUpdateStatus.isCurrent(payload)) return false
-        if (!sl.audit.installSuccessPending(info, meta)) {
-            sl.logger.error("QueuedUpdate", "Could not write install-success pending audit evidence")
-            return false
-        }
-        val stateUpdate = runCatching {
-            check(sl.queuedUpdateStatus.isCurrent(payload)) { "Queued update was replaced" }
-            if (!meta.isEligibleForPinEnrollment) {
-                sl.logger.error(
-                    "QueuedUpdate",
-                    "Installed ${meta.applicationId}, but refused unverified signer-pin enrollment",
-                )
-            } else if (pinned.isNullOrEmpty()) {
-                sl.secrets.setPin(meta.applicationId, meta.signingSha256)
-                check(sl.secrets.getPin(meta.applicationId) == meta.signingSha256) {
-                    "Signer pin enrollment did not persist"
-                }
-            } else if (pinned != meta.signingSha256 && lineageRotationAccepted) {
-                sl.secrets.setPin(meta.applicationId, meta.signingSha256)
-                check(sl.secrets.getPin(meta.applicationId) == meta.signingSha256) {
-                    "Signer pin rotation did not persist"
-                }
-                sl.logger.info("QueuedUpdate", "Rolled pin forward for ${meta.applicationId}: $pinned -> ${meta.signingSha256}")
+        return sl.queuedUpdateStatus.ifCurrent(payload) {
+            if (!sl.audit.installSuccessPending(info, meta)) {
+                sl.logger.error("QueuedUpdate", "Could not write install-success pending audit evidence")
+                return@ifCurrent false
             }
-            sl.appIdCache.recordInstalled(info, meta)
-        }
-        if (stateUpdate.isFailure) {
-            sl.logger.error("QueuedUpdate", "Could not commit installed trust/cache state", stateUpdate.exceptionOrNull())
-            return false
-        }
-        if (!sl.queuedUpdateStatus.isCurrent(payload)) return false
-        if (!sl.audit.installSucceeded(info, meta)) {
-            sl.logger.error("QueuedUpdate", "Install success audit completion is pending")
-            return false
-        }
-        return true
+            val stateUpdate = runCatching {
+                if (!meta.isEligibleForPinEnrollment) {
+                    sl.logger.error(
+                        "QueuedUpdate",
+                        "Installed ${meta.applicationId}, but refused unverified signer-pin enrollment",
+                    )
+                } else if (pinned.isNullOrEmpty()) {
+                    sl.secrets.setPin(meta.applicationId, meta.signingSha256)
+                    check(sl.secrets.getPin(meta.applicationId) == meta.signingSha256) {
+                        "Signer pin enrollment did not persist"
+                    }
+                } else if (pinned != meta.signingSha256 && lineageRotationAccepted) {
+                    sl.secrets.setPin(meta.applicationId, meta.signingSha256)
+                    check(sl.secrets.getPin(meta.applicationId) == meta.signingSha256) {
+                        "Signer pin rotation did not persist"
+                    }
+                    sl.logger.info("QueuedUpdate", "Rolled pin forward for ${meta.applicationId}: $pinned -> ${meta.signingSha256}")
+                }
+                sl.appIdCache.recordInstalled(info, meta)
+            }
+            if (stateUpdate.isFailure) {
+                sl.logger.error("QueuedUpdate", "Could not commit installed trust/cache state", stateUpdate.exceptionOrNull())
+                return@ifCurrent false
+            }
+            if (!sl.audit.installSucceeded(info, meta)) {
+                sl.logger.error("QueuedUpdate", "Install success audit completion is pending")
+                return@ifCurrent false
+            }
+            true
+        } ?: false
     }
 }

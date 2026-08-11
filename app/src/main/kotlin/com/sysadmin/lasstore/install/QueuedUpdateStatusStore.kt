@@ -88,6 +88,18 @@ class QueuedUpdateStatusStore(context: Context) {
         status.generationId.isBlank() || status.generationId == payload.generationId
     }
 
+    /**
+     * Run a terminal state transition while holding the generation lease.
+     *
+     * A replacement can arrive between two independent [isCurrent] checks. Keeping the
+     * audit/pin/cache finalization inside this lock makes the check and the mutation one
+     * operation: a late callback either completes before replacement, or is rejected in full.
+     */
+    fun <T> ifCurrent(payload: QueuedUpdatePayload, block: () -> T): T? = synchronized(LOCK) {
+        if (!isCurrentLocked(payload)) return@synchronized null
+        block()
+    }
+
     fun markQueued(payload: QueuedUpdatePayload) {
         save(
             payload,

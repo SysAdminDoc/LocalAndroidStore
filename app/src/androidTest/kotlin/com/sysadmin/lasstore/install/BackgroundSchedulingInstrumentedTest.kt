@@ -130,6 +130,10 @@ class BackgroundSchedulingInstrumentedTest {
             assertFalse(statusStore.isCurrent(oldPayload))
             assertTrue(statusStore.isCurrent(newPayload))
 
+            var staleFinalizerRan = false
+            statusStore.ifCurrent(oldPayload) { staleFinalizerRan = true }
+            assertFalse(staleFinalizerRan)
+
             statusStore.markFailed(
                 oldPayload,
                 attempt = 1,
