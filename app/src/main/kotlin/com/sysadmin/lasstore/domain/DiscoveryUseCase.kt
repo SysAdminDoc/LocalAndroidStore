@@ -244,6 +244,7 @@ class DiscoveryUseCase(
                     publishedAt = release.publishedAt,
                     prerelease = release.prerelease,
                     releaseBody = release.body,
+                    minSdk = release.minSdk,
                     antiFeatures = discovered.antiFeatures,
                 )
             }
