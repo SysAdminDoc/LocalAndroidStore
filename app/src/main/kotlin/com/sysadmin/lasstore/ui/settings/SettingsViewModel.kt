@@ -57,7 +57,7 @@ class SettingsViewModel : ViewModel() {
     private var saveJob: Job? = null
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 sl.settings.recoverPendingTransaction()
                 val inspection = sl.settings.inspectSourceRegistry()

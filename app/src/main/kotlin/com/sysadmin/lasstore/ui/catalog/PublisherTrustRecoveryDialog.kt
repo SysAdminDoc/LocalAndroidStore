@@ -52,6 +52,7 @@ import androidx.compose.ui.res.stringResource
 @Composable
 internal fun PublisherTrustRecoveryDialog(
     details: PublisherTrustDetails,
+    busy: Boolean = false,
     onDismiss: () -> Unit,
     onConfirm: (typedApplicationId: String, independentlyVerified: Boolean) -> Unit,
 ) {
@@ -271,7 +272,7 @@ internal fun PublisherTrustRecoveryDialog(
                                 onClick = {
                                     onConfirm(typedApplicationId, independentlyVerified)
                                 },
-                                enabled = canReplacePublisherPin(
+                                enabled = !busy && canReplacePublisherPin(
                                     details,
                                     typedApplicationId,
                                     independentlyVerified,

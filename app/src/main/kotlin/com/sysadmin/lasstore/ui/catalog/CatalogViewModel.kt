@@ -70,6 +70,7 @@ data class CardState(
     val isIgnored: Boolean = false,
     val queuedUpdateStatus: QueuedUpdateStatus? = null,
     val publisherTrustDetails: PublisherTrustDetails? = null,
+    val publisherTrustRecoveryBusy: Boolean = false,
     val unmanagedInstall: UnmanagedInstallDetails? = null,
     val releaseHistory: ReleaseHistoryState? = null,
     val historicalSelection: Boolean = false,
@@ -191,6 +192,8 @@ class CatalogViewModel : ViewModel() {
     private val historyJobs = ConcurrentHashMap<String, Job>()
     /** Queue/cancel scheduling runs off the click dispatcher and is serialized per card. */
     private val queueJobs = ConcurrentHashMap<String, Job>()
+    /** Publisher-pin recovery performs secret, audit, and cache I/O off the Compose path. */
+    private val publisherPinJobs = ConcurrentHashMap<String, Job>()
     @Volatile private var refreshJob: Job? = null
     @Volatile private var resumeReconcileJob: Job? = null
     @Volatile private var refreshGeneration = 0L
@@ -1066,8 +1069,9 @@ class CatalogViewModel : ViewModel() {
         typedApplicationId: String,
         independentlyVerified: Boolean,
     ) {
+        val key = cardKey(card.info)
         val currentCard = _state.value.cards.firstOrNull {
-            cardKey(it.info) == cardKey(card.info)
+            cardKey(it.info) == key
         }
         val details = currentCard?.publisherTrustDetails
         if (currentCard?.status != CardStatus.SignatureMismatch ||
@@ -1079,113 +1083,178 @@ class CatalogViewModel : ViewModel() {
             }
             return
         }
+        if (publisherPinJobs[key]?.isActive == true) {
+            _state.update { it.copy(warning = "Publisher trust replacement is already in progress.") }
+            return
+        }
 
         val meta = details.downloadedMetadata
-        val livePin = sl.secrets.getPin(meta.applicationId)
-        val liveInstalledSigner = sl.installState.info(meta.applicationId)?.currentSignerSha256
-        if (livePin != details.storedPinSha256 ||
-            liveInstalledSigner != details.installedSignerSha256
-        ) {
-            _state.update {
-                it.copy(warning = "Publisher trust changed while it was being reviewed. Inspect the release again.")
-            }
-            return
-        }
-        if (!sl.audit.publisherPinRecoveryAuthorized(
-                info = currentCard.info,
-                meta = meta,
-                previousPinSha256 = details.storedPinSha256,
-                installedSignerSha256 = details.installedSignerSha256,
-            )
-        ) {
-            _state.update {
-                it.copy(warning = "Could not write the trust-recovery audit record. The pin was not changed.")
-            }
-            return
-        }
-        if (!sl.audit.publisherPinReplacementPending(
-                info = currentCard.info,
-                meta = meta,
-                previousPinSha256 = details.storedPinSha256,
-                installedSignerSha256 = details.installedSignerSha256,
-            )
-        ) {
-            _state.update {
-                it.copy(warning = "Could not write the trust-replacement pending record. The pin was not changed.")
-            }
-            return
-        }
-
-        val replacement = runCatching {
-            sl.secrets.setPin(meta.applicationId, meta.signingSha256)
-            check(sl.secrets.getPin(meta.applicationId) == meta.signingSha256) {
-                "Pin replacement did not persist"
-            }
-        }
-        if (replacement.isFailure) {
-            sl.logger.error("Trust", "Publisher pin replacement failed", replacement.exceptionOrNull())
-            _state.update {
-                it.copy(warning = "Publisher pin replacement failed. The release remains blocked.")
-            }
-            return
-        }
-
-        if (!sl.audit.publisherPinReplaced(
-                info = currentCard.info,
-                meta = meta,
-                previousPinSha256 = details.storedPinSha256,
-                installedSignerSha256 = details.installedSignerSha256,
-            )
-        ) {
-            val rollback = runCatching {
-                sl.secrets.setPin(meta.applicationId, details.storedPinSha256)
-                check(sl.secrets.getPin(meta.applicationId) == details.storedPinSha256) {
-                    "Publisher pin rollback did not persist"
-                }
-            }
-            sl.logger.error("Trust", "Publisher pin replacement audit completion failed", rollback.exceptionOrNull())
-            _state.update {
-                it.copy(
-                    warning = if (rollback.isSuccess) {
-                        "Could not write durable trust-replacement evidence. The pin was restored."
+        _state.update { ui ->
+            ui.copy(
+                warning = "Updating publisher trust record…",
+                cards = ui.cards.map { current ->
+                    if (cardKey(current.info) == key) {
+                        current.copy(publisherTrustRecoveryBusy = true)
                     } else {
-                        "Trust replacement is pending durable audit evidence. Do not rely on this pin until the next refresh."
+                        current
+                    }
+                },
+            )
+        }
+        val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            try {
+                if (!isCurrentPublisherTrustReview(key, meta.signingSha256)) {
+                    publishTrustWarning(
+                        "Publisher trust changed while it was being reviewed. Inspect the release again.",
+                    )
+                    return@launch
+                }
+                val livePin = sl.secrets.getPin(meta.applicationId)
+                val liveInstalledSigner = sl.installState.info(meta.applicationId)?.currentSignerSha256
+                if (livePin != details.storedPinSha256 ||
+                    liveInstalledSigner != details.installedSignerSha256
+                ) {
+                    publishTrustWarning(
+                        "Publisher trust changed while it was being reviewed. Inspect the release again.",
+                    )
+                    return@launch
+                }
+                if (!sl.audit.publisherPinRecoveryAuthorized(
+                        info = currentCard.info,
+                        meta = meta,
+                        previousPinSha256 = details.storedPinSha256,
+                        installedSignerSha256 = details.installedSignerSha256,
+                    )
+                ) {
+                    publishTrustWarning(
+                        "Could not write the trust-recovery audit record. The pin was not changed.",
+                    )
+                    return@launch
+                }
+                if (!sl.audit.publisherPinReplacementPending(
+                        info = currentCard.info,
+                        meta = meta,
+                        previousPinSha256 = details.storedPinSha256,
+                        installedSignerSha256 = details.installedSignerSha256,
+                    )
+                ) {
+                    publishTrustWarning(
+                        "Could not write the trust-replacement pending record. The pin was not changed.",
+                    )
+                    return@launch
+                }
+
+                val replacement = runCatching {
+                    sl.secrets.setPin(meta.applicationId, meta.signingSha256)
+                    check(sl.secrets.getPin(meta.applicationId) == meta.signingSha256) {
+                        "Pin replacement did not persist"
+                    }
+                }
+                if (replacement.isFailure) {
+                    sl.logger.error("Trust", "Publisher pin replacement failed", replacement.exceptionOrNull())
+                    publishTrustWarning("Publisher pin replacement failed. The release remains blocked.")
+                    return@launch
+                }
+
+                if (!sl.audit.publisherPinReplaced(
+                        info = currentCard.info,
+                        meta = meta,
+                        previousPinSha256 = details.storedPinSha256,
+                        installedSignerSha256 = details.installedSignerSha256,
+                    )
+                ) {
+                    val rollback = runCatching {
+                        sl.secrets.setPin(meta.applicationId, details.storedPinSha256)
+                        check(sl.secrets.getPin(meta.applicationId) == details.storedPinSha256) {
+                            "Publisher pin rollback did not persist"
+                        }
+                    }
+                    sl.logger.error(
+                        "Trust",
+                        "Publisher pin replacement audit completion failed",
+                        rollback.exceptionOrNull(),
+                    )
+                    publishTrustWarning(
+                        if (rollback.isSuccess) {
+                            "Could not write durable trust-replacement evidence. The pin was restored."
+                        } else {
+                            "Trust replacement is pending durable audit evidence. Do not rely on this pin until the next refresh."
+                        },
+                    )
+                    return@launch
+                }
+                sl.logger.warn(
+                    "Trust",
+                    "Publisher pin replaced for ${meta.applicationId} after two-step confirmation: " +
+                        "${details.storedPinSha256} -> ${meta.signingSha256}",
+                )
+                val installed = sl.installState.info(meta.applicationId)
+                if (installed != null) {
+                    runCatching { sl.appIdCache.recordInspected(currentCard.info, meta) }
+                        .onFailure {
+                            sl.logger.warn(
+                                "Trust",
+                                "Could not refresh the inspected release after pin replacement " +
+                                    "(${it::class.simpleName ?: "unknown"})",
+                            )
+                        }
+                }
+                val nextStatus = when {
+                    installed == null -> CardStatus.NotInstalled
+                    meta.versionCode > installed.versionCode -> CardStatus.UpdateAvailable
+                    meta.versionCode == installed.versionCode -> CardStatus.ReinstallAvailable
+                    else -> CardStatus.DowngradeAvailable
+                }
+                withContext(Dispatchers.Main) {
+                    val latest = _state.value.cards.firstOrNull { cardKey(it.info) == key }
+                    if (
+                        latest == null ||
+                        latest.status != CardStatus.SignatureMismatch ||
+                        latest.publisherTrustDetails?.downloadedMetadata?.signingSha256 !=
+                            meta.signingSha256
+                    ) {
+                        return@withContext
+                    }
+                    updateCard(latest.info) {
+                        it.copy(
+                            info = it.info.copy(
+                                applicationId = meta.applicationId,
+                                versionCode = meta.versionCode,
+                                versionName = meta.versionName ?: it.info.versionName,
+                            ),
+                            status = nextStatus,
+                            installedVersion = installed?.versionName,
+                            installedVersionCode = installed?.versionCode,
+                            progress = 0f,
+                            message = "Publisher pin replaced after explicit confirmation. " +
+                                "Review the release, then choose the install action again.",
+                            publisherTrustDetails = null,
+                        )
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                sl.logger.error("Trust", "Publisher pin replacement failed", throwable)
+                publishTrustWarning("Publisher pin replacement failed. The release remains blocked.")
+            }
+        }
+        publisherPinJobs[key] = job
+        job.invokeOnCompletion {
+            publisherPinJobs.remove(key, job)
+            _state.update { ui ->
+                ui.copy(
+                    cards = ui.cards.map { current ->
+                        if (cardKey(current.info) == key) {
+                            current.copy(publisherTrustRecoveryBusy = false)
+                        } else {
+                            current
+                        }
                     },
                 )
             }
-            return
         }
-        sl.logger.warn(
-            "Trust",
-            "Publisher pin replaced for ${meta.applicationId} after two-step confirmation: " +
-                "${details.storedPinSha256} -> ${meta.signingSha256}",
-        )
-        val installed = sl.installState.info(meta.applicationId)
-        if (installed != null) {
-            sl.appIdCache.recordInspected(currentCard.info, meta)
-        }
-        val nextStatus = when {
-            installed == null -> CardStatus.NotInstalled
-            meta.versionCode > installed.versionCode -> CardStatus.UpdateAvailable
-            meta.versionCode == installed.versionCode -> CardStatus.ReinstallAvailable
-            else -> CardStatus.DowngradeAvailable
-        }
-        updateCard(currentCard.info) {
-            it.copy(
-                info = it.info.copy(
-                    applicationId = meta.applicationId,
-                    versionCode = meta.versionCode,
-                    versionName = meta.versionName ?: it.info.versionName,
-                ),
-                status = nextStatus,
-                installedVersion = installed?.versionName,
-                installedVersionCode = installed?.versionCode,
-                progress = 0f,
-                message = "Publisher pin replaced after explicit confirmation. " +
-                    "Review the release, then choose the install action again.",
-                publisherTrustDetails = null,
-            )
-        }
+        job.start()
     }
 
     /** Queue an installed update through UIDT/WorkManager and gentle PackageInstaller constraints. */
@@ -1697,6 +1766,19 @@ class CatalogViewModel : ViewModel() {
     }
 
     // region Private helpers
+
+    private fun isCurrentPublisherTrustReview(key: String, downloadedSignerSha256: String): Boolean =
+        _state.value.cards.firstOrNull { cardKey(it.info) == key }?.let { current ->
+            current.status == CardStatus.SignatureMismatch &&
+                current.publisherTrustDetails?.downloadedMetadata?.signingSha256 ==
+                    downloadedSignerSha256
+        } == true
+
+    private suspend fun publishTrustWarning(message: String) {
+        withContext(Dispatchers.Main) {
+            _state.update { it.copy(warning = message) }
+        }
+    }
 
     private fun cardKey(info: AppInfo) = "${info.sourceKey}/${info.owner}/${info.repo}"
 

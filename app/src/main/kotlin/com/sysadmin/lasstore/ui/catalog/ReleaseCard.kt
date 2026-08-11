@@ -182,6 +182,7 @@ fun ReleaseCard(
         state.publisherTrustDetails?.let { details ->
             PublisherTrustRecoveryDialog(
                 details = details,
+                busy = state.publisherTrustRecoveryBusy,
                 onDismiss = { trustRecoveryVisible = false },
                 onConfirm = { typedApplicationId, independentlyVerified ->
                     trustRecoveryVisible = false
