@@ -27,6 +27,7 @@
 - Externalized active Compose copy, accessibility labels, plural counts, APK size quantities, and locale-aware dates into Android resources for localization and pseudolocale coverage.
 - Moved the build lane to Android API 37 with AGP 9.1.1, Gradle 9.3.1, Kotlin 2.4.10, built-in AGP Kotlin support, and typed Kotlin compiler options; API-37 large-screen and runtime behavior remains covered by the existing verification matrix.
 - Refreshed the AndroidX, Compose, coroutine, serialization, Tink, OkHttp, and apksig dependency lines for the API-37 lane, added Gradle dependency locking, and aligned GitHub response handling with OkHttp 5's non-null response bodies.
+- Removed the unused legacy catalog screen and app-card implementations so routing, previews, accessibility coverage, and production behavior share one catalog surface.
 
 ### Fixed
 - Restored GitHub API and release-download connectivity by removing the stale static root-CA pinset and relying on Android's maintained system trust store. Cleartext traffic remains disabled, and a regression test prevents static pins from returning.
