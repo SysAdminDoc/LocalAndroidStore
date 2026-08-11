@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -188,6 +189,8 @@ class CatalogViewModel : ViewModel() {
     private val activeActionIds = ConcurrentHashMap<String, String>()
     /** One explicit release-history request per catalog card. */
     private val historyJobs = ConcurrentHashMap<String, Job>()
+    /** Queue/cancel scheduling runs off the click dispatcher and is serialized per card. */
+    private val queueJobs = ConcurrentHashMap<String, Job>()
     @Volatile private var refreshJob: Job? = null
     @Volatile private var resumeReconcileJob: Job? = null
     @Volatile private var refreshGeneration = 0L
@@ -1212,55 +1215,112 @@ class CatalogViewModel : ViewModel() {
             }
             return
         }
-        if (!sl.installer.canRequestInstalls()) {
-            _state.update { it.copy(warning = "Grant 'Install unknown apps' first.") }
-            openInstallPermissionSettings()
+        val key = cardKey(card.info)
+        if (queueJobs[key]?.isActive == true) {
+            _state.update { it.copy(warning = "A background queue action is already in progress.") }
             return
         }
-        val cached = sl.appIdCache.get(
-            card.info.sourceKey,
-            card.info.owner,
-            card.info.repo,
-        )
-        val applicationId = card.info.applicationId ?: cached?.applicationId
-        val installed = applicationId?.let(sl.installState::info)
-        if (applicationId == null || installed == null) {
-            _state.update { it.copy(warning = "Queue is only available for installed apps.") }
-            return
-        }
-        if (!signerMatchesPin(installed.currentSignerSha256, sl.secrets.getPin(applicationId))) {
-            _state.update {
-                it.copy(
-                    warning = "Queue blocked: the installed publisher key does not match " +
-                        "LocalAndroidStore's trust pin.",
+        _state.update { it.copy(warning = "Queueing ${card.info.displayName}…") }
+        val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            try {
+                if (!sl.installer.canRequestInstalls()) {
+                    withContext(Dispatchers.Main) {
+                        _state.update { it.copy(warning = "Grant 'Install unknown apps' first.") }
+                        openInstallPermissionSettings()
+                    }
+                    return@launch
+                }
+                val cached = sl.appIdCache.get(
+                    card.info.sourceKey,
+                    card.info.owner,
+                    card.info.repo,
                 )
+                val applicationId = card.info.applicationId ?: cached?.applicationId
+                val installed = applicationId?.let(sl.installState::info)
+                if (applicationId == null || installed == null) {
+                    withContext(Dispatchers.Main) {
+                        _state.update { it.copy(warning = "Queue is only available for installed apps.") }
+                    }
+                    return@launch
+                }
+                if (!signerMatchesPin(installed.currentSignerSha256, sl.secrets.getPin(applicationId))) {
+                    withContext(Dispatchers.Main) {
+                        _state.update {
+                            it.copy(
+                                warning = "Queue blocked: the installed publisher key does not match " +
+                                    "LocalAndroidStore's trust pin.",
+                            )
+                        }
+                    }
+                    return@launch
+                }
+                val queuedInfo = card.info.copy(applicationId = applicationId)
+                val queued = sl.backgroundUpdates.enqueue(queuedInfo)
+                withContext(Dispatchers.Main) {
+                    if (queued) {
+                        updateCard(card.info) {
+                            withQueuedUpdateStatus(
+                                it.copy(message = "Queued for gentle background update")
+                            )
+                        }
+                        _state.update {
+                            it.copy(warning = "Queued ${card.info.displayName} for background update.")
+                        }
+                    } else {
+                        _state.update { it.copy(warning = "Could not queue ${card.info.displayName}.") }
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                withContext(Dispatchers.Main) {
+                    _state.update {
+                        it.copy(warning = "Could not queue ${card.info.displayName}. Try again.")
+                    }
+                }
             }
-            return
         }
-        val queuedInfo = card.info.copy(applicationId = applicationId)
-        if (sl.backgroundUpdates.enqueue(queuedInfo)) {
-            updateCard(card.info) {
-                withQueuedUpdateStatus(
-                    it.copy(message = "Queued for gentle background update")
-                )
-            }
-            _state.update { it.copy(warning = "Queued ${card.info.displayName} for background update.") }
-        } else {
-            _state.update { it.copy(warning = "Could not queue ${card.info.displayName}.") }
-        }
+        queueJobs[key] = job
+        job.invokeOnCompletion { queueJobs.remove(key, job) }
+        job.start()
     }
 
     fun cancelBackgroundUpdate(card: CardState) {
-        val cached = sl.appIdCache.get(
-            card.info.sourceKey,
-            card.info.owner,
-            card.info.repo,
-        )
-        val applicationId = card.info.applicationId ?: cached?.applicationId
-        val queuedInfo = card.info.copy(applicationId = applicationId)
-        sl.backgroundUpdates.cancel(queuedInfo)
-        updateCard(card.info, ::withQueuedUpdateStatus)
-        _state.update { it.copy(warning = "Cancelled ${card.info.displayName}'s background update.") }
+        val key = cardKey(card.info)
+        if (queueJobs[key]?.isActive == true) {
+            _state.update { it.copy(warning = "The queue action is still being scheduled.") }
+            return
+        }
+        _state.update { it.copy(warning = "Cancelling ${card.info.displayName}…") }
+        val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            try {
+                val cached = sl.appIdCache.get(
+                    card.info.sourceKey,
+                    card.info.owner,
+                    card.info.repo,
+                )
+                val applicationId = card.info.applicationId ?: cached?.applicationId
+                val queuedInfo = card.info.copy(applicationId = applicationId)
+                sl.backgroundUpdates.cancel(queuedInfo)
+                withContext(Dispatchers.Main) {
+                    updateCard(card.info, ::withQueuedUpdateStatus)
+                    _state.update {
+                        it.copy(warning = "Cancelled ${card.info.displayName}'s background update.")
+                    }
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                withContext(Dispatchers.Main) {
+                    _state.update {
+                        it.copy(warning = "Could not cancel ${card.info.displayName}. Try again.")
+                    }
+                }
+            }
+        }
+        queueJobs[key] = job
+        job.invokeOnCompletion { queueJobs.remove(key, job) }
+        job.start()
     }
 
     /** Item 34: Proceed with an install that was paused at the permission-review gate. */

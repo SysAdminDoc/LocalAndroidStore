@@ -42,9 +42,10 @@ class BackgroundUpdateScheduler(
     private val jobIdPrefs = context.getSharedPreferences(JOB_ID_PREFS, Context.MODE_PRIVATE)
     private val jobIdLock = Any()
 
-    fun enqueue(info: AppInfo): Boolean {
+    suspend fun enqueue(info: AppInfo): Boolean {
         val payload = QueuedUpdatePayload.from(info)
         val statusStore = com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus
+        statusStore.awaitLoaded()
         statusStore.get(payload)
             ?.packageInstallerSessionId
             ?.let(com.sysadmin.lasstore.data.ServiceLocator.installer::abandonSession)
@@ -68,8 +69,9 @@ class BackgroundUpdateScheduler(
         return true
     }
 
-    fun cancel(info: AppInfo) {
+    suspend fun cancel(info: AppInfo) {
         val statusStore = com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus
+        statusStore.awaitLoaded()
         val current = statusStore.get(info.sourceKey, info.owner, info.repo)
         val payload = QueuedUpdatePayload.from(
             info = info,
@@ -90,8 +92,10 @@ class BackgroundUpdateScheduler(
     }
 
     /** Restore pending queue work after JobScheduler loses non-persisted UIDT jobs at reboot. */
-    fun reconcilePersistedWork() {
-        ServiceLocator.queuedUpdateStatus.statuses.value
+    suspend fun reconcilePersistedWork() {
+        val statusStore = ServiceLocator.queuedUpdateStatus
+        statusStore.awaitLoaded()
+        statusStore.statuses.value
             .filter { it.isPending }
             .forEach { status ->
                 val payload = status.queuedPayload
@@ -107,13 +111,13 @@ class BackgroundUpdateScheduler(
                     is QueuedInstallReconciliation.AwaitingSession -> return@forEach
                     QueuedInstallReconciliation.NotApplicable -> Unit
                 }
-                if (!ServiceLocator.queuedUpdateStatus.isCurrent(payload)) return@forEach
-                if (ServiceLocator.queuedUpdateStatus.get(payload)?.phase == QueuedUpdatePhase.AwaitingUserAction) {
+                if (!statusStore.isCurrent(payload)) return@forEach
+                if (statusStore.get(payload)?.phase == QueuedUpdatePhase.AwaitingUserAction) {
                     return@forEach
                 }
                 if (hasScheduledWork(payload)) return@forEach
                 if (!scheduleExistingPayload(payload)) {
-                    ServiceLocator.queuedUpdateStatus.markNeedsReschedule(
+                    statusStore.markNeedsReschedule(
                         payload,
                         "Background update needs rescheduling. Tap retry from the catalog.",
                     )

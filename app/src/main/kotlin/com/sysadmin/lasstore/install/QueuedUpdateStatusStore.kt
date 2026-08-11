@@ -3,9 +3,15 @@ package com.sysadmin.lasstore.install
 import android.content.Context
 import com.sysadmin.lasstore.data.ApkMetadata
 import com.sysadmin.lasstore.data.ApkSignatureScheme
+import java.util.concurrent.CountDownLatch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -81,8 +87,31 @@ class QueuedUpdateStatusStore(context: Context) {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
-    private val _statuses = MutableStateFlow(load())
+    private val loadComplete = CountDownLatch(1)
+    private val persistenceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var loadFailure: Throwable? = null
+    private val _statuses = MutableStateFlow<List<QueuedUpdateStatus>>(emptyList())
     val statuses: StateFlow<List<QueuedUpdateStatus>> = _statuses.asStateFlow()
+
+    init {
+        persistenceScope.launch {
+            try {
+                synchronized(LOCK) {
+                    _statuses.value = loadAndPrune()
+                }
+            } catch (throwable: Throwable) {
+                loadFailure = throwable
+            } finally {
+                loadComplete.countDown()
+            }
+        }
+    }
+
+    /** Await the one-time disk load without blocking the caller's dispatcher. */
+    suspend fun awaitLoaded() {
+        withContext(Dispatchers.IO) { loadComplete.await() }
+        throwIfLoadFailed()
+    }
 
     fun get(payload: QueuedUpdatePayload): QueuedUpdateStatus? =
         _statuses.value.firstOrNull { it.workName == payload.workName }
@@ -110,10 +139,13 @@ class QueuedUpdateStatusStore(context: Context) {
      * audit/pin/cache finalization inside this lock makes the check and the mutation one
      * operation: a late callback either completes before replacement, or is rejected in full.
      */
-    fun <T> ifCurrent(payload: QueuedUpdatePayload, block: () -> T): T? = synchronized(LOCK) {
-        val status = currentStatusLocked(payload) ?: return@synchronized null
-        if (!isCurrentLocked(payload) || status.phase.isTerminal) return@synchronized null
-        block()
+    fun <T> ifCurrent(payload: QueuedUpdatePayload, block: () -> T): T? {
+        awaitLoadedForWrite()
+        return synchronized(LOCK) {
+            val status = currentStatusLocked(payload) ?: return@synchronized null
+            if (!isCurrentLocked(payload) || status.phase.isTerminal) return@synchronized null
+            block()
+        }
     }
 
     fun markQueued(payload: QueuedUpdatePayload) {
@@ -127,6 +159,7 @@ class QueuedUpdateStatusStore(context: Context) {
     }
 
     fun beginAttempt(payload: QueuedUpdatePayload): Int {
+        awaitLoadedForWrite()
         val attempt = ((get(payload)?.attempt ?: 0) + 1).coerceAtMost(MAX_ATTEMPTS + 1)
         val saved = save(
             payload,
@@ -169,6 +202,7 @@ class QueuedUpdateStatusStore(context: Context) {
         )
 
     fun markInstalled(payload: QueuedUpdatePayload, message: String = "Background update installed.") {
+        awaitLoadedForWrite()
         synchronized(LOCK) {
             val current = currentStatusLocked(payload) ?: return@synchronized
             if (!isCurrentLocked(payload) || current.phase.isTerminal) return@synchronized
@@ -201,6 +235,7 @@ class QueuedUpdateStatusStore(context: Context) {
         packageInstallerSessionId: Int,
         metadata: ApkMetadata? = null,
     ): Boolean {
+        awaitLoadedForWrite()
         val current = get(payload) ?: return false
         return save(
             payload = payload,
@@ -223,16 +258,19 @@ class QueuedUpdateStatusStore(context: Context) {
         payload: QueuedUpdatePayload,
         attempt: Int,
         packageInstallerSessionId: Int,
-    ): Boolean = synchronized(LOCK) {
-        val current = currentStatusLocked(payload) ?: return@synchronized false
-        if (!isCurrentLocked(payload) || current.phase.isTerminal) return@synchronized false
-        save(
-            payload,
-            phase = QueuedUpdatePhase.Queued,
-            attempt = attempt,
-            message = "Download verified; waiting for Android's gentle install constraints.",
-            packageInstallerSessionId = packageInstallerSessionId,
-        )
+    ): Boolean {
+        awaitLoadedForWrite()
+        return synchronized(LOCK) {
+            val current = currentStatusLocked(payload) ?: return@synchronized false
+            if (!isCurrentLocked(payload) || current.phase.isTerminal) return@synchronized false
+            save(
+                payload,
+                phase = QueuedUpdatePhase.Queued,
+                attempt = attempt,
+                message = "Download verified; waiting for Android's gentle install constraints.",
+                packageInstallerSessionId = packageInstallerSessionId,
+            )
+        }
     }
 
     fun markAwaitingUserAction(
@@ -240,34 +278,41 @@ class QueuedUpdateStatusStore(context: Context) {
         attempt: Int,
         packageInstallerSessionId: Int,
         message: String = "Android needs your confirmation to finish this background update.",
-    ): Boolean = synchronized(LOCK) {
-        val current = currentStatusLocked(payload) ?: return@synchronized false
-        if (!isCurrentLocked(payload) || current.phase.isTerminal) return@synchronized false
-        save(
-            payload,
-            phase = QueuedUpdatePhase.AwaitingUserAction,
-            attempt = attempt,
-            message = message,
-            packageInstallerSessionId = packageInstallerSessionId,
-        )
+    ): Boolean {
+        awaitLoadedForWrite()
+        return synchronized(LOCK) {
+            val current = currentStatusLocked(payload) ?: return@synchronized false
+            if (!isCurrentLocked(payload) || current.phase.isTerminal) return@synchronized false
+            save(
+                payload,
+                phase = QueuedUpdatePhase.AwaitingUserAction,
+                attempt = attempt,
+                message = message,
+                packageInstallerSessionId = packageInstallerSessionId,
+            )
+        }
     }
 
-    fun markNeedsReschedule(payload: QueuedUpdatePayload, message: String): Boolean = synchronized(LOCK) {
-        val current = currentStatusLocked(payload) ?: return@synchronized false
-        if (!isCurrentLocked(payload) || current.phase.isTerminal) return@synchronized false
-        save(
-            payload,
-            phase = QueuedUpdatePhase.Queued,
-            attempt = current.attempt,
-            message = message,
-            packageInstallerSessionId = current.packageInstallerSessionId,
-        )
+    fun markNeedsReschedule(payload: QueuedUpdatePayload, message: String): Boolean {
+        awaitLoadedForWrite()
+        return synchronized(LOCK) {
+            val current = currentStatusLocked(payload) ?: return@synchronized false
+            if (!isCurrentLocked(payload) || current.phase.isTerminal) return@synchronized false
+            save(
+                payload,
+                phase = QueuedUpdatePhase.Queued,
+                attempt = current.attempt,
+                message = message,
+                packageInstallerSessionId = current.packageInstallerSessionId,
+            )
+        }
     }
 
     fun shouldDeferForRateLimit(payload: QueuedUpdatePayload): Boolean =
         get(payload)?.retryAtEpochMillis?.let { it > System.currentTimeMillis() } == true
 
     fun markCancelled(payload: QueuedUpdatePayload) {
+        awaitLoadedForWrite()
         save(
             payload,
             phase = QueuedUpdatePhase.Cancelled,
@@ -292,42 +337,58 @@ class QueuedUpdateStatusStore(context: Context) {
         targetLineageSha256: List<String>? = null,
         targetVerifiedSignatureSchemes: Set<ApkSignatureScheme>? = null,
         allowGenerationReplacement: Boolean = false,
-    ): Boolean = synchronized(LOCK) {
-        if (!allowGenerationReplacement && !isCurrentLocked(payload)) return@synchronized false
-        val previous = currentStatusLocked(payload).takeUnless { allowGenerationReplacement }
-        val status = QueuedUpdateStatus(
-            workName = payload.workName,
-            sourceKey = payload.sourceKey,
-            owner = payload.owner,
-            repo = payload.repo,
-            displayName = payload.displayName,
-            phase = phase,
-            attempt = attempt,
-            maxAttempts = MAX_ATTEMPTS,
-            message = message,
-            updatedAtEpochMillis = System.currentTimeMillis(),
-            retryAtEpochMillis = retryAtEpochMillis,
-            failureKind = failureKind,
-            packageInstallerSessionId = packageInstallerSessionId,
-            generationId = payload.generationId,
-            targetApplicationId = targetApplicationId ?: previous?.targetApplicationId,
-            targetVersionCode = targetVersionCode ?: previous?.targetVersionCode,
-            targetVersionName = targetVersionName ?: previous?.targetVersionName,
-            targetSignerSha256 = targetSignerSha256 ?: previous?.targetSignerSha256,
-            targetLineageSha256 = targetLineageSha256 ?: previous?.targetLineageSha256.orEmpty(),
-            targetVerifiedSignatureSchemes = targetVerifiedSignatureSchemes
-                ?: previous?.targetVerifiedSignatureSchemes.orEmpty(),
-            queuedPayload = if (allowGenerationReplacement) {
-                payload
-            } else {
-                previous?.queuedPayload ?: payload
-            },
-        )
-        check(prefs.edit().putString(key(payload.workName), json.encodeToString(status)).commit()) {
-            "Could not persist queued update status"
+    ): Boolean {
+        awaitLoadedForWrite()
+        return synchronized(LOCK) {
+            if (!allowGenerationReplacement && !isCurrentLocked(payload)) return@synchronized false
+            val previous = currentStatusLocked(payload).takeUnless { allowGenerationReplacement }
+            val previousStatuses = _statuses.value
+            val status = QueuedUpdateStatus(
+                workName = payload.workName,
+                sourceKey = payload.sourceKey,
+                owner = payload.owner,
+                repo = payload.repo,
+                displayName = payload.displayName,
+                phase = phase,
+                attempt = attempt,
+                maxAttempts = MAX_ATTEMPTS,
+                message = message,
+                updatedAtEpochMillis = System.currentTimeMillis(),
+                retryAtEpochMillis = retryAtEpochMillis,
+                failureKind = failureKind,
+                packageInstallerSessionId = packageInstallerSessionId,
+                generationId = payload.generationId,
+                targetApplicationId = targetApplicationId ?: previous?.targetApplicationId,
+                targetVersionCode = targetVersionCode ?: previous?.targetVersionCode,
+                targetVersionName = targetVersionName ?: previous?.targetVersionName,
+                targetSignerSha256 = targetSignerSha256 ?: previous?.targetSignerSha256,
+                targetLineageSha256 = targetLineageSha256 ?: previous?.targetLineageSha256.orEmpty(),
+                targetVerifiedSignatureSchemes = targetVerifiedSignatureSchemes
+                    ?: previous?.targetVerifiedSignatureSchemes.orEmpty(),
+                queuedPayload = if (allowGenerationReplacement) {
+                    payload
+                } else {
+                    previous?.queuedPayload ?: payload
+                },
+            )
+            val nextStatuses = pruneTerminalHistory(
+                statuses = previousStatuses.filterNot { it.workName == status.workName } + status,
+                nowEpochMillis = status.updatedAtEpochMillis,
+            )
+            val retainedWorkNames = nextStatuses.mapTo(mutableSetOf()) { it.workName }
+            val editor = prefs.edit().putString(key(status.workName), json.encodeToString(status))
+            previousStatuses
+                .asSequence()
+                .map { it.workName }
+                .filter { it !in retainedWorkNames }
+                .distinct()
+                .forEach { editor.remove(key(it)) }
+            check(editor.commit()) {
+                "Could not persist queued update status"
+            }
+            _statuses.value = nextStatuses
+            true
         }
-        _statuses.value = load()
-        true
     }
 
     private fun isCurrentLocked(payload: QueuedUpdatePayload): Boolean {
@@ -338,21 +399,55 @@ class QueuedUpdateStatusStore(context: Context) {
     private fun currentStatusLocked(payload: QueuedUpdatePayload): QueuedUpdateStatus? =
         _statuses.value.firstOrNull { it.workName == payload.workName }
 
-    private fun load(): List<QueuedUpdateStatus> = prefs.all
-        .filterKeys { it.startsWith(KEY_PREFIX) }
-        .values
-        .mapNotNull { encoded ->
+    private fun loadAndPrune(): List<QueuedUpdateStatus> {
+        val rawEntries = prefs.all.filterKeys { it.startsWith(KEY_PREFIX) }
+        val decoded = rawEntries.values.mapNotNull { encoded ->
             (encoded as? String)?.let {
                 runCatching { json.decodeFromString<QueuedUpdateStatus>(it) }.getOrNull()
             }
         }
-        .sortedByDescending { it.updatedAtEpochMillis }
+        val retained = pruneTerminalHistory(decoded, System.currentTimeMillis())
+        val retainedKeys = retained.mapTo(mutableSetOf()) { key(it.workName) }
+        val staleKeys = rawEntries.keys.filter { it !in retainedKeys }
+        if (staleKeys.isNotEmpty()) {
+            val editor = prefs.edit()
+            staleKeys.forEach(editor::remove)
+            check(editor.commit()) { "Could not prune queued update statuses" }
+        }
+        return retained
+    }
+
+    private fun pruneTerminalHistory(
+        statuses: List<QueuedUpdateStatus>,
+        nowEpochMillis: Long,
+    ): List<QueuedUpdateStatus> {
+        val terminalCutoff = nowEpochMillis - TERMINAL_STATUS_RETENTION_MILLIS
+        val active = statuses.filterNot { it.phase.isTerminal }
+        val terminal = statuses
+            .filter { it.phase.isTerminal && it.updatedAtEpochMillis >= terminalCutoff }
+            .sortedByDescending { it.updatedAtEpochMillis }
+            .take(MAX_RETAINED_TERMINAL_STATUSES)
+        return (active + terminal).sortedByDescending { it.updatedAtEpochMillis }
+    }
+
+    private fun awaitLoadedForWrite() {
+        loadComplete.await()
+        throwIfLoadFailed()
+    }
+
+    private fun throwIfLoadFailed() {
+        loadFailure?.let { failure ->
+            throw IllegalStateException("Could not load queued update statuses", failure)
+        }
+    }
 
     private fun key(workName: String): String = "$KEY_PREFIX$workName"
 
     companion object {
         const val MAX_ATTEMPTS = 3
         const val STALE_ATTEMPT = -1
+        internal const val MAX_RETAINED_TERMINAL_STATUSES = 500
+        internal const val TERMINAL_STATUS_RETENTION_MILLIS = 7L * 24L * 60L * 60L * 1_000L
         private const val PREFS_NAME = "queued_update_status"
         private const val KEY_PREFIX = "status."
         private val LOCK = Any()
