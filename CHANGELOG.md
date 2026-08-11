@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Documented fine-grained GitHub PAT support and least-privilege read permissions. The existing Bearer API path accepts `github_pat_…` tokens without importing OAuth client credentials or requesting write access.
 - Added a curated source-of-sources directory. Settings loads a bounded HTTPS JSON feed, validates unique GitHub/F-Droid definitions, and adds only explicitly selected sources without importing credentials or silently enabling the rest.
 - Added portable library export and restore. A bounded `.las-library` archive contains favorites, collections, source definitions without credentials, and source-routed APK lock entries; importing merges local state and exposes a Catalog restore action that retains the normal digest, signer, package, permission, and installer gates.
 - Added GitHub repository lifecycle warnings. Archived repositories remain discoverable when they publish an APK, while repositories without push activity for 12+ months receive a review warning before installation or updates.

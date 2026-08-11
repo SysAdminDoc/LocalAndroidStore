@@ -340,7 +340,8 @@
     <string name="remove_source">Remove source</string>
     <string name="github_user_or_organization">GitHub user or organization</string>
     <string name="personal_access_token">Personal access token</string>
-    <string name="pat_supporting_text">Optional · unlocks private repos and higher API limits. Renaming carries this token; removing the source deletes its override on save.</string>
+    <string name="pat_supporting_text">Optional · classic and fine-grained tokens are accepted. Renaming carries this token; removing the source deletes its override on save.</string>
+    <string name="fine_grained_pat_supporting_text">Fine-grained token detected · grant Metadata: read and Contents: read for selected repositories. LAS requests no write permission.</string>
     <string name="testing_connection">Testing connection…</string>
     <string name="test_connection">Test connection</string>
     <string name="filter_by_topic_setting">Filter by topic</string>

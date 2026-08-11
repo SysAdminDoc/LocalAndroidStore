@@ -1358,7 +1358,13 @@ private fun SourceEditor(
                 visualTransformation = PasswordVisualTransformation(),
                 supportingText = {
                     Text(
-                        stringResource(R.string.pat_supporting_text),
+                        stringResource(
+                            if (source.pat.trim().startsWith("github_pat_")) {
+                                R.string.fine_grained_pat_supporting_text
+                            } else {
+                                R.string.pat_supporting_text
+                            },
+                        ),
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
