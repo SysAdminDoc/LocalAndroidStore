@@ -142,6 +142,7 @@
         <item quantity="one">Registry saved · %1$d source ready to sync.</item>
         <item quantity="other">Registry saved · %1$d sources ready to sync.</item>
     </plurals>
+    <string name="unsaved_source_changes">Unsaved source changes · Save to update the catalog.</string>
     <string name="control_center">Control center</string>
     <string name="sources_access">Sources &amp; access</string>
     <string name="choose_release_shelves">Choose which release shelves this device can see.</string>

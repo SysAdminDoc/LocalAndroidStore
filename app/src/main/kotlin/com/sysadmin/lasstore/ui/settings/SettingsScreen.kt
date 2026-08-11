@@ -88,6 +88,13 @@ fun SettingsScreen(
         }
         .distinctBy { it.first }
         .toMap()
+    val persistedDrafts = state.settings.sources.map { source ->
+        SourceDraft.from(source, state.sourcePats[source.key].orEmpty())
+    }
+    val draftsDirty = validationError != null ||
+        drafts != persistedDrafts ||
+        normalizedSources != normalizeSources(state.settings.sources) ||
+        normalizedSourcePats(sourcePats) != normalizedSourcePats(state.sourcePats)
 
     Column(
         modifier = Modifier
@@ -239,23 +246,40 @@ fun SettingsScreen(
             )
         }
 
-        if (state.saveStatus == SettingsSaveStatus.Saved) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = Catppuccin.Mint.copy(alpha = 0.08f),
-                border = BorderStroke(1.dp, Catppuccin.Mint.copy(alpha = 0.28f)),
-            ) {
-                Text(
-                    text = pluralStringResource(
-                        R.plurals.registry_saved,
-                        normalizedSources.size,
-                        normalizedSources.size,
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Catppuccin.Mint,
-                    modifier = Modifier.padding(13.dp),
-                )
+        when {
+            draftsDirty -> {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Catppuccin.Peach.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, Catppuccin.Peach.copy(alpha = 0.28f)),
+                ) {
+                    Text(
+                        text = stringResource(R.string.unsaved_source_changes),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Peach,
+                        modifier = Modifier.padding(13.dp),
+                    )
+                }
+            }
+            state.saveStatus == SettingsSaveStatus.Saved -> {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Catppuccin.Mint.copy(alpha = 0.08f),
+                    border = BorderStroke(1.dp, Catppuccin.Mint.copy(alpha = 0.28f)),
+                ) {
+                    Text(
+                        text = pluralStringResource(
+                            R.plurals.registry_saved,
+                            normalizedSources.size,
+                            normalizedSources.size,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Mint,
+                        modifier = Modifier.padding(13.dp),
+                    )
+                }
             }
         }
     }
@@ -712,3 +736,10 @@ private data class SourceDraft(
         )
     }
 }
+
+private fun normalizedSourcePats(sourcePats: Map<String, String>): Map<String, String> =
+    sourcePats
+        .mapNotNull { (key, value) ->
+            value.trim().takeIf { it.isNotBlank() }?.let { key to it }
+        }
+        .toMap()

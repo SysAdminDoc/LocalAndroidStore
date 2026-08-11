@@ -8,6 +8,7 @@ import com.sysadmin.lasstore.data.GitHubRequestException
 import com.sysadmin.lasstore.data.GitHubSource
 import com.sysadmin.lasstore.data.MalformedSourceRegistryException
 import com.sysadmin.lasstore.data.ServiceLocator
+import com.sysadmin.lasstore.data.normalizeSources
 import com.sysadmin.lasstore.data.sourceKey
 import com.sysadmin.lasstore.data.validateSources
 import kotlinx.coroutines.CancellationException
@@ -30,7 +31,6 @@ data class SettingsUiState(
     val settings: AppSettings = AppSettings(),
     val sourcePats: Map<String, String> = emptyMap(),
     val encryptedAtRest: Boolean = true,
-    val savedAt: Long = 0L,
     val saveError: String? = null,
     val saveStatus: SettingsSaveStatus = SettingsSaveStatus.Idle,
     val registryRecoveryRequired: Boolean = false,
@@ -152,16 +152,21 @@ class SettingsViewModel : ViewModel() {
                 val affectedSourceKeys = (
                     _state.value.settings.sources.map { it.key } + normalized.map { it.key }
                     ).toSet()
-                val targetSettings = AppSettings(sources = normalized)
+                val targetSettings = AppSettings(sources = normalizeSources(normalized))
+                val persistedSourcePats = sourcePats
+                    .filter { (key, value) ->
+                        key in targetSettings.sources.map { it.key } && value.isNotBlank()
+                    }
+                    .mapValues { (_, value) -> value.trim() }
                 if (replaceMalformedRegistry) {
                     sl.settings.replaceMalformedSourceRegistry(
                         settings = targetSettings,
-                        sourcePats = sourcePats,
+                        sourcePats = persistedSourcePats,
                     )
                 } else {
                     sl.settings.saveSourceRegistry(
                         settings = targetSettings,
-                        sourcePats = sourcePats,
+                        sourcePats = persistedSourcePats,
                     )
                 }
                 affectedSourceKeys.forEach { sourceKey ->
@@ -184,8 +189,8 @@ class SettingsViewModel : ViewModel() {
                 sl.logger.info("Settings", "Saved ${normalized.size} GitHub sources ($enabled enabled)")
                 _state.update {
                     it.copy(
-                        savedAt = System.currentTimeMillis(),
-                        sourcePats = sourcePats,
+                        settings = targetSettings,
+                        sourcePats = persistedSourcePats,
                         saveStatus = SettingsSaveStatus.Saved,
                         saveError = null,
                         registryRecoveryRequired = false,
