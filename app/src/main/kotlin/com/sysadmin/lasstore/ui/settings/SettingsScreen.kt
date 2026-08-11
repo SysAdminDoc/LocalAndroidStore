@@ -932,6 +932,19 @@ private fun SourceEditor(
                 onSelected = { onChange(source.copy(accent = it)) },
             )
 
+            OutlinedTextField(
+                value = source.brandingUrl,
+                onValueChange = { onChange(source.copy(brandingUrl = it)) },
+                label = { Text(stringResource(R.string.source_branding_feed_url)) },
+                supportingText = {
+                    Text(stringResource(R.string.source_branding_feed_supporting_text))
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = fieldColors,
+            )
+
             HorizontalDivider(color = Catppuccin.Stroke)
 
             SettingRow(
@@ -1075,6 +1088,19 @@ private fun FdroidSourceEditor(
                 allowGlobal = true,
                 onSelected = { onChange(source.copy(accent = it)) },
             )
+
+            OutlinedTextField(
+                value = source.brandingUrl,
+                onValueChange = { onChange(source.copy(brandingUrl = it)) },
+                label = { Text(stringResource(R.string.source_branding_feed_url)) },
+                supportingText = {
+                    Text(stringResource(R.string.source_branding_feed_supporting_text))
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = fieldColors,
+            )
         }
     }
 }
@@ -1186,6 +1212,7 @@ private data class SourceDraft(
     val showPrereleases: Boolean = false,
     val enabled: Boolean = true,
     val accent: AccentColor? = null,
+    val brandingUrl: String = "",
     val pat: String = "",
 ) {
     fun toSource(): GitHubSource = GitHubSource(
@@ -1195,6 +1222,7 @@ private data class SourceDraft(
         showPrereleases = showPrereleases,
         enabled = enabled,
         accent = accent,
+        brandingUrl = brandingUrl,
     )
 
     companion object {
@@ -1205,6 +1233,7 @@ private data class SourceDraft(
             showPrereleases = source.showPrereleases,
             enabled = source.enabled,
             accent = source.accent,
+            brandingUrl = source.brandingUrl,
             pat = pat,
         )
     }
@@ -1214,11 +1243,13 @@ private data class FdroidSourceDraft(
     val endpointUrl: String = "",
     val enabled: Boolean = true,
     val accent: AccentColor? = null,
+    val brandingUrl: String = "",
 ) {
     fun toSource(): FdroidSource = FdroidSource(
         endpointUrl = endpointUrl,
         enabled = enabled,
         accent = accent,
+        brandingUrl = brandingUrl,
     )
 
     companion object {
@@ -1226,6 +1257,7 @@ private data class FdroidSourceDraft(
             endpointUrl = source.endpointUrl,
             enabled = source.enabled,
             accent = source.accent,
+            brandingUrl = source.brandingUrl,
         )
     }
 }

@@ -18,6 +18,7 @@ import com.sysadmin.lasstore.data.GhRelease
 import com.sysadmin.lasstore.data.InstallProvenance
 import com.sysadmin.lasstore.data.InstalledInfo
 import com.sysadmin.lasstore.data.ServiceLocator
+import com.sysadmin.lasstore.data.SourceBranding
 import com.sysadmin.lasstore.data.signerMatchesArtifactOrLineage
 import com.sysadmin.lasstore.data.signerMatchesPin
 import com.sysadmin.lasstore.domain.AppInfo
@@ -48,6 +49,9 @@ import com.sysadmin.lasstore.install.safeLaunchExternalIntent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -114,6 +118,13 @@ data class ReleaseHistoryState(
     val error: String? = null,
 )
 
+data class CatalogSourceBranding(
+    val sourceKey: String,
+    val sourceLabel: String,
+    val branding: SourceBranding,
+    val sourceAccent: AccentColor,
+)
+
 data class PublisherTrustDetails(
     val source: String,
     val installedSignerSha256: String?,
@@ -150,6 +161,7 @@ data class CatalogUiState(
     val warning: String? = null,
     val selectedAntiFeatures: Set<String> = emptySet(),
     val hideUnverifiedSources: Boolean = false,
+    val sourceBrandings: List<CatalogSourceBranding> = emptyList(),
 )
 
 internal fun validatedGitHubRepositoryUri(rawUrl: String): android.net.Uri? {
@@ -454,6 +466,53 @@ class CatalogViewModel : ViewModel() {
                 val settings = sl.settings.flow.first()
                 currentSettings = settings
                 ensureActive()
+                val sourceBrandings = coroutineScope {
+                    val configured = settings.sources
+                        .filter { it.enabled && it.brandingUrl.isNotBlank() }
+                        .map { source ->
+                            async {
+                                runCatching {
+                                    sl.sourceBranding.fetch(source.brandingUrl)
+                                }.onFailure { failure ->
+                                    sl.logger.warn(
+                                        "Catalog",
+                                        "Could not read branding for ${source.displayName}: " +
+                                            (failure.message ?: "request failed"),
+                                    )
+                                }.getOrNull()?.let { branding ->
+                                    CatalogSourceBranding(
+                                        sourceKey = source.key,
+                                        sourceLabel = source.displayName,
+                                        branding = branding,
+                                        sourceAccent = accentForSource(settings, source.key),
+                                    )
+                                }
+                            }
+                        } + settings.fdroidSources
+                        .filter { it.enabled && it.brandingUrl.isNotBlank() }
+                        .map { source ->
+                            async {
+                                runCatching {
+                                    sl.sourceBranding.fetch(source.brandingUrl)
+                                }.onFailure { failure ->
+                                    sl.logger.warn(
+                                        "Catalog",
+                                        "Could not read branding for ${source.displayName}: " +
+                                            (failure.message ?: "request failed"),
+                                    )
+                                }.getOrNull()?.let { branding ->
+                                    CatalogSourceBranding(
+                                        sourceKey = source.key,
+                                        sourceLabel = source.displayName,
+                                        branding = branding,
+                                        sourceAccent = accentForSource(settings, source.key),
+                                    )
+                                }
+                            }
+                        }
+                    configured.awaitAll().filterNotNull()
+                }
+                ensureActive()
                 val enabledSources = settings.sources.filter { it.enabled }
                 val enabledFdroidSources = settings.fdroidSources.filter { it.enabled }
                 val discoveryResult = try {
@@ -502,6 +561,7 @@ class CatalogViewModel : ViewModel() {
                             refreshing = false,
                             cards = cards,
                             hideUnverifiedSources = settings.hideUnverifiedSources,
+                            sourceBrandings = sourceBrandings,
                             noEnabledSources = enabledSources.isEmpty() && enabledFdroidSources.isEmpty(),
                             errorMessage = catalogNotice.takeIf {
                                 cards.isEmpty() && discoveryResult.issues.isNotEmpty()

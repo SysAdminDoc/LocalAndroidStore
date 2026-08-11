@@ -29,6 +29,7 @@ data class GitHubSource(
     val showPrereleases: Boolean = false,
     val enabled: Boolean = true,
     val accent: AccentColor? = null,
+    val brandingUrl: String = "",
 ) {
     val key: String get() = sourceKey(user)
     val displayName: String get() = user.trim().ifBlank { DEFAULT_GITHUB_USER }
@@ -39,6 +40,7 @@ data class FdroidSource(
     val endpointUrl: String = "",
     val enabled: Boolean = true,
     val accent: AccentColor? = null,
+    val brandingUrl: String = "",
 ) {
     val key: String get() = FdroidRepositoryTrust.sourceKey(endpointUrl)
     val displayName: String get() = FdroidRepositoryTrust.displayName(endpointUrl)
@@ -81,6 +83,7 @@ fun normalizeSources(sources: List<GitHubSource>): List<GitHubSource> {
                 source.copy(
                     user = user,
                     topic = source.topic.trim().ifBlank { DEFAULT_GITHUB_TOPIC },
+                    brandingUrl = source.brandingUrl.trim(),
                 )
             }
         }
@@ -103,6 +106,11 @@ fun validateSources(sources: List<GitHubSource>): String? {
         val label = duplicate.first().value.user.trim()
         return "Source '$label' is listed more than once. Keep one entry or use a different owner."
     }
+    sources.forEachIndexed { index, source ->
+        validateSourceBrandingUrl(source.brandingUrl)?.let { error ->
+            return "Source ${index + 1}: $error"
+        }
+    }
     return null
 }
 
@@ -111,6 +119,7 @@ fun normalizeFdroidSources(sources: List<FdroidSource>): List<FdroidSource> = so
         runCatching {
             source.copy(
                 endpointUrl = FdroidRepositoryTrust.canonicalEndpoint(source.endpointUrl),
+                brandingUrl = source.brandingUrl.trim(),
             )
         }.getOrNull()
     }
@@ -137,6 +146,11 @@ fun validateFdroidSources(sources: List<FdroidSource>): String? {
         .firstOrNull { it.size > 1 }
     if (duplicate != null) {
         return "F-Droid repository is listed more than once. Keep one endpoint entry."
+    }
+    sources.forEachIndexed { index, source ->
+        validateSourceBrandingUrl(source.brandingUrl)?.let { error ->
+            return "F-Droid repository ${index + 1}: $error"
+        }
     }
     return null
 }

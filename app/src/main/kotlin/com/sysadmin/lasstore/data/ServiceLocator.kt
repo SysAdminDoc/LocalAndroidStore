@@ -32,6 +32,8 @@ object ServiceLocator {
         private set
     lateinit var fdroidIndex: FdroidIndexClient
         private set
+    lateinit var sourceBranding: SourceBrandingClient
+        private set
     lateinit var installer: PackageInstallerService
         private set
     lateinit var audit: InstallAuditLog
@@ -92,6 +94,7 @@ object ServiceLocator {
                     ) == true
                 },
             )
+            sourceBranding = SourceBrandingClient()
             installer = PackageInstallerService(appContext, logger)
             audit = InstallAuditLog(appContext)
             appIdCache = AppIdCache(appContext)

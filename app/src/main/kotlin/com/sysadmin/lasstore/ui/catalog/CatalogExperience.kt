@@ -138,6 +138,8 @@ fun CatalogExperience(
             sourceCount = sourceCount,
         )
 
+        SourceBrandingStrip(state.sourceBrandings)
+
         if (!state.canRequestInstalls) {
             PermissionStrip(onClick = viewModel::openInstallPermissionSettings)
         }

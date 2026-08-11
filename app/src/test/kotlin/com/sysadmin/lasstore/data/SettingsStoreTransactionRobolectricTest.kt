@@ -80,7 +80,13 @@ class SettingsStoreTransactionRobolectricTest {
     fun hideUnverifiedSourcesPreferencePersistsWithTheSourceRegistry() = runBlocking {
         val store = newStore(FakeSettingsSecrets())
         val target = AppSettings(
-            sources = listOf(GitHubSource(user = "alice", accent = AccentColor.Teal)),
+            sources = listOf(
+                GitHubSource(
+                    user = "alice",
+                    accent = AccentColor.Teal,
+                    brandingUrl = "https://example.com/alice.json",
+                ),
+            ),
             hideUnverifiedSources = true,
             themeMode = AppThemeMode.Light,
             accentColor = AccentColor.Lavender,
@@ -95,6 +101,7 @@ class SettingsStoreTransactionRobolectricTest {
         assertEquals(AccentColor.Lavender, saved.accentColor)
         assertTrue(saved.dynamicColor)
         assertEquals(AccentColor.Teal, saved.sources.single().accent)
+        assertEquals("https://example.com/alice.json", saved.sources.single().brandingUrl)
     }
 
     private fun newStore(
