@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added GitLab, F-Droid index-v2, and IzzyOnDroid source-plugin adapters with HTTPS-only asset resolution, repository fingerprint TOFU validation, anti-feature parsing, and signed `entry.jar` verification.
 - Added a stable four-callback `SourcePlugin` contract, duplicate-safe plugin registry, and a GitHub releases adapter over the existing bounded gateway with source-local identities and digest-aware verification results.
 - Added a four-request release-lookup budget, ETag/304 response reuse, bounded jittered transient retries, typed per-source failures, partial-source preservation, and dated offline catalog snapshots.
 - Added gentle queued updates with Android 14+ user-initiated jobs, WorkManager fallback, `InstallConstraints`, three-attempt retry caps, durable terminal reasons, and cancellation from the release card.
