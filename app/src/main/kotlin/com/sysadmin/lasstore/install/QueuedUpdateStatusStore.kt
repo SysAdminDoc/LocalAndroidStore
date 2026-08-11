@@ -201,6 +201,18 @@ class QueuedUpdateStatusStore(context: Context) {
             failureKind = failure.kind,
         )
 
+    fun markSchedulingFailed(payload: QueuedUpdatePayload, message: String): Boolean {
+        awaitLoadedForWrite()
+        val current = get(payload) ?: return false
+        return save(
+            payload = payload,
+            phase = QueuedUpdatePhase.Failed,
+            attempt = current.attempt,
+            message = message,
+            failureKind = QueuedUpdateFailureKind.Storage,
+        )
+    }
+
     fun markInstalled(payload: QueuedUpdatePayload, message: String = "Background update installed.") {
         awaitLoadedForWrite()
         synchronized(LOCK) {

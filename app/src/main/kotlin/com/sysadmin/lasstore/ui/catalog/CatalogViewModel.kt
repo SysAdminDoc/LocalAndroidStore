@@ -1301,11 +1301,20 @@ class CatalogViewModel : ViewModel() {
                 )
                 val applicationId = card.info.applicationId ?: cached?.applicationId
                 val queuedInfo = card.info.copy(applicationId = applicationId)
-                sl.backgroundUpdates.cancel(queuedInfo)
+                val cancelled = sl.backgroundUpdates.cancel(queuedInfo)
                 withContext(Dispatchers.Main) {
-                    updateCard(card.info, ::withQueuedUpdateStatus)
-                    _state.update {
-                        it.copy(warning = "Cancelled ${card.info.displayName}'s background update.")
+                    if (cancelled) {
+                        updateCard(card.info, ::withQueuedUpdateStatus)
+                        _state.update {
+                            it.copy(warning = "Cancelled ${card.info.displayName}'s background update.")
+                        }
+                    } else {
+                        _state.update {
+                            it.copy(
+                                warning = "Could not cancel ${card.info.displayName}'s background update. " +
+                                    "Try again.",
+                            )
+                        }
                     }
                 }
             } catch (cancellation: CancellationException) {

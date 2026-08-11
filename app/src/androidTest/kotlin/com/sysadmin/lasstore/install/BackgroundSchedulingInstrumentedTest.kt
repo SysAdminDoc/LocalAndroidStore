@@ -12,6 +12,7 @@ import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.domain.AppInfo
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -43,7 +44,7 @@ class BackgroundSchedulingInstrumentedTest {
     }
 
     @Test
-    fun api26FallbackEnqueuesConstrainedWorkManagerRequest() {
+    fun api26FallbackEnqueuesConstrainedWorkManagerRequest() = runBlocking {
         assumeTrue(Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
         ServiceLocator.init(context)
         val info = appInfo()

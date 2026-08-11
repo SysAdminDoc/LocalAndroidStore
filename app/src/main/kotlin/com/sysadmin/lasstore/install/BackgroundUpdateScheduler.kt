@@ -38,6 +38,9 @@ internal fun backgroundUpdateTransportForApi(
 class BackgroundUpdateScheduler(
     private val context: Context,
     private val logger: Logger,
+    internal val scheduleUidtOverride: ((QueuedUpdatePayload) -> Boolean)? = null,
+    internal val enqueueWorkerOverride: ((QueuedUpdatePayload) -> Unit)? = null,
+    internal val cancelWorkOverride: ((String) -> Unit)? = null,
 ) {
     private val jobIdPrefs = context.getSharedPreferences(JOB_ID_PREFS, Context.MODE_PRIVATE)
     private val jobIdLock = Any()
@@ -46,30 +49,57 @@ class BackgroundUpdateScheduler(
         val payload = QueuedUpdatePayload.from(info)
         val statusStore = com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus
         statusStore.awaitLoaded()
-        statusStore.get(payload)
-            ?.packageInstallerSessionId
-            ?.let(com.sysadmin.lasstore.data.ServiceLocator.installer::abandonSession)
-        statusStore.markQueued(payload)
-        if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
-            backgroundUpdateTransportForApi() == BackgroundUpdateTransport.UserInitiatedJob
-        ) {
-            val scheduled = runCatching { scheduleUidt(payload) }
-                .onFailure {
-                    logger.warn(
-                        "QueuedUpdate",
-                        "UIDT schedule failed for ${payload.owner}/${payload.repo}: ${it.message}",
-                    )
-                }
-                .getOrDefault(false)
-            if (scheduled) return true
-            logger.warn("QueuedUpdate", "UIDT schedule failed for ${payload.owner}/${payload.repo}; falling back to WorkManager")
+        try {
+            statusStore.get(payload)
+                ?.packageInstallerSessionId
+                ?.let(com.sysadmin.lasstore.data.ServiceLocator.installer::abandonSession)
+            statusStore.markQueued(payload)
+            if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                backgroundUpdateTransportForApi() == BackgroundUpdateTransport.UserInitiatedJob
+            ) {
+                val scheduled = runCatching { scheduleUidt(payload) }
+                    .onFailure {
+                        logger.warn(
+                            "QueuedUpdate",
+                            "UIDT schedule failed for ${payload.owner}/${payload.repo} " +
+                                "(${it::class.simpleName ?: "unknown"}); falling back to WorkManager",
+                        )
+                    }
+                    .getOrDefault(false)
+                if (scheduled) return true
+                logger.warn(
+                    "QueuedUpdate",
+                    "UIDT schedule returned failure for ${payload.owner}/${payload.repo}; " +
+                        "falling back to WorkManager",
+                )
+            }
+            enqueueWorker(payload)
+            return true
+        } catch (throwable: Throwable) {
+            logger.warn(
+                "QueuedUpdate",
+                "Could not schedule ${payload.owner}/${payload.repo} " +
+                    "(${throwable::class.simpleName ?: "unknown"})",
+            )
+            cancelScheduledWork(payload)
+            runCatching {
+                statusStore.markSchedulingFailed(
+                    payload,
+                    "Background update could not be scheduled. Try again.",
+                )
+            }.onFailure {
+                logger.warn(
+                    "QueuedUpdate",
+                    "Could not persist scheduling failure for ${payload.owner}/${payload.repo} " +
+                        "(${it::class.simpleName ?: "unknown"})",
+                )
+            }
+            return false
         }
-        enqueueWorker(payload)
-        return true
     }
 
-    suspend fun cancel(info: AppInfo) {
+    suspend fun cancel(info: AppInfo): Boolean {
         val statusStore = com.sysadmin.lasstore.data.ServiceLocator.queuedUpdateStatus
         statusStore.awaitLoaded()
         val current = statusStore.get(info.sourceKey, info.owner, info.repo)
@@ -77,18 +107,38 @@ class BackgroundUpdateScheduler(
             info = info,
             generationId = current?.generationId ?: QueuedUpdatePayload.newGenerationId(),
         )
-        statusStore
-            .get(payload)
-            ?.packageInstallerSessionId
-            ?.let(com.sysadmin.lasstore.data.ServiceLocator.installer::abandonSession)
-        if (backgroundUpdateTransportForApi() == BackgroundUpdateTransport.UserInitiatedJob) {
-            context.getSystemService(JobScheduler::class.java).cancel(jobIdFor(payload))
+        try {
+            statusStore
+                .get(payload)
+                ?.packageInstallerSessionId
+                ?.let(com.sysadmin.lasstore.data.ServiceLocator.installer::abandonSession)
+            if (!cancelScheduledWork(payload)) {
+                throw IllegalStateException("one or more background transports rejected cancellation")
+            }
+            statusStore.markCancelled(payload)
+            QueuedUpdateUserActionNotification.cancel(context, payload)
+            logger.info("QueuedUpdate", "Cancelled queued update for ${payload.owner}/${payload.repo}")
+            return true
+        } catch (throwable: Throwable) {
+            logger.warn(
+                "QueuedUpdate",
+                "Could not cancel ${payload.owner}/${payload.repo} " +
+                    "(${throwable::class.simpleName ?: "unknown"})",
+            )
+            runCatching {
+                statusStore.markNeedsReschedule(
+                    payload,
+                    "Could not cancel the background update. Try again.",
+                )
+            }.onFailure {
+                logger.warn(
+                    "QueuedUpdate",
+                    "Could not persist cancellation failure for ${payload.owner}/${payload.repo} " +
+                        "(${it::class.simpleName ?: "unknown"})",
+                )
+            }
+            return false
         }
-        WorkManager.getInstance(context).cancelUniqueWork(payload.workName)
-        statusStore.markCancelled(payload)
-        QueuedUpdateUserActionNotification.cancel(context, payload)
-        releaseJobId(payload)
-        logger.info("QueuedUpdate", "Cancelled queued update for ${payload.owner}/${payload.repo}")
     }
 
     /** Restore pending queue work after JobScheduler loses non-persisted UIDT jobs at reboot. */
@@ -127,6 +177,7 @@ class BackgroundUpdateScheduler(
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun scheduleUidt(payload: QueuedUpdatePayload): Boolean {
+        scheduleUidtOverride?.let { return it(payload) }
         val scheduler = context.getSystemService(JobScheduler::class.java)
         val job = buildUidtJobInfo(payload)
         val result = scheduler.schedule(job)
@@ -162,6 +213,10 @@ class BackgroundUpdateScheduler(
     }
 
     private fun enqueueWorker(payload: QueuedUpdatePayload) {
+        enqueueWorkerOverride?.let {
+            it(payload)
+            return
+        }
         val request = OneTimeWorkRequestBuilder<QueuedUpdateWorker>()
             .setInputData(payload.toWorkData())
             .setConstraints(
@@ -179,6 +234,21 @@ class BackgroundUpdateScheduler(
         WorkManager.getInstance(context)
             .enqueueUniqueWork(payload.workName, ExistingWorkPolicy.REPLACE, request)
         logger.info("QueuedUpdate", "WorkManager update queued for ${payload.owner}/${payload.repo}")
+    }
+
+    private fun cancelScheduledWork(payload: QueuedUpdatePayload): Boolean {
+        var succeeded = true
+        runCatching {
+            if (backgroundUpdateTransportForApi() == BackgroundUpdateTransport.UserInitiatedJob) {
+                context.getSystemService(JobScheduler::class.java).cancel(jobIdFor(payload))
+            }
+        }.onFailure { succeeded = false }
+        runCatching {
+            cancelWorkOverride?.invoke(payload.workName)
+                ?: WorkManager.getInstance(context).cancelUniqueWork(payload.workName)
+        }.onFailure { succeeded = false }
+        runCatching { releaseJobId(payload) }.onFailure { succeeded = false }
+        return succeeded
     }
 
     private fun scheduleExistingPayload(payload: QueuedUpdatePayload): Boolean {
