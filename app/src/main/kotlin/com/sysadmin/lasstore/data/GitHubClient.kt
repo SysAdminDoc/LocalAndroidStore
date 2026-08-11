@@ -89,12 +89,41 @@ data class GitHubConnectionResult(
     val rateLimitResetEpochMillis: Long?,
 )
 
+/**
+ * Repository discovery with an explicit completeness contract.
+ *
+ * [omittedCount] is an exact count when [omittedCountIsLowerBound] is false and a known lower
+ * bound when GitHub returned a full overflow page. [continuationPage] is the next page a future
+ * continuation could request; the current catalog deliberately stops at the bounded policy.
+ */
+data class GitHubRepoListResult(
+    val repos: List<GhRepo>,
+    val fetchedCount: Int = repos.size,
+    val omittedCount: Int = 0,
+    val omittedCountIsLowerBound: Boolean = false,
+    val continuationPage: Int? = null,
+) {
+    val isTruncated: Boolean get() = continuationPage != null
+}
+
 interface GitHubGateway {
     suspend fun listUserRepos(
         user: String,
         patOverride: String? = null,
         sourceKey: String = user,
     ): List<GhRepo>
+
+    suspend fun listUserReposResult(
+        user: String,
+        patOverride: String? = null,
+        sourceKey: String = user,
+    ): GitHubRepoListResult = GitHubRepoListResult(
+        repos = listUserRepos(
+            user = user,
+            patOverride = patOverride,
+            sourceKey = sourceKey,
+        ),
+    )
 
     suspend fun latestRelease(
         owner: String,
@@ -176,17 +205,23 @@ class GitHubClient(
         user: String,
         patOverride: String?,
         sourceKey: String,
-    ): List<GhRepo> = withContext(Dispatchers.IO) {
+    ): List<GhRepo> = listUserReposResult(user, patOverride, sourceKey).repos
+
+    override suspend fun listUserReposResult(
+        user: String,
+        patOverride: String?,
+        sourceKey: String,
+    ): GitHubRepoListResult = withContext(Dispatchers.IO) {
         val source = user.trim()
         val sourcePath = encodePathSegment(source)
-        val publicRepos = listReposPaged(
+        val publicResult = listReposPaged(
             urlForPage = { page ->
                 "$apiBaseUrl/users/$sourcePath/repos?per_page=100&type=owner&sort=updated&page=$page"
             },
             patOverride = patOverride,
             sourceKey = sourceKey,
         )
-        val authenticatedRepos = if (hasAuth(patOverride)) {
+        val authenticatedResult = if (hasAuth(patOverride)) {
             listReposPaged(
                 urlForPage = { page ->
                     "$apiBaseUrl/user/repos?" +
@@ -194,12 +229,25 @@ class GitHubClient(
                 },
                 patOverride = patOverride,
                 sourceKey = sourceKey,
-            ).filter { it.owner.login.equals(source, ignoreCase = true) }
+            ).let { result ->
+                result.copy(repos = result.repos.filter {
+                    it.owner.login.equals(source, ignoreCase = true)
+                })
+            }
         } else {
-            emptyList()
+            null
         }
-        (publicRepos + authenticatedRepos)
-            .distinctBy { it.fullName.lowercase(Locale.US) }
+        val pageResults = listOfNotNull(publicResult, authenticatedResult)
+        val truncated = pageResults.firstOrNull { it.isTruncated }
+        GitHubRepoListResult(
+            repos = pageResults
+                .flatMap { it.repos }
+                .distinctBy { it.fullName.lowercase(Locale.US) },
+            fetchedCount = pageResults.sumOf { it.fetchedCount },
+            omittedCount = pageResults.sumOf { it.omittedCount },
+            omittedCountIsLowerBound = pageResults.any { it.omittedCountIsLowerBound },
+            continuationPage = truncated?.continuationPage,
+        )
     }
 
     override suspend fun latestRelease(
@@ -539,7 +587,7 @@ class GitHubClient(
         urlForPage: (Int) -> String,
         patOverride: String?,
         sourceKey: String,
-    ): List<GhRepo> {
+    ): GitHubRepoListResult {
         val out = mutableListOf<GhRepo>()
         var page = 1
         while (true) {
@@ -547,11 +595,22 @@ class GitHubClient(
             val batch = json.decodeFromString<List<GhRepo>>(body)
             if (batch.isEmpty()) break
             out += batch
-            if (batch.size < 100) break
+            if (batch.size < REPOSITORIES_PER_PAGE) break
+            if (page >= MAX_REPO_PAGES) {
+                val overflowBody = getJson(urlForPage(page + 1), patOverride, sourceKey) ?: "[]"
+                val overflow = json.decodeFromString<List<GhRepo>>(overflowBody)
+                if (overflow.isEmpty()) break
+                return GitHubRepoListResult(
+                    repos = out,
+                    fetchedCount = out.size,
+                    omittedCount = overflow.size,
+                    omittedCountIsLowerBound = overflow.size == REPOSITORIES_PER_PAGE,
+                    continuationPage = page + 1,
+                )
+            }
             page += 1
-            if (page > 10) break // 1000-repo cap, defensive
         }
-        return out
+        return GitHubRepoListResult(repos = out, fetchedCount = out.size)
     }
 
     private fun hasAuth(patOverride: String?): Boolean = (patOverride ?: patProvider()).trim().isNotEmpty()
@@ -639,6 +698,8 @@ class GitHubClient(
         private const val BASE_RETRY_DELAY_MILLIS = 200L
         private const val MAX_RETRY_DELAY_MILLIS = 2_000L
         private const val MAX_INLINE_RATE_LIMIT_WAIT_MILLIS = 2_000L
+        private const val REPOSITORIES_PER_PAGE = 100
+        private const val MAX_REPO_PAGES = 50
         private val TRUSTED_ASSET_HOSTS = setOf(
             "api.github.com",
             "github.com",

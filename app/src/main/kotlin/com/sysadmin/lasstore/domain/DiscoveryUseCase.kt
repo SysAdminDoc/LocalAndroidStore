@@ -6,6 +6,7 @@ import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.GhRelease
 import com.sysadmin.lasstore.data.GitHubFailureKind
 import com.sysadmin.lasstore.data.GitHubGateway
+import com.sysadmin.lasstore.data.GitHubRepoListResult
 import com.sysadmin.lasstore.data.GitHubRequestException
 import com.sysadmin.lasstore.data.GitHubSource
 import com.sysadmin.lasstore.data.Logger
@@ -27,6 +28,7 @@ enum class CatalogFailureKind {
     Authentication,
     Authorization,
     RateLimited,
+    Truncated,
     Network,
     Server,
     InvalidResponse,
@@ -40,6 +42,10 @@ data class CatalogSourceIssue(
     val message: String,
     val retryAtEpochMillis: Long? = null,
     val snapshotAgeMillis: Long? = null,
+    val fetchedCount: Int? = null,
+    val omittedCount: Int? = null,
+    val omittedCountIsLowerBound: Boolean = false,
+    val continuationPage: Int? = null,
 )
 
 data class CatalogDiscoveryResult(
@@ -76,6 +82,7 @@ internal object CatalogFailureClassifier {
             CatalogFailureKind.Authentication -> "GitHub rejected this source's token."
             CatalogFailureKind.Authorization -> "The token cannot access this GitHub source."
             CatalogFailureKind.RateLimited -> "GitHub's request limit was reached."
+            CatalogFailureKind.Truncated -> "GitHub returned only part of this source's repositories."
             CatalogFailureKind.Network -> "GitHub is unreachable from this device."
             CatalogFailureKind.Server -> "GitHub returned a temporary server error."
             CatalogFailureKind.InvalidResponse -> "GitHub returned metadata this app could not read."
@@ -135,8 +142,8 @@ class DiscoveryUseCase(
         if (user.isEmpty()) return@coroutineScope SourceDiscovery(emptyList())
         val pat = patForSource(source.key)
 
-        val repos = try {
-            github.listUserRepos(
+        val repoResult = try {
+            github.listUserReposResult(
                 user = user,
                 patOverride = pat,
                 sourceKey = source.key,
@@ -149,6 +156,8 @@ class DiscoveryUseCase(
                 CatalogFailureClassifier.classify(source, throwable),
             )
         }
+        val repos = repoResult.repos
+        val repoIssue = repoResult.truncationIssue(source)
 
         val candidates = repos
             .filter { !it.archived && !it.fork }
@@ -214,11 +223,15 @@ class DiscoveryUseCase(
         }.awaitAll()
 
         val liveApps = lookups.mapNotNull { (it as? ReleaseLookup.Found)?.app }
-        val issue = lookups
+        val releaseIssue = lookups
             .mapNotNull { (it as? ReleaseLookup.Failed)?.issue }
             .minByOrNull { issuePriority(it.kind) }
 
-        if (issue == null) {
+        if (repoIssue != null) {
+            // A truncated repository list is not a safe offline snapshot boundary: cached repos
+            // beyond the fetched page must not be resurrected as if they were current.
+            SourceDiscovery(apps = liveApps, issue = repoIssue)
+        } else if (releaseIssue == null) {
             runCatching {
                 snapshots.write(
                     CatalogSnapshot(
@@ -233,8 +246,25 @@ class DiscoveryUseCase(
             }
             SourceDiscovery(apps = liveApps)
         } else {
-            mergeWithSnapshot(source, liveApps, issue)
+            mergeWithSnapshot(source, liveApps, releaseIssue)
         }
+    }
+
+    private fun GitHubRepoListResult.truncationIssue(source: GitHubSource): CatalogSourceIssue? {
+        if (!isTruncated) return null
+        val omitted = if (omittedCountIsLowerBound) "at least $omittedCount" else omittedCount.toString()
+        return CatalogSourceIssue(
+            sourceKey = source.key,
+            sourceLabel = source.displayName,
+            kind = CatalogFailureKind.Truncated,
+            message = "${source.displayName} returned $fetchedCount repositories and stopped before " +
+                "page $continuationPage; $omitted repositories were not inspected. " +
+                "Use a topic filter to narrow this source, then refresh.",
+            fetchedCount = fetchedCount,
+            omittedCount = omittedCount,
+            omittedCountIsLowerBound = omittedCountIsLowerBound,
+            continuationPage = continuationPage,
+        )
     }
 
     private fun recoverFromSnapshot(
@@ -289,10 +319,11 @@ class DiscoveryUseCase(
         CatalogFailureKind.Authentication -> 1
         CatalogFailureKind.Authorization -> 2
         CatalogFailureKind.RateLimited -> 3
-        CatalogFailureKind.Network -> 4
-        CatalogFailureKind.Server -> 5
-        CatalogFailureKind.InvalidResponse -> 6
-        CatalogFailureKind.Unknown -> 7
+        CatalogFailureKind.Truncated -> 4
+        CatalogFailureKind.Network -> 5
+        CatalogFailureKind.Server -> 6
+        CatalogFailureKind.InvalidResponse -> 7
+        CatalogFailureKind.Unknown -> 8
     }
 
     private data class SourceDiscovery(

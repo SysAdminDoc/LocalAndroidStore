@@ -1473,6 +1473,8 @@ class CatalogViewModel : ViewModel() {
                     SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(resetAt))
                 }."
             } ?: "GitHub did not provide a usable reset time."
+            CatalogFailureKind.Truncated ->
+                "Narrow this source with a topic filter in Settings, then refresh."
             CatalogFailureKind.Network -> "Check the connection and refresh."
             CatalogFailureKind.Server -> "GitHub reported a temporary server failure."
             CatalogFailureKind.InvalidResponse -> "GitHub returned unreadable release metadata."

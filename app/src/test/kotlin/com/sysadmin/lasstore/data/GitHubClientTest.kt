@@ -115,6 +115,68 @@ class GitHubClientTest {
     }
 
     @Test
+    fun repositoryListingContinuesPastTheLegacyThousandRepoBoundary() = runBlocking {
+        repeat(10) { page ->
+            val start = page * 100 + 1
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody(
+                        (start until start + 100).joinToString(prefix = "[", postfix = "]") {
+                            repositoryJson("app-$it")
+                        },
+                    ),
+            )
+        }
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("[${repositoryJson("app-1001")}]")
+        )
+
+        val result = client().listUserReposResult("alice", sourceKey = "source-a")
+
+        assertEquals(1_001, result.repos.size)
+        assertEquals(1_001, result.fetchedCount)
+        assertFalse(result.isTruncated)
+        assertTrue(server.takeRequest().path.orEmpty().endsWith("page=1"))
+        repeat(9) { server.takeRequest() }
+        assertTrue(server.takeRequest().path.orEmpty().endsWith("page=11"))
+        assertEquals(11, server.requestCount)
+    }
+
+    @Test
+    fun repositoryListingReportsATypedTruncationAtTheBoundedPolicy() = runBlocking {
+        repeat(50) { page ->
+            val start = page * 100
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody(
+                        (start until start + 100).joinToString(prefix = "[", postfix = "]") {
+                            repositoryJson("app-$it")
+                        },
+                    )
+            )
+        }
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("[${repositoryJson("app-overflow")}]")
+        )
+
+        val result = client().listUserReposResult("alice", sourceKey = "source-a")
+
+        assertTrue(result.isTruncated)
+        assertEquals(5_000, result.fetchedCount)
+        assertEquals(1, result.omittedCount)
+        assertFalse(result.omittedCountIsLowerBound)
+        assertEquals(51, result.continuationPage)
+        assertEquals(5_000, result.repos.size)
+        assertEquals(51, server.requestCount)
+    }
+
+    @Test
     fun authenticationAndAuthorizationFailuresAreDistinctAndNeverRetried() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(401))
         val authentication = runCatching {

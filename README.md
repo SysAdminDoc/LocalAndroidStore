@@ -33,7 +33,7 @@ That's what this is.
 ## Features (current)
 
 - **Multi-source GitHub discovery** — every enabled GitHub user / org source with a `.apk` asset on its latest release. Each source has its own enable toggle, optional topic filter, pre-release toggle, and optional PAT.
-- **Rate-aware offline catalog** — release lookups are capped at four concurrent requests, GitHub ETags reuse unchanged responses, partial sources survive other source failures, and a dated on-device snapshot remains usable offline. TLS, token, authorization, rate-limit, network, server, malformed-response, and valid-empty outcomes are shown distinctly.
+- **Rate-aware offline catalog** — repository discovery continues through a bounded 50-page policy, release lookups are capped at four concurrent requests, GitHub ETags reuse unchanged responses, partial sources survive other source failures, and a dated on-device snapshot remains usable offline. A source that exceeds the repository bound is marked truncated with fetched/omitted evidence instead of appearing complete; use a topic filter to narrow it. TLS, token, authorization, rate-limit, network, server, malformed-response, truncation, and valid-empty outcomes are shown distinctly.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black. Repo handle, star count, version tag, status badge, two-line description.
 - **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
 - **One-tap install** — APK is downloaded to app cache, then driven through `PackageInstaller.Session`. The system shows its install dialog, the user confirms once, done.
@@ -90,12 +90,12 @@ Every qualifying repo appears as a card. Tap **Install** — the APK downloads, 
 
 For each enabled GitHub source, LocalAndroidStore:
 
-1. Lists owned, non-archived, non-fork public repos via the GitHub REST API (`/users/{user}/repos`).
+1. Lists owned, non-archived, non-fork public repos via the GitHub REST API (`/users/{user}/repos`), continuing up to 50 pages of 100 repositories and reporting a typed truncation if the next page still contains results.
 2. If the source has a PAT, also lists authenticated repos via `/user/repos`, filters them back to the source owner, and dedupes them with the public list so private user / org repos can appear.
 3. For each repo, fetches the latest release (`/repos/{owner}/{repo}/releases/latest`, or the first non-draft from `/releases?per_page=10` when pre-releases are enabled), with a global maximum of four concurrent release requests.
 4. Picks one installable APK asset per release: skips signature sidecars, app bundles, and split/config APK sets; prefers an explicit universal/no-arch build, then an unlabeled standalone APK, then the device's highest-priority compatible ABI.
 5. Drops repos with no APK asset on their latest release. Archived repos and forks are dropped at step 1.
-6. Persists ETag-tagged GitHub responses and a per-source catalog snapshot. A `304 Not Modified` reuses the saved response; partial, offline, and rate-limited refreshes keep usable releases and show snapshot age.
+6. Persists ETag-tagged GitHub responses and a per-source catalog snapshot. A `304 Not Modified` reuses the saved response; partial, offline, and rate-limited refreshes keep usable releases and show snapshot age. Truncated repository results are never backfilled from an older snapshot, because that could hide the omitted portion behind a false complete state.
 
 There is no opinionated topic filter unless you turn one on — your own user / org listing already keeps the catalog tight.
 
@@ -149,7 +149,7 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 │   └── QueuedUpdate*.kt             UIDT/WorkManager scheduling, constraints, durable outcomes
 ├── ui/
 │   ├── theme/                 Catppuccin Mocha + AMOLED black dark theme
-│   ├── catalog/               LazyVerticalGrid + search/filter + AppCard + StatusBadge + ViewModel
+│   ├── catalog/               LazyVerticalGrid + search/filter + ReleaseCard + StatusBadge + ViewModel
 │   ├── settings/              Form + ViewModel
 │   └── log/                   Live log viewer
 └── App.kt + MainActivity.kt
@@ -215,7 +215,7 @@ LocalAndroidStore is in your trust boundary — once you grant it "Install unkno
 
 - **The GitHub repo owner** of every catalog source you add. If they ship malware, LAS will install it. Signature pinning catches a *change* in publisher key, not a publisher who was malicious from the start.
 - **Android's maintained system CA store** for HTTPS connections to GitHub. Static CA pins were removed on 2026-07-29 after GitHub's live certificate chain no longer matched them and catalog access failed closed. Cleartext traffic remains disabled.
-- **OkHttp 4.12+** — known-CVE-clean as of 2026-04-25.
+- **OkHttp 5.4** — the pinned client/BOM line is kept current with the API-37 dependency lane.
 - **The Android Keystore-backed Tink keyset** that protects local PATs and signing pins.
 - **The Android platform's `PackageInstaller.Session` + `apksig`** for verifying signatures. Both are first-party Google code.
 - **LocalAndroidStore itself.** A release owner signs the release APK locally with the ignored `keystore.properties` configuration and records its certificate fingerprint and SHA-256 alongside the release. This checkout does not claim CI signing, artifact attestations, or reproducible release bytes. The publisher key (`9c6a9276…e6ebd3a0d`) is the project's identity — if it leaks, the project is compromised; mitigation is rotating the key and getting users to verify the new lineage manually.

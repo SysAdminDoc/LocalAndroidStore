@@ -7,6 +7,7 @@ import com.sysadmin.lasstore.data.GhOwner
 import com.sysadmin.lasstore.data.GhRelease
 import com.sysadmin.lasstore.data.GhRepo
 import com.sysadmin.lasstore.data.GitHubGateway
+import com.sysadmin.lasstore.data.GitHubRepoListResult
 import com.sysadmin.lasstore.data.GitHubSource
 import java.net.UnknownHostException
 import javax.net.ssl.SSLHandshakeException
@@ -210,6 +211,60 @@ class DiscoveryUseCaseTest {
         ).discover(listOf(GitHubSource(user = "alice")))
 
         assertTrue(result.isValidEmpty)
+    }
+
+    @Test
+    fun truncatedRepositoryListIsSurfacedWithoutResurrectingSnapshotRemainder() = runBlocking {
+        val snapshots = MemorySnapshots().apply {
+            write(
+                CatalogSnapshot(
+                    sourceKey = "alice",
+                    sourceLabel = "alice",
+                    refreshedAtEpochMillis = 1_000L,
+                    apps = listOf(app("alice", "cached-beyond-bound")),
+                ),
+            )
+        }
+        val gateway = object : GitHubGateway {
+            override suspend fun listUserRepos(
+                user: String,
+                patOverride: String?,
+                sourceKey: String,
+            ): List<GhRepo> = listOf(repo(user, "live"))
+
+            override suspend fun listUserReposResult(
+                user: String,
+                patOverride: String?,
+                sourceKey: String,
+            ) = GitHubRepoListResult(
+                repos = listOf(repo(user, "live")),
+                fetchedCount = 1_000,
+                omittedCount = 100,
+                omittedCountIsLowerBound = true,
+                continuationPage = 11,
+            )
+
+            override suspend fun latestRelease(
+                owner: String,
+                repo: String,
+                includePrereleases: Boolean,
+                patOverride: String?,
+                sourceKey: String,
+            ): GhRelease = release(repo)
+        }
+
+        val result = DiscoveryUseCase(
+            github = gateway,
+            logger = null,
+            snapshots = snapshots,
+        ).discover(listOf(GitHubSource(user = "alice")))
+
+        assertEquals(listOf("live"), result.apps.map { it.repo })
+        assertEquals(CatalogFailureKind.Truncated, result.issues.single().kind)
+        assertEquals(1_000, result.issues.single().fetchedCount)
+        assertEquals(100, result.issues.single().omittedCount)
+        assertEquals(11, result.issues.single().continuationPage)
+        assertEquals(listOf("cached-beyond-bound"), snapshots.read("alice")?.apps?.map { it.repo })
     }
 
     @Test
