@@ -455,4 +455,6 @@
     <string name="source_icon_image">Source icon</string>
     <string name="dynamic_color_setting">Use device dynamic colors</string>
     <string name="dynamic_color_subtitle">Android 12+ only. Opt in to wallpaper-derived Material You colors; off keeps the Catppuccin identity.</string>
+    <string name="high_contrast_setting">High contrast</string>
+    <string name="high_contrast_subtitle">Promote secondary text to the primary text token and strengthen borders for WCAG AA body-text contrast.</string>
 </resources>

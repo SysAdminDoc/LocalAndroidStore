@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added a persisted high-contrast appearance mode. It promotes Catppuccin secondary text to the primary text token and strengthens Material outlines while preserving the selected theme, accent, and optional dynamic colors.
 - Added reduced-motion handling for release-note transitions. Android's global animator-duration scale is observed live, and zero-scale devices get instantaneous card expansion/collapse.
 - Completed the TalkBack sweep for catalog cards: status badges now expose a single localized "Status" announcement, queued operations retain live-region guidance, and the card-level D-pad action has an explicit accessible label.
 - Added Android TV / D-pad catalog navigation. The responsive card grid is a focus group with visible focus rings, predictable leanback spacing, accessible card descriptions, and a safe primary action for the remote select button.

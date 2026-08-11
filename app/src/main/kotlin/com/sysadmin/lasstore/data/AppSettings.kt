@@ -65,6 +65,7 @@ data class AppSettings(
     val themeMode: AppThemeMode = AppThemeMode.Dark,
     val accentColor: AccentColor = AccentColor.Mauve,
     val dynamicColor: Boolean = false,
+    val highContrast: Boolean = false,
     val dailyUpdateCap: Int = 3,
     val sourceDirectoryUrl: String = "",
     val socks5ProxyEnabled: Boolean = false,

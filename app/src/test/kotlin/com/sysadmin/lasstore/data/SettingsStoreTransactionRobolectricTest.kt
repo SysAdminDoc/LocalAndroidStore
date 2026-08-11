@@ -91,6 +91,7 @@ class SettingsStoreTransactionRobolectricTest {
             themeMode = AppThemeMode.Light,
             accentColor = AccentColor.Lavender,
             dynamicColor = true,
+            highContrast = true,
             dailyUpdateCap = 7,
         )
 
@@ -101,6 +102,7 @@ class SettingsStoreTransactionRobolectricTest {
         assertEquals(AppThemeMode.Light, saved.themeMode)
         assertEquals(AccentColor.Lavender, saved.accentColor)
         assertTrue(saved.dynamicColor)
+        assertTrue(saved.highContrast)
         assertEquals(7, saved.dailyUpdateCap)
         assertEquals(AccentColor.Teal, saved.sources.single().accent)
         assertEquals("https://example.com/alice.json", saved.sources.single().brandingUrl)

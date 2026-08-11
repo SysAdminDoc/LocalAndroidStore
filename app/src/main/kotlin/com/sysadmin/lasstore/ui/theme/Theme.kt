@@ -35,7 +35,7 @@ private fun appColorScheme(darkTheme: Boolean, appSettings: AppSettings) = if (d
         surfaceVariant = Catppuccin.PanelRaised,
         onSurfaceVariant = Catppuccin.Subtext,
         outline = Catppuccin.StrokeBright,
-        outlineVariant = Catppuccin.Stroke,
+        outlineVariant = if (appSettings.highContrast) Catppuccin.StrokeBright else Catppuccin.Stroke,
     )
 } else {
     lightColorScheme(
@@ -54,7 +54,7 @@ private fun appColorScheme(darkTheme: Boolean, appSettings: AppSettings) = if (d
         surfaceVariant = Catppuccin.PanelRaised,
         onSurfaceVariant = Catppuccin.Subtext,
         outline = Catppuccin.StrokeBright,
-        outlineVariant = Catppuccin.Stroke,
+        outlineVariant = if (appSettings.highContrast) Catppuccin.StrokeBright else Catppuccin.Stroke,
     )
 }
 
@@ -146,6 +146,7 @@ fun LocalAndroidStoreTheme(
         themeMode = if (darkTheme) AppThemeMode.Dark else AppThemeMode.Light,
         accentColor = appSettings.accentColor,
         dynamicScheme = dynamicScheme,
+        highContrast = appSettings.highContrast,
     )
     MaterialTheme(
         colorScheme = dynamicScheme ?: appColorScheme(darkTheme, appSettings),

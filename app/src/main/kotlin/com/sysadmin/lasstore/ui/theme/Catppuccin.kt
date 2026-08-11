@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.ColorScheme
 import com.sysadmin.lasstore.data.AccentColor
 import com.sysadmin.lasstore.data.AppThemeMode
+import kotlin.math.pow
 
 /**
  * Catppuccin tokens used by the app's custom surfaces and status treatments.
@@ -28,7 +29,7 @@ object Catppuccin {
 
     val TextStrong: Color get() = activePalette.textStrong
     val Text: Color get() = activePalette.text
-    val Subtext: Color get() = activePalette.subtext
+    val Subtext: Color get() = if (activeHighContrast) activePalette.text else activePalette.subtext
     val Overlay: Color get() = activePalette.overlay
     val StrokeBright: Color get() = activePalette.strokeBright
     val Stroke: Color get() = activePalette.stroke
@@ -39,6 +40,19 @@ object Catppuccin {
     val PanelRaised: Color get() = activePalette.panelRaised
     val Mantle: Color get() = activePalette.mantle
     val Crust: Color get() = activePalette.crust
+
+    internal fun contrastRatio(foreground: Color, background: Color): Double {
+        fun linear(component: Float): Double {
+            val value = component.toDouble()
+            return if (value <= 0.04045) value / 12.92 else ((value + 0.055) / 1.055).pow(2.4)
+        }
+        fun luminance(color: Color): Double =
+            0.2126 * linear(color.red) + 0.7152 * linear(color.green) + 0.0722 * linear(color.blue)
+
+        val lighter = maxOf(luminance(foreground), luminance(background))
+        val darker = minOf(luminance(foreground), luminance(background))
+        return (lighter + 0.05) / (darker + 0.05)
+    }
 
     fun accent(color: AccentColor): Color = activeDynamicScheme?.dynamicAccent(color)
         ?: activePalette.accent(color)
@@ -212,16 +226,21 @@ object Catppuccin {
     @Volatile
     private var activeDynamicScheme: ColorScheme? = null
 
+    @Volatile
+    private var activeHighContrast: Boolean = false
+
     @Synchronized
     fun configure(
         themeMode: AppThemeMode,
         accentColor: AccentColor,
         dynamicScheme: ColorScheme? = null,
+        highContrast: Boolean = false,
     ) {
         val basePalette = if (themeMode == AppThemeMode.Light) LightPalette else DarkPalette
         activePalette = dynamicScheme?.let(basePalette::withDynamicColors) ?: basePalette
         activeAccent = accentColor
         activeDynamicScheme = dynamicScheme
+        activeHighContrast = highContrast
     }
 
     private fun ColorScheme.dynamicAccent(color: AccentColor): Color = when (color) {

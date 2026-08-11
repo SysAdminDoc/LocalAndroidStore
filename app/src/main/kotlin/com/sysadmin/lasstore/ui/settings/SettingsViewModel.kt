@@ -151,6 +151,7 @@ class SettingsViewModel : ViewModel() {
         themeMode: AppThemeMode = _state.value.settings.themeMode,
         accentColor: AccentColor = _state.value.settings.accentColor,
         dynamicColor: Boolean = _state.value.settings.dynamicColor,
+        highContrast: Boolean = _state.value.settings.highContrast,
         dailyUpdateCap: Int = _state.value.settings.dailyUpdateCap,
     ) {
         saveInternal(
@@ -161,6 +162,7 @@ class SettingsViewModel : ViewModel() {
             themeMode = themeMode,
             accentColor = accentColor,
             dynamicColor = dynamicColor,
+            highContrast = highContrast,
             dailyUpdateCap = dailyUpdateCap,
             replaceMalformedRegistry = false,
         )
@@ -185,6 +187,7 @@ class SettingsViewModel : ViewModel() {
         themeMode: AppThemeMode = _state.value.settings.themeMode,
         accentColor: AccentColor = _state.value.settings.accentColor,
         dynamicColor: Boolean = _state.value.settings.dynamicColor,
+        highContrast: Boolean = _state.value.settings.highContrast,
         dailyUpdateCap: Int = _state.value.settings.dailyUpdateCap,
     ) {
         saveInternal(
@@ -195,6 +198,7 @@ class SettingsViewModel : ViewModel() {
             themeMode = themeMode,
             accentColor = accentColor,
             dynamicColor = dynamicColor,
+            highContrast = highContrast,
             dailyUpdateCap = dailyUpdateCap,
             replaceMalformedRegistry = true,
         )
@@ -208,6 +212,7 @@ class SettingsViewModel : ViewModel() {
         themeMode: AppThemeMode,
         accentColor: AccentColor,
         dynamicColor: Boolean,
+        highContrast: Boolean,
         dailyUpdateCap: Int,
         replaceMalformedRegistry: Boolean,
     ) {
@@ -266,6 +271,7 @@ class SettingsViewModel : ViewModel() {
                     themeMode = themeMode,
                     accentColor = accentColor,
                     dynamicColor = dynamicColor,
+                    highContrast = highContrast,
                     dailyUpdateCap = dailyUpdateCap,
                     sourceDirectoryUrl = _state.value.settings.sourceDirectoryUrl,
                     socks5ProxyEnabled = _state.value.settings.socks5ProxyEnabled,

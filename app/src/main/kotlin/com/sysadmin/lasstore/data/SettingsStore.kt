@@ -109,6 +109,7 @@ class SettingsStore(
     private val keyThemeMode = stringPreferencesKey("theme_mode")
     private val keyAccentColor = stringPreferencesKey("accent_color")
     private val keyDynamicColor = booleanPreferencesKey("dynamic_color")
+    private val keyHighContrast = booleanPreferencesKey("high_contrast")
     private val keyDailyUpdateCap = intPreferencesKey("daily_update_cap")
     private val keySourceDirectoryUrl = stringPreferencesKey("source_directory_url")
     private val keySocks5ProxyEnabled = booleanPreferencesKey("socks5_proxy_enabled")
@@ -301,6 +302,7 @@ class SettingsStore(
             prefs[keyThemeMode] = canonical.themeMode.name
             prefs[keyAccentColor] = canonical.accentColor.name
             prefs[keyDynamicColor] = canonical.dynamicColor
+            prefs[keyHighContrast] = canonical.highContrast
             prefs[keyDailyUpdateCap] = canonical.dailyUpdateCap
             prefs[keySourceDirectoryUrl] = canonical.sourceDirectoryUrl
             prefs[keySocks5ProxyEnabled] = canonical.socks5ProxyEnabled
@@ -330,6 +332,7 @@ class SettingsStore(
                     ?.let { value -> runCatching { AccentColor.valueOf(value) }.getOrNull() }
                     ?: AccentColor.Mauve,
                 dynamicColor = prefs[keyDynamicColor] ?: false,
+                highContrast = prefs[keyHighContrast] ?: false,
                 dailyUpdateCap = (prefs[keyDailyUpdateCap] ?: 3).coerceIn(0, MAX_DAILY_UPDATE_CAP),
                 sourceDirectoryUrl = prefs[keySourceDirectoryUrl].orEmpty(),
                 socks5ProxyEnabled = prefs[keySocks5ProxyEnabled] ?: false,
@@ -355,6 +358,7 @@ class SettingsStore(
             themeMode = settings.themeMode,
             accentColor = settings.accentColor,
             dynamicColor = settings.dynamicColor,
+            highContrast = settings.highContrast,
             dailyUpdateCap = settings.dailyUpdateCap.coerceIn(0, MAX_DAILY_UPDATE_CAP),
             sourceDirectoryUrl = settings.sourceDirectoryUrl.trim(),
             socks5ProxyEnabled = settings.socks5ProxyEnabled,

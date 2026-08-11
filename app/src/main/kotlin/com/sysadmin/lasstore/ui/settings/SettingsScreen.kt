@@ -160,6 +160,9 @@ fun SettingsScreen(
     var dynamicColor by remember(state.settings.dynamicColor) {
         mutableStateOf(state.settings.dynamicColor)
     }
+    var highContrast by remember(state.settings.highContrast) {
+        mutableStateOf(state.settings.highContrast)
+    }
     var dailyUpdateCap by remember(state.settings.dailyUpdateCap) {
         mutableStateOf(state.settings.dailyUpdateCap)
     }
@@ -192,6 +195,7 @@ fun SettingsScreen(
         themeMode != state.settings.themeMode ||
         accentColor != state.settings.accentColor ||
         dynamicColor != state.settings.dynamicColor ||
+        highContrast != state.settings.highContrast ||
         dailyUpdateCap != state.settings.dailyUpdateCap
 
     Column(
@@ -253,9 +257,11 @@ fun SettingsScreen(
             themeMode = themeMode,
             accentColor = accentColor,
             dynamicColor = dynamicColor,
+            highContrast = highContrast,
             onThemeModeChange = { themeMode = it },
             onAccentColorChange = { accentColor = it },
             onDynamicColorChange = { dynamicColor = it },
+            onHighContrastChange = { highContrast = it },
         )
 
         BackgroundUpdatePolicySettings(
@@ -439,6 +445,7 @@ fun SettingsScreen(
                         themeMode = themeMode,
                         accentColor = accentColor,
                         dynamicColor = dynamicColor,
+                        highContrast = highContrast,
                         dailyUpdateCap = dailyUpdateCap,
                     )
                 },
@@ -463,6 +470,7 @@ fun SettingsScreen(
                     themeMode = themeMode,
                     accentColor = accentColor,
                     dynamicColor = dynamicColor,
+                    highContrast = highContrast,
                     dailyUpdateCap = dailyUpdateCap,
                 )
             },
@@ -916,9 +924,11 @@ private fun AppearanceSettings(
     themeMode: AppThemeMode,
     accentColor: AccentColor,
     dynamicColor: Boolean,
+    highContrast: Boolean,
     onThemeModeChange: (AppThemeMode) -> Unit,
     onAccentColorChange: (AccentColor) -> Unit,
     onDynamicColorChange: (Boolean) -> Unit,
+    onHighContrastChange: (Boolean) -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -968,6 +978,12 @@ private fun AppearanceSettings(
                 value = dynamicColor,
                 onChange = onDynamicColorChange,
                 enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
+            )
+            SettingRow(
+                title = stringResource(R.string.high_contrast_setting),
+                subtitle = stringResource(R.string.high_contrast_subtitle),
+                value = highContrast,
+                onChange = onHighContrastChange,
             )
             Text(
                 text = stringResource(R.string.accent_color),
