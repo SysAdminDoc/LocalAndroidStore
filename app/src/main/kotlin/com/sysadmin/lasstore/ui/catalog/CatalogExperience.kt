@@ -266,6 +266,7 @@ fun CatalogExperience(
                                     viewModel.openAppLanguageSettings(card)
                                 },
                                 onOpenAdvancedSideloading = viewModel::openAdvancedSideloadingFlow,
+                                onInspectTransparency = { viewModel.inspectTransparency(card) },
                             )
                         }
                     }

@@ -41,6 +41,7 @@ That's what this is.
 - **Theme and source accents** — choose Catppuccin Mocha AMOLED dark or Latte light, then select Mauve, Sapphire, Green, Yellow, Red, Pink, Teal, or Lavender. Each GitHub or F-Droid source can inherit the global accent or use its own tint on catalog cards and primary actions. Android 12+ users can separately opt into wallpaper-derived Material You colors.
 - **Publisher-feed branding** — optionally attach an HTTPS AltStore-compatible feed to a source. The catalog renders bounded header/icon imagery, tint, featured-app identifiers, and a safe HTTPS news link without making source discovery depend on the branding feed.
 - **APK lockfile** — every successful LocalAndroidStore install updates app-private `files/las.lock` with application id, manifest version code, downloaded source URL, APK SHA-256, raw `AndroidManifest.xml` SHA-256, and publisher certificate SHA-256 for later restore/export workflows.
+- **APK transparency report** — installed cards can decode the verified binary manifest, enumerate APK Signing Block pairs and signature schemes, and scan DEX entries against a small packaged Exodus-style tracker-signature snapshot. The scan stays on-device and reports matches as static evidence, never as proof of runtime tracking.
 - **Rate-aware offline catalog** — repository discovery continues through a bounded 50-page policy, release lookups are capped at four concurrent requests, GitHub ETags reuse unchanged responses, partial sources retain only current candidates whose release lookup failed transiently, and a dated on-device snapshot remains usable offline for up to seven days. Retained cards are marked stale; removed, archived, topic-excluded, missing-release, and non-transiently failed repositories are not resurrected. A source that exceeds the repository bound is marked truncated with fetched/omitted evidence instead of appearing complete; use a topic filter to narrow it. TLS, token, authorization, rate-limit, network, server, malformed-response, truncation, and valid-empty outcomes are shown distinctly.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black or Catppuccin Latte light. Repo handle, star count, version tag, status badge, two-line description.
 - **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
@@ -96,6 +97,11 @@ attested release artifacts; release signing is a deliberate local release-owner 
 7. Tap **Save settings**, hop back to **Catalog**, hit **Refresh**.
 
 Every qualifying repo appears as a card. Tap **Install** — the APK downloads, then uses the selected installer path. With the default path, the system install dialog appears and you confirm; with an active Shizuku path, Android may complete the shell-owned session without that dialog. Tap **Open** to launch. Tap **Uninstall** to land on the system uninstall confirmation.
+
+For an installed card, open the overflow menu and choose **Inspect APK transparency**. The report
+shows the verified package/version/digests/signer, parsed Signing Block entries, known static tracker
+matches, and a selectable decoded `AndroidManifest.xml`. It reads the installed APK (or an APK
+already retained by an active foreground operation) locally; it does not upload the artifact.
 
 When the same package is available from more than one source, open the card overflow menu and choose
 **Choose preferred source**. The preference is stored per package on this device; cards without a
@@ -175,6 +181,7 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 ├── data/
 │   ├── GitHubClient.kt        OkHttp + kotlinx.serialization, paginated repo + release listing
 │   ├── ApkInspector.kt        apksig verification → PackageManager metadata/signer cross-check
+│   ├── ApkTransparencyInspector.kt  Binary manifest, Signing Block, and offline tracker scan
 │   ├── InstallStateRepo.kt    PackageManager wrapper for "is X installed at version Y?"
 │   ├── DeveloperVerificationPreflight.kt  Android Developer Verification advisory detector
 │   ├── SecretStore.kt         Tink AEAD secret file for PAT + per-package signing pins
@@ -269,6 +276,7 @@ LocalAndroidStore is in your trust boundary — once you grant it "Install unkno
 - **The Android Keystore-backed Tink keyset** that protects local PATs and signing pins.
 - **The Android platform's `PackageInstaller.Session` + `apksig`** for verifying signatures. Both are first-party Google code.
 - **LocalAndroidStore itself.** A release owner signs the release APK locally with the ignored `keystore.properties` configuration and records its certificate fingerprint and SHA-256 alongside the release. This checkout does not claim CI signing, artifact attestations, or reproducible release bytes. The publisher key (`9c6a9276…e6ebd3a0d`) is the project's identity — if it leaks, the project is compromised; mitigation is rotating the key and getting users to verify the new lineage manually.
+- **The packaged tracker-signature snapshot.** It is a bounded, offline static signature list, not a live Exodus report or a behavioral verdict. A missing match does not mean an APK is private, and a match should be reviewed in context.
 
 **What you don't trust:**
 
@@ -284,6 +292,7 @@ LocalAndroidStore is in your trust boundary — once you grant it "Install unkno
 - We don't run privileged installs by default. The optional Shizuku path is disabled until the user enables it and grants Shizuku access; if it is unavailable, the normal Android installer remains the fallback.
 - We don't fetch a second APK at runtime. The APK staged for install is the APK published on GitHub Releases; nothing else.
 - We don't share your installed-app list with anyone.
+- APK transparency inspection stays on-device. It reads only a verified local APK and never sends APK bytes, manifest contents, or tracker hashes to a remote scanner.
 
 **How the release owner builds and verifies a release:**
 
@@ -330,6 +339,7 @@ verification command fails, treat the binary as untrusted and do not distribute 
   each persisted generation through the normal background-install safeguards; a process restart
   preserves unconfirmed actions and reconciles actions already submitted.
 - GitHub Releases and pinned F-Droid index-v2 repositories are supported today. GitLab and HTML source plugins remain adapter-level work rather than configured catalog sources.
+- Transparency reports are available for installed/local APKs. The tracker scan is a static, bounded snapshot and does not replace a full current Exodus analysis.
 
 ---
 

@@ -1,0 +1,101 @@
+{
+  "version": "exodus-snapshot-2026-08",
+  "trackers": [
+    {
+      "id": "adjust",
+      "name": "Adjust",
+      "category": "analytics",
+      "patterns": ["com/adjust/sdk"]
+    },
+    {
+      "id": "admob",
+      "name": "Google AdMob",
+      "category": "advertising",
+      "patterns": ["com/google/android/gms/ads"]
+    },
+    {
+      "id": "amplitude",
+      "name": "Amplitude",
+      "category": "analytics",
+      "patterns": ["com/amplitude/api", "com/amplitude/android"]
+    },
+    {
+      "id": "appcenter",
+      "name": "Microsoft App Center",
+      "category": "analytics",
+      "patterns": ["com/microsoft/appcenter"]
+    },
+    {
+      "id": "appsflyer",
+      "name": "AppsFlyer",
+      "category": "analytics",
+      "patterns": ["com/appsflyer"]
+    },
+    {
+      "id": "applovin",
+      "name": "AppLovin",
+      "category": "advertising",
+      "patterns": ["com/applovin"]
+    },
+    {
+      "id": "branch",
+      "name": "Branch",
+      "category": "analytics",
+      "patterns": ["io/branch/referral"]
+    },
+    {
+      "id": "bugsnag",
+      "name": "Bugsnag",
+      "category": "crash reporting",
+      "patterns": ["com/bugsnag/android"]
+    },
+    {
+      "id": "facebook",
+      "name": "Facebook Analytics",
+      "category": "analytics",
+      "patterns": ["com/facebook/appevents", "com/facebook/ads"]
+    },
+    {
+      "id": "firebase-analytics",
+      "name": "Google Firebase Analytics",
+      "category": "analytics",
+      "patterns": ["com/google/android/gms/measurement", "com/google/firebase/analytics"]
+    },
+    {
+      "id": "firebase-crashlytics",
+      "name": "Google Crashlytics",
+      "category": "crash reporting",
+      "patterns": ["com/google/firebase/crashlytics"]
+    },
+    {
+      "id": "mixpanel",
+      "name": "Mixpanel",
+      "category": "analytics",
+      "patterns": ["com/mixpanel/android"]
+    },
+    {
+      "id": "onesignal",
+      "name": "OneSignal",
+      "category": "notifications",
+      "patterns": ["com/onesignal"]
+    },
+    {
+      "id": "sentry",
+      "name": "Sentry",
+      "category": "crash reporting",
+      "patterns": ["io/sentry"]
+    },
+    {
+      "id": "segment",
+      "name": "Segment",
+      "category": "analytics",
+      "patterns": ["com/segment/analytics"]
+    },
+    {
+      "id": "unity-ads",
+      "name": "Unity Ads",
+      "category": "advertising",
+      "patterns": ["com/unity3d/ads"]
+    }
+  ]
+}

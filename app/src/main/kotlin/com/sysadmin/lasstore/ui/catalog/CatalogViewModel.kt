@@ -12,6 +12,8 @@ import com.sysadmin.lasstore.data.ApkMetadata
 import com.sysadmin.lasstore.data.AccentColor
 import com.sysadmin.lasstore.data.AppSettings
 import com.sysadmin.lasstore.data.accentForSource
+import com.sysadmin.lasstore.data.ApkTransparencyInspector
+import com.sysadmin.lasstore.data.ApkTransparencyReport
 import com.sysadmin.lasstore.data.DeveloperVerificationNotice
 import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.GhRelease
@@ -97,6 +99,9 @@ data class CardState(
     val alternativeSources: List<AppInfo> = emptyList(),
     val channelPreference: ReleaseChannel? = null,
     val resumableDownloadBytes: Long = 0L,
+    val transparencyReport: ApkTransparencyReport? = null,
+    val transparencyBusy: Boolean = false,
+    val transparencyError: String? = null,
 )
 
 data class UnmanagedInstallDetails(
@@ -189,6 +194,9 @@ internal fun preserveActivityResumeContext(previous: CardState, rebuilt: CardSta
     rebuilt.copy(
         releaseHistory = previous.releaseHistory,
         historicalSelection = previous.historicalSelection,
+        transparencyReport = previous.transparencyReport,
+        transparencyBusy = previous.transparencyBusy,
+        transparencyError = previous.transparencyError,
     )
 
 internal fun reserveUniqueDownloadFile(directory: File, filename: String): File {
@@ -209,6 +217,7 @@ internal fun reserveUniqueDownloadFile(directory: File, filename: String): File 
 
 class CatalogViewModel : ViewModel() {
     private val sl = ServiceLocator
+    private val transparencyInspector by lazy { ApkTransparencyInspector(sl.appContext) }
     private val discovery = DiscoveryUseCase(
         github = sl.github,
         logger = sl.logger,
@@ -1886,6 +1895,74 @@ class CatalogViewModel : ViewModel() {
         registerActionJob(key, actionId, job)
     }
 
+    /**
+     * Inspect the installed APK (or an APK retained by the foreground coordinator) locally.
+     * Transparency never downloads an unverified artifact or sends APK bytes to a third party.
+     */
+    fun inspectTransparency(card: CardState) {
+        if (card.transparencyBusy) return
+        updateCard(card.info) {
+            it.copy(transparencyBusy = true, transparencyError = null)
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val apk = localTransparencyApk(card)
+                    ?: error("Install this release before opening its transparency report.")
+                val report = transparencyInspector.inspect(apk)
+                val expectedPackage = card.info.applicationId
+                    ?: sl.appIdCache.get(card.info.sourceKey, card.info.owner, card.info.repo)
+                        ?.applicationId
+                if (
+                    expectedPackage != null &&
+                    PACKAGE_NAME_PATTERN.matches(expectedPackage) &&
+                    report.metadata.applicationId != expectedPackage
+                ) {
+                    error(
+                        "The installed APK package ${report.metadata.applicationId} does not match " +
+                            "the catalog package $expectedPackage.",
+                    )
+                }
+                updateCard(card.info) {
+                    it.copy(
+                        transparencyReport = report,
+                        transparencyBusy = false,
+                        transparencyError = null,
+                    )
+                }
+            } catch (cancellation: CancellationException) {
+                updateCard(card.info) { it.copy(transparencyBusy = false) }
+                throw cancellation
+            } catch (throwable: Throwable) {
+                sl.logger.warn(
+                    "Transparency",
+                    "Could not inspect ${card.info.handle}: ${throwable.message}",
+                )
+                updateCard(card.info) {
+                    it.copy(
+                        transparencyBusy = false,
+                        transparencyError = throwable.message
+                            ?: "APK transparency inspection failed.",
+                    )
+                }
+            }
+        }
+    }
+
+    private fun localTransparencyApk(card: CardState): File? {
+        sl.foregroundInstalls.get(cardKey(card.info))
+            ?.let { operation -> sl.foregroundInstalls.apkFile(operation) }
+            ?.takeIf(File::isFile)
+            ?.let { return it }
+        val applicationId = card.info.applicationId
+            ?: sl.appIdCache.get(card.info.sourceKey, card.info.owner, card.info.repo)
+                ?.applicationId
+            ?: return null
+        val sourcePath = runCatching {
+            sl.appContext.packageManager.getApplicationInfo(applicationId, 0).sourceDir
+        }.getOrNull() ?: return null
+        return File(sourcePath).takeIf(File::isFile)
+    }
+
     fun uninstall(card: CardState) {
         val applicationId = card.info.applicationId ?: return
         when (val result = sl.installer.openAppInfo(applicationId)) {
@@ -2288,6 +2365,12 @@ class CatalogViewModel : ViewModel() {
             minutes < 1_440L -> "${minutes / 60L} h"
             else -> "${minutes / 1_440L} d"
         }
+    }
+
+    private companion object {
+        private val PACKAGE_NAME_PATTERN = Regex(
+            "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$",
+        )
     }
 
     /**

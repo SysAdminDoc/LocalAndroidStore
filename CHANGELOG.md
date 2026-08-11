@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- Added an on-device APK transparency report for installed cards. It decodes the binary manifest,
+  enumerates APK Signing Block pairs, and scans DEX entries against a packaged tracker-signature
+  snapshot without uploading APK bytes or querying a remote scanner.
 - Added an opt-in Shizuku shell-installer tier for foreground and queued APK sessions. Settings
   detects binder availability and permission state, while the installer keeps APK/signature gates,
   falls back to Android's normal PackageInstaller when Shizuku is unavailable, and can recover

@@ -118,6 +118,7 @@ fun ReleaseCard(
     onSetChannelPreference: (ReleaseChannel?) -> Unit = {},
     onOpenLanguageSettings: () -> Unit = {},
     onOpenAdvancedSideloading: () -> Unit = {},
+    onInspectTransparency: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val sourceAccent = Catppuccin.accent(state.sourceAccent)
@@ -154,6 +155,7 @@ fun ReleaseCard(
     var sourceVerificationVisible by rememberSaveable(state.info.handle) {
         mutableStateOf(false)
     }
+    var transparencyVisible by rememberSaveable(state.info.handle) { mutableStateOf(false) }
     val antiFeatureBadges = remember(state.info.antiFeatures) {
         antiFeatureBadges(state.info.antiFeatures)
     }
@@ -527,6 +529,16 @@ fun ReleaseCard(
         )
     }
 
+    if (transparencyVisible) {
+        ApkTransparencyDialog(
+            report = state.transparencyReport,
+            busy = state.transparencyBusy,
+            error = state.transparencyError,
+            onDismiss = { transparencyVisible = false },
+            onRetry = onInspectTransparency,
+        )
+    }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = cardShape,
@@ -610,6 +622,10 @@ fun ReleaseCard(
                         onChooseSource = { sourceSelectionVisible = true },
                         onChooseChannel = { channelSelectionVisible = true },
                         onOpenLanguageSettings = onOpenLanguageSettings,
+                        onInspectTransparency = {
+                            transparencyVisible = true
+                            onInspectTransparency()
+                        },
                     )
                 }
 
@@ -1233,6 +1249,7 @@ private fun ReleaseOverflowMenu(
     onChooseSource: () -> Unit,
     onChooseChannel: () -> Unit,
     onOpenLanguageSettings: () -> Unit,
+    onInspectTransparency: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     var cadenceDialogVisible by remember { mutableStateOf(false) }
@@ -1261,6 +1278,14 @@ private fun ReleaseOverflowMenu(
                     onClick = {
                         expanded = false
                         onOpen()
+                    },
+                )
+                ReleaseMenuItem(
+                    text = stringResource(R.string.apk_transparency_menu),
+                    icon = Icons.Default.Security,
+                    onClick = {
+                        expanded = false
+                        onInspectTransparency()
                     },
                 )
             }
