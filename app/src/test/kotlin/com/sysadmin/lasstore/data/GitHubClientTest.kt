@@ -507,6 +507,69 @@ class GitHubClientTest {
     }
 
     @Test
+    fun resumedDownloadUsesRangeAndRechecksTheCompleteDigest() = runBlocking {
+        val prefix = "already-downloaded-"
+        val suffix = "remaining-bytes"
+        val complete = prefix + suffix
+        val partialDirectory = Files.createTempDirectory("las-download-resume-partial").toFile()
+        val partial = File(partialDirectory, "asset.part").apply { writeText(prefix) }
+        val directory = Files.createTempDirectory("las-download-resume").toFile()
+        val target = File(directory, "release.apk")
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes ${prefix.length}-${complete.length - 1}/${complete.length}")
+                .setBody(suffix),
+        )
+
+        client().download(
+            url = server.url("/release.apk").toString(),
+            target = target,
+            expectedDigest = "sha256:${sha256(complete)}",
+            partialFile = partial,
+        ) { _, _ -> }
+
+        assertEquals("bytes=${prefix.length}-", server.takeRequest().getHeader("Range"))
+        assertEquals(complete, target.readText())
+        assertFalse(partial.exists())
+        partialDirectory.deleteRecursively()
+        directory.deleteRecursively()
+        Unit
+    }
+
+    @Test
+    fun cancellingResumableDownloadKeepsPartialBytesForTheNextAttempt() = runBlocking {
+        val partialDirectory = Files.createTempDirectory("las-download-cancel-resume-partial").toFile()
+        val partial = File(partialDirectory, "asset.part").apply { writeText("prefix") }
+        val directory = Files.createTempDirectory("las-download-cancel-resume").toFile()
+        val target = File(directory, "release.apk")
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setBody("x".repeat(256 * 1024))
+                .throttleBody(1_024, 100, TimeUnit.MILLISECONDS),
+        )
+        val job = launch {
+            client().download(
+                url = server.url("/release.apk").toString(),
+                target = target,
+                partialFile = partial,
+            ) { _, _ -> }
+        }
+        yield()
+        assertNotNull(server.takeRequest(5, TimeUnit.SECONDS))
+
+        job.cancelAndJoin()
+
+        assertFalse(target.exists())
+        assertTrue(partial.exists())
+        assertTrue(partial.length() >= "prefix".length)
+        partialDirectory.deleteRecursively()
+        directory.deleteRecursively()
+        Unit
+    }
+
+    @Test
     fun downloadRejectsUntrustedAssetHostBeforeSendingPat() = runBlocking {
         val directory = Files.createTempDirectory("las-download-host").toFile()
         val target = File(directory, "release.apk")

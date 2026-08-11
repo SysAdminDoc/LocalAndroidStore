@@ -8,6 +8,7 @@
     <string name="refresh">Refresh</string>
     <string name="refresh_catalog">Refresh catalog</string>
     <string name="install">Install</string>
+    <string name="resume_download">Resume download</string>
     <string name="update">Update</string>
     <string name="uninstall">Uninstall</string>
     <string name="open">Open</string>

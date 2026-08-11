@@ -41,7 +41,7 @@ That's what this is.
 - **Store-style cards** — Catppuccin Mocha on AMOLED black. Repo handle, star count, version tag, status badge, two-line description.
 - **Fast catalog search** — filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
 - **One-tap install** — APK is downloaded to app cache, then driven through `PackageInstaller.Session`. The system shows its install dialog, the user confirms once, done.
-- **Recoverable foreground installs** — download, preapproval, permission review, and installer-session ownership are persisted. Restart restores review/commit work when safe and abandons interrupted transfers otherwise; cancellation reaches the OkHttp call and terminal paths remove transient files.
+- **Recoverable foreground installs** — download, preapproval, permission review, and installer-session ownership are persisted. Restart restores review/commit work when safe, and interrupted downloads keep a source/release-keyed partial in `cacheDir/apks/.partial/` for an explicit **Resume download** action; cancellation reaches the OkHttp call and terminal paths remove transient files.
 - **One-tap uninstall** — fires `Intent.ACTION_DELETE`, lands on the system uninstall confirmation. Catalog refreshes after.
 - **One-tap open** — launches the installed app's main activity.
 - **Gentle queued updates** — installed updates can run through Android 14+ user-initiated data-transfer jobs (WorkManager fallback on older versions), then wait for the target app to leave the foreground, device idle, and calls to end before commit. Attempts are capped and terminal reasons persist on the card.
@@ -123,6 +123,11 @@ and shows taxonomy-aware anti-feature filter chips and red/yellow app badges whe
 them. Security-sensitive entries such as tracking, known vulnerabilities, and disabled algorithms are
 red; licensing, advertising, network, and source-availability notices are yellow. HTTPS is required
 for index and APK URLs.
+
+When a foreground APK transfer is interrupted, the next catalog refresh matches the partial to the
+same source, release, asset URL, and published digest. If the server supports byte ranges, the
+remaining bytes are requested with `Range: bytes=N-`; a server that ignores the range safely starts
+that transfer over and replaces the partial.
 
 The optional Wear OS companion is built with `./gradlew :wear:assembleDebug` and installed on a
 paired watch. Add the Tile or short-text complication from the watch face editor; the watch receives

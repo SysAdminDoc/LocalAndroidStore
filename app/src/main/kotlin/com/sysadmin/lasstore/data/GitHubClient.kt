@@ -17,10 +17,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.ResponseBody
 import okhttp3.Response
-import okio.BufferedSink
-import okio.buffer
-import okio.sink
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -434,6 +432,7 @@ class GitHubClient(
         target: File,
         patOverride: String? = null,
         expectedDigest: String? = null,
+        partialFile: File? = null,
         onProgress: (downloaded: Long, total: Long) -> Unit,
     ): File {
         ensureNetworkAvailable()
@@ -446,10 +445,21 @@ class GitHubClient(
                     ?: throw InvalidReleaseAssetDigestException(supplied)
             }
         target.parentFile?.mkdirs()
-        val partial = File("${target.absolutePath}.part")
-        partial.delete()
+        val partial = partialFile ?: File("${target.absolutePath}.part")
+        partial.parentFile?.mkdirs()
+        val resumable = partialFile != null
+        if (!resumable) partial.delete()
+        target.delete()
+        val resumeOffset = if (resumable && partial.isFile) partial.length() else 0L
+        if (resumeOffset > maxDownloadBytes) {
+            partial.delete()
+            throw IOException(
+                "Partial release asset exceeds the ${maxDownloadBytes / (1024 * 1024)} MiB limit",
+            )
+        }
         val request = Request.Builder().url(initialUrl).apply {
             authHeaders(patOverride).forEach { (key, value) -> header(key, value) }
+            if (resumeOffset > 0L) header("Range", "bytes=$resumeOffset-")
         }.build()
         return suspendCancellableCoroutine { continuation ->
             val activeCall = java.util.concurrent.atomic.AtomicReference<Call>()
@@ -459,11 +469,11 @@ class GitHubClient(
                 .build()
             continuation.invokeOnCancellation {
                 activeCall.get()?.cancel()
-                partial.delete()
                 target.delete()
+                if (!resumable) partial.delete()
             }
-            fun fail(throwable: Throwable) {
-                partial.delete()
+            fun fail(throwable: Throwable, preservePartial: Boolean) {
+                if (!preservePartial) partial.delete()
                 target.delete()
                 if (continuation.isActive) continuation.resumeWithException(throwable)
             }
@@ -474,10 +484,14 @@ class GitHubClient(
                 activeCall.set(call)
                 call.enqueue(object : Callback {
                     override fun onFailure(call: Call, e: IOException) {
-                        fail(e)
+                        fail(
+                            e,
+                            preservePartial = resumable && partial.isFile && partial.length() > 0L,
+                        )
                     }
 
                     override fun onResponse(call: Call, response: Response) {
+                        var preservePartial = resumable && partial.isFile && partial.length() > 0L
                         try {
                             if (response.isRedirect) {
                                 val location = response.header("Location")
@@ -489,55 +503,71 @@ class GitHubClient(
                                     throw IOException("Release asset followed too many redirects")
                                 }
                                 val validated = validateDownloadUrl(nextUrl)
-                                enqueue(
-                                    Request.Builder()
-                                        .url(validated)
-                                        .header("Accept", "application/vnd.github+json")
-                                        .header("User-Agent", "LocalAndroidStore")
-                                        .build(),
-                                    redirects + 1,
-                                )
+                                val range = nextRequest.header("Range")
+                                val redirectedRequest = Request.Builder()
+                                    .url(validated)
+                                    .header("Accept", "application/vnd.github+json")
+                                    .header("User-Agent", "LocalAndroidStore")
+                                    .apply { if (range != null) header("Range", range) }
+                                    .build()
+                                enqueue(redirectedRequest, redirects + 1)
                                 return
                             }
                             response.use { current ->
                                 if (!current.isSuccessful) {
+                                    preservePartial = resumable &&
+                                        current.code in 500..599 &&
+                                        partial.isFile &&
+                                        partial.length() > 0L
                                     throw responseFailure(current, "downloading release asset")
+                                }
+                                if (resumeOffset > 0L && current.code == 416) {
+                                    preservePartial = false
+                                    throw IOException("Release asset rejected the requested byte range")
                                 }
                                 val body: ResponseBody = current.body
                                 val total = body.contentLength()
-                                if (total > maxDownloadBytes) {
+                                val append = resumeOffset > 0L && current.code == 206
+                                if (resumeOffset > 0L && !append) partial.delete()
+                                val startingBytes = if (append) resumeOffset else 0L
+                                val cumulativeTotal = if (total >= 0L) startingBytes + total else -1L
+                                if (cumulativeTotal > maxDownloadBytes) {
+                                    preservePartial = false
                                     throw IOException(
                                         "Release asset exceeds the ${maxDownloadBytes / (1024 * 1024)} MiB limit",
                                     )
                                 }
-                                partial.sink().buffer().use { sink: BufferedSink ->
+                                val digest = expectedSha256?.let {
+                                    MessageDigest.getInstance("SHA-256")
+                                }
+                                if (append && digest != null) updateDigest(partial, digest)
+                                FileOutputStream(partial, append).use { output ->
                                     body.byteStream().use { source ->
                                         val buffer = ByteArray(DOWNLOAD_BUFFER_BYTES)
-                                        val digest = expectedSha256?.let {
-                                            MessageDigest.getInstance("SHA-256")
-                                        }
-                                        var downloaded = 0L
-                                        var lastReport = 0L
+                                        var downloaded = startingBytes
+                                        var lastReport = startingBytes
                                         while (true) {
                                             val count = source.read(buffer)
                                             if (count == -1) break
                                             val countLong = count.toLong()
                                             if (downloaded > maxDownloadBytes - countLong) {
+                                                preservePartial = false
                                                 throw IOException(
                                                     "Release asset exceeds the ${maxDownloadBytes / (1024 * 1024)} MiB limit",
                                                 )
                                             }
                                             digest?.update(buffer, 0, count)
-                                            sink.write(buffer, 0, count)
+                                            output.write(buffer, 0, count)
                                             downloaded += countLong
                                             if (downloaded - lastReport > 64 * 1024L) {
-                                                onProgress(downloaded, total)
+                                                onProgress(downloaded, cumulativeTotal)
                                                 lastReport = downloaded
                                             }
                                         }
-                                        onProgress(downloaded, total)
+                                        onProgress(downloaded, cumulativeTotal)
                                         val actualSha256 = digest?.digest()?.toHex()
                                         if (expectedSha256 != null && actualSha256 != expectedSha256) {
+                                            preservePartial = false
                                             throw ReleaseAssetDigestMismatchException(
                                                 expectedDigest = expectedSha256,
                                                 actualDigest = actualSha256.orEmpty(),
@@ -558,13 +588,24 @@ class GitHubClient(
                                 target.delete()
                             }
                         } catch (throwable: Throwable) {
-                            fail(throwable)
+                            fail(throwable, preservePartial)
                         }
                     }
                 })
             }
 
             enqueue(request, redirects = 0)
+        }
+    }
+
+    private fun updateDigest(file: File, digest: MessageDigest) {
+        file.inputStream().use { input ->
+            val buffer = ByteArray(DOWNLOAD_BUFFER_BYTES)
+            while (true) {
+                val count = input.read(buffer)
+                if (count == -1) break
+                digest.update(buffer, 0, count)
+            }
         }
     }
 

@@ -81,6 +81,7 @@ data class CardState(
     val historicalSelection: Boolean = false,
     val alternativeSources: List<AppInfo> = emptyList(),
     val channelPreference: ReleaseChannel? = null,
+    val resumableDownloadBytes: Long = 0L,
 )
 
 data class UnmanagedInstallDetails(
@@ -576,6 +577,7 @@ class CatalogViewModel : ViewModel() {
                 baseState.copy(
                     alternativeSources = alternatives,
                     channelPreference = sl.channelPreferences.get(info),
+                    resumableDownloadBytes = sl.foregroundInstalls.partialDownloadSize(info),
                 ),
             ),
         )
@@ -797,6 +799,7 @@ class CatalogViewModel : ViewModel() {
                     target = target,
                     patOverride = sl.settings.getPat(card.info.sourceKey),
                     expectedDigest = card.info.asset.digest,
+                    partialFile = sl.foregroundInstalls.partialDownloadFile(card.info),
                 ) { d, t ->
                     val frac = if (t > 0) (d.toFloat() / t.toFloat()).coerceIn(0f, 1f) else 0f
                     updateCardForAction(card.info, operationId) {
@@ -1035,7 +1038,11 @@ class CatalogViewModel : ViewModel() {
                 sl.foregroundInstalls.removeIfCurrent(key, operationId)
                 sl.logger.error("Install", "Install pipeline crashed", t)
                 updateCardForAction(card.info, operationId) {
-                    it.copy(status = CardStatus.Error, message = t.message ?: "install failed")
+                    it.copy(
+                        status = CardStatus.Error,
+                        message = t.message ?: "install failed",
+                        resumableDownloadBytes = sl.foregroundInstalls.partialDownloadSize(card.info),
+                    )
                 }
             }
         }

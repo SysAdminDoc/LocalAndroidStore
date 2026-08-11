@@ -10,6 +10,7 @@ import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.signerMatchesVerifiedArtifact
 import com.sysadmin.lasstore.domain.AppInfo
 import java.io.File
+import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -230,6 +231,37 @@ class ForegroundInstallStore(private val context: Context) {
         return file.takeIf { filePath.startsWith(rootPath) }
     }
 
+    /**
+     * Stable partial-download location for the currently published asset.
+     *
+     * The foreground operation itself deliberately keeps a random final APK path so a new
+     * install action cannot attach to an old completed artifact. The partial path is keyed by
+     * the source, release asset URL, and published digest so an interrupted transfer can safely
+     * be resumed after process death without crossing release or source boundaries.
+     */
+    fun partialDownloadFile(info: AppInfo): File {
+        val directory = File(context.cacheDir, "$APK_CACHE_DIR/$PARTIAL_DOWNLOAD_DIR")
+            .apply { mkdirs() }
+        val identity = listOf(
+            key(info),
+            info.tagName,
+            info.asset.id.toString(),
+            info.asset.name,
+            info.asset.browserDownloadUrl,
+            info.asset.size.toString(),
+            info.asset.digest.orEmpty(),
+        ).joinToString("\n")
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(identity.toByteArray(Charsets.UTF_8))
+            .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
+        return File(directory, "$digest.part")
+    }
+
+    fun partialDownloadSize(info: AppInfo): Long = partialDownloadFile(info)
+        .takeIf { it.isFile && it.length() > 0L }
+        ?.length()
+        ?: 0L
+
     fun addPendingMediaStoreUri(uri: Uri) {
         synchronized(lock) {
             val values = prefs.getStringSet(KEY_PENDING_MEDIA, emptySet()).orEmpty().toMutableSet()
@@ -330,6 +362,7 @@ class ForegroundInstallStore(private val context: Context) {
         private const val KEY_OPERATIONS = "operations"
         private const val KEY_PENDING_MEDIA = "pending_media_store_uris"
         private const val APK_CACHE_DIR = "apks"
+        private const val PARTIAL_DOWNLOAD_DIR = ".partial"
     }
 }
 

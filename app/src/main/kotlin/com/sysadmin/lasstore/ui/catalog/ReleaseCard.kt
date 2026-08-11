@@ -867,6 +867,7 @@ fun ReleaseCard(
                         onRequestAdoption = { adoptionVisible = true },
                         assetSelectionRequired = state.info.assetChoices.size > 1,
                         onChooseAsset = { assetSelectionVisible = true },
+                        resumeAvailable = state.resumableDownloadBytes > 0L,
                     )
                 }
             }
@@ -969,10 +970,36 @@ private fun PrimaryReleaseAction(
     onRequestAdoption: () -> Unit,
     assetSelectionRequired: Boolean,
     onChooseAsset: () -> Unit,
+    resumeAvailable: Boolean,
 ) {
     val modifier = Modifier
         .widthIn(min = 122.dp)
         .height(48.dp)
+
+    val canResume = resumeAvailable && when (status) {
+        CardStatus.NotInstalled,
+        CardStatus.Installed,
+        CardStatus.ReleaseAvailable,
+        CardStatus.UpdateAvailable,
+        CardStatus.ReinstallAvailable,
+        CardStatus.DowngradeAvailable,
+        CardStatus.Error -> true
+        CardStatus.Unmanaged,
+        CardStatus.Working,
+        CardStatus.SignatureMismatch,
+        CardStatus.PermissionReview -> false
+    }
+
+    if (canResume) {
+        AccentButton(
+            text = stringResource(R.string.resume_download),
+            icon = Icons.Default.Download,
+            accent = Catppuccin.Peach,
+            onClick = onInstall,
+            modifier = modifier,
+        )
+        return
+    }
 
     if (assetSelectionRequired) {
         AccentButton(
