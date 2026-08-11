@@ -58,6 +58,29 @@ class CatalogAccessibilityInstrumentedTest {
     }
 
     @Test
+    fun brandWrapsAndRefreshRemainsReachableAtTwoHundredPercentRtl() {
+        composeRule.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(density.density, 2f),
+                LocalLayoutDirection provides LayoutDirection.Rtl,
+            ) {
+                LocalAndroidStoreTheme {
+                    Column(modifier = Modifier.width(180.dp)) {
+                        CatalogHero(refreshing = false, onRefresh = {})
+                    }
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("LocalAndroidStore", substring = true)
+            .assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Refresh catalog")
+            .assertIsDisplayed()
+            .assertHasClickAction()
+    }
+
+    @Test
     fun rightToLeftLayoutKeepsPrimaryActionsReachable() {
         renderCard(layoutDirection = LayoutDirection.Rtl)
 

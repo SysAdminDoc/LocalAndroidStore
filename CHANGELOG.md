@@ -33,6 +33,7 @@
 - Added bounded, paged historical release browsing with explicit foreground selection; selected older releases retain available version/digest/signer evidence, use the normal inspection/trust/downgrade gates, are audit-recorded, and cannot enter the background queue.
 
 ### Fixed
+- Catalog branding now wraps instead of clipping at large font scales and narrow RTL layouts while preserving the 48dp refresh target.
 - Publisher-trust recovery now exposes one merged checkbox control for the independent-verification acknowledgement, preventing duplicate row and checkbox activation.
 - Catalog status, refresh, queued-update, and install transitions now expose deduplicated TalkBack live-region announcements; download percentages collapse to stable stages and publisher-signature blocks remain assertive.
 - Synchronized the v0.2.3 release identity across the README badge, build metadata, changelog, working notes, and the new `scripts/verify-version.ps1` consistency check.

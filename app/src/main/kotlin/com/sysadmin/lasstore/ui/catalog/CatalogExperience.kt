@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -219,7 +220,7 @@ fun CatalogExperience(
 }
 
 @Composable
-private fun CatalogHero(
+internal fun CatalogHero(
     refreshing: Boolean,
     onRefresh: () -> Unit,
 ) {
@@ -254,7 +255,11 @@ private fun CatalogHero(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .widthIn(min = 0.dp),
+            ) {
                 Text(
                     text = buildAnnotatedString {
                         withStyle(SpanStyle(color = Catppuccin.TextStrong)) {
@@ -268,8 +273,6 @@ private fun CatalogHero(
                         }
                     },
                     style = MaterialTheme.typography.displaySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip,
                 )
                 Text(
                     text = stringResource(R.string.catalog_tagline),
