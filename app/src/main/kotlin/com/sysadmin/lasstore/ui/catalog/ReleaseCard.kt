@@ -1,7 +1,13 @@
 package com.sysadmin.lasstore.ui.catalog
 
 import android.os.Build
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -101,6 +107,7 @@ import com.sysadmin.lasstore.domain.antiFeatureBadges
 import com.sysadmin.lasstore.domain.repositoryMaintenanceWarning
 import com.sysadmin.lasstore.domain.RepositoryWarningKind
 import com.sysadmin.lasstore.ui.theme.Catppuccin
+import com.sysadmin.lasstore.ui.rememberReducedMotion
 import java.time.Instant
 import java.text.DateFormat
 import java.util.Date
@@ -189,6 +196,7 @@ fun ReleaseCard(
     }
     var transparencyVisible by rememberSaveable(state.info.handle) { mutableStateOf(false) }
     var cardFocused by remember(state.info.handle) { mutableStateOf(false) }
+    val reducedMotion = rememberReducedMotion()
     val antiFeatureBadges = remember(state.info.antiFeatures) {
         antiFeatureBadges(state.info.antiFeatures)
     }
@@ -978,7 +986,19 @@ fun ReleaseCard(
                             ),
                         )
                     }
-                    AnimatedVisibility(visible = notesExpanded) {
+                    AnimatedVisibility(
+                        visible = notesExpanded,
+                        enter = if (reducedMotion) {
+                            EnterTransition.None
+                        } else {
+                            fadeIn() + expandVertically()
+                        },
+                        exit = if (reducedMotion) {
+                            ExitTransition.None
+                        } else {
+                            fadeOut() + shrinkVertically()
+                        },
+                    ) {
                         MarkdownReleaseNotes(
                             raw = state.info.releaseBody,
                             maxLines = 12,
