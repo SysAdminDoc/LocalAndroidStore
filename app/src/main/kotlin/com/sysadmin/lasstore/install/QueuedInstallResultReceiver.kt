@@ -25,6 +25,14 @@ internal object QueuedInstallResultHandler {
             )
             return
         }
+        if (sl.queuedUpdateStatus.isFinalized(payload)) {
+            abandonStaleSession(sl, intent)
+            logger.info(
+                "QueuedUpdate",
+                "Ignoring duplicate install result for finalized ${payload.owner}/${payload.repo}",
+            )
+            return
+        }
 
         val info = payload.toAppInfo().copy(applicationId = metadata.applicationId)
         val meta = metadata.toApkMetadata()
@@ -114,7 +122,11 @@ internal object QueuedInstallResultHandler {
                 return@ifCurrent false
             }
             sl.audit.installSucceeded(info, apkMetadata).also { written ->
-                if (!written) sl.logger.error("QueuedUpdate", "Install success audit completion is pending")
+                if (written) {
+                    sl.queuedUpdateStatus.markInstalled(payload)
+                } else {
+                    sl.logger.error("QueuedUpdate", "Install success audit completion is pending")
+                }
             }
         } ?: false
     }

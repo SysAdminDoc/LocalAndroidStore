@@ -15,6 +15,11 @@ class QueuedUpdateWorker(
         ServiceLocator.init(applicationContext)
         val statusStore = ServiceLocator.queuedUpdateStatus
         if (!statusStore.isCurrent(payload)) return Result.success()
+        when (QueuedInstallReconciler.reconcile(applicationContext, payload)) {
+            QueuedInstallReconciliation.Installed -> return Result.success()
+            is QueuedInstallReconciliation.AwaitingSession -> return Result.retry()
+            QueuedInstallReconciliation.NotApplicable -> Unit
+        }
         if (statusStore.shouldDeferForRateLimit(payload)) return Result.retry()
         val attempt = statusStore.beginAttempt(payload)
         if (attempt == QueuedUpdateStatusStore.STALE_ATTEMPT) return Result.success()

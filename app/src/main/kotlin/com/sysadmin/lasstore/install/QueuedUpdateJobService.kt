@@ -31,6 +31,11 @@ class QueuedUpdateJobService : JobService() {
             return false
         }
         val statusStore = ServiceLocator.queuedUpdateStatus
+        when (QueuedInstallReconciler.reconcile(applicationContext, payload)) {
+            QueuedInstallReconciliation.Installed,
+            is QueuedInstallReconciliation.AwaitingSession -> return false
+            QueuedInstallReconciliation.NotApplicable -> Unit
+        }
         val attempt = statusStore.beginAttempt(payload)
         if (attempt == QueuedUpdateStatusStore.STALE_ATTEMPT) return false
         if (attempt > QueuedUpdateStatusStore.MAX_ATTEMPTS) {

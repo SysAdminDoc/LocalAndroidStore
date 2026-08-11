@@ -232,7 +232,12 @@ object QueuedUpdateRunner {
                     operationId = payload.generationId,
                     onSessionCreated = { sessionId ->
                         check(
-                            sl.queuedUpdateStatus.markInstallerSession(payload, attempt, sessionId),
+                            sl.queuedUpdateStatus.markInstallerSession(
+                                payload,
+                                attempt,
+                                sessionId,
+                                metadata = meta,
+                            ),
                         ) { "Queued update was replaced before install session creation" }
                     },
                 )
@@ -245,7 +250,12 @@ object QueuedUpdateRunner {
                     operationId = payload.generationId,
                     onSessionCreated = { sessionId ->
                         check(
-                            sl.queuedUpdateStatus.markInstallerSession(payload, attempt, sessionId),
+                            sl.queuedUpdateStatus.markInstallerSession(
+                                payload,
+                                attempt,
+                                sessionId,
+                                metadata = meta,
+                            ),
                         ) { "Queued update was replaced before install session creation" }
                     },
                 )
@@ -346,6 +356,7 @@ object QueuedUpdateRunner {
                 sl.logger.error("QueuedUpdate", "Install success audit completion is pending")
                 return@ifCurrent false
             }
+            sl.queuedUpdateStatus.markInstalled(payload)
             true
         } ?: false
     }

@@ -1,6 +1,8 @@
 package com.sysadmin.lasstore.install
 
 import android.content.Context
+import com.sysadmin.lasstore.data.ApkMetadata
+import com.sysadmin.lasstore.data.ApkSignatureScheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +58,12 @@ data class QueuedUpdateStatus(
     val failureKind: QueuedUpdateFailureKind? = null,
     val packageInstallerSessionId: Int? = null,
     val generationId: String = "",
+    val targetApplicationId: String? = null,
+    val targetVersionCode: Long? = null,
+    val targetVersionName: String? = null,
+    val targetSignerSha256: String? = null,
+    val targetLineageSha256: List<String> = emptyList(),
+    val targetVerifiedSignatureSchemes: Set<ApkSignatureScheme> = emptySet(),
 ) {
     val isPending: Boolean
         get() = phase == QueuedUpdatePhase.Queued ||
@@ -88,6 +96,10 @@ class QueuedUpdateStatusStore(context: Context) {
         status.generationId.isBlank() || status.generationId == payload.generationId
     }
 
+    fun isFinalized(payload: QueuedUpdatePayload): Boolean = synchronized(LOCK) {
+        currentStatusLocked(payload)?.phase?.isTerminal == true
+    }
+
     /**
      * Run a terminal state transition while holding the generation lease.
      *
@@ -96,7 +108,8 @@ class QueuedUpdateStatusStore(context: Context) {
      * operation: a late callback either completes before replacement, or is rejected in full.
      */
     fun <T> ifCurrent(payload: QueuedUpdatePayload, block: () -> T): T? = synchronized(LOCK) {
-        if (!isCurrentLocked(payload)) return@synchronized null
+        val status = currentStatusLocked(payload) ?: return@synchronized null
+        if (!isCurrentLocked(payload) || status.phase.isTerminal) return@synchronized null
         block()
     }
 
@@ -155,12 +168,16 @@ class QueuedUpdateStatusStore(context: Context) {
     }
 
     fun markInstalled(payload: QueuedUpdatePayload, message: String = "Background update installed.") {
-        save(
-            payload,
-            phase = QueuedUpdatePhase.Installed,
-            attempt = get(payload)?.attempt ?: 1,
-            message = message,
-        )
+        synchronized(LOCK) {
+            val current = currentStatusLocked(payload) ?: return@synchronized
+            if (!isCurrentLocked(payload) || current.phase.isTerminal) return@synchronized
+            save(
+                payload,
+                phase = QueuedUpdatePhase.Installed,
+                attempt = current.attempt,
+                message = message,
+            )
+        }
     }
 
     fun markAuditPending(
@@ -181,6 +198,7 @@ class QueuedUpdateStatusStore(context: Context) {
         payload: QueuedUpdatePayload,
         attempt: Int,
         packageInstallerSessionId: Int,
+        metadata: ApkMetadata? = null,
     ): Boolean {
         val current = get(payload) ?: return false
         return save(
@@ -191,6 +209,12 @@ class QueuedUpdateStatusStore(context: Context) {
             retryAtEpochMillis = current.retryAtEpochMillis,
             failureKind = current.failureKind,
             packageInstallerSessionId = packageInstallerSessionId,
+            targetApplicationId = metadata?.applicationId,
+            targetVersionCode = metadata?.versionCode,
+            targetVersionName = metadata?.versionName,
+            targetSignerSha256 = metadata?.signingSha256,
+            targetLineageSha256 = metadata?.lineageSha256,
+            targetVerifiedSignatureSchemes = metadata?.verifiedSignatureSchemes,
         )
     }
 
@@ -227,9 +251,16 @@ class QueuedUpdateStatusStore(context: Context) {
         retryAtEpochMillis: Long? = null,
         failureKind: QueuedUpdateFailureKind? = null,
         packageInstallerSessionId: Int? = null,
+        targetApplicationId: String? = null,
+        targetVersionCode: Long? = null,
+        targetVersionName: String? = null,
+        targetSignerSha256: String? = null,
+        targetLineageSha256: List<String>? = null,
+        targetVerifiedSignatureSchemes: Set<ApkSignatureScheme>? = null,
         allowGenerationReplacement: Boolean = false,
     ): Boolean = synchronized(LOCK) {
         if (!allowGenerationReplacement && !isCurrentLocked(payload)) return@synchronized false
+        val previous = currentStatusLocked(payload).takeUnless { allowGenerationReplacement }
         val status = QueuedUpdateStatus(
             workName = payload.workName,
             sourceKey = payload.sourceKey,
@@ -245,6 +276,13 @@ class QueuedUpdateStatusStore(context: Context) {
             failureKind = failureKind,
             packageInstallerSessionId = packageInstallerSessionId,
             generationId = payload.generationId,
+            targetApplicationId = targetApplicationId ?: previous?.targetApplicationId,
+            targetVersionCode = targetVersionCode ?: previous?.targetVersionCode,
+            targetVersionName = targetVersionName ?: previous?.targetVersionName,
+            targetSignerSha256 = targetSignerSha256 ?: previous?.targetSignerSha256,
+            targetLineageSha256 = targetLineageSha256 ?: previous?.targetLineageSha256.orEmpty(),
+            targetVerifiedSignatureSchemes = targetVerifiedSignatureSchemes
+                ?: previous?.targetVerifiedSignatureSchemes.orEmpty(),
         )
         check(prefs.edit().putString(key(payload.workName), json.encodeToString(status)).commit()) {
             "Could not persist queued update status"
@@ -281,3 +319,8 @@ class QueuedUpdateStatusStore(context: Context) {
         private val LOCK = Any()
     }
 }
+
+private val QueuedUpdatePhase.isTerminal: Boolean
+    get() = this == QueuedUpdatePhase.Installed ||
+        this == QueuedUpdatePhase.Failed ||
+        this == QueuedUpdatePhase.Cancelled
