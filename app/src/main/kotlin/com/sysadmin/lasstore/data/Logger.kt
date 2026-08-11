@@ -9,9 +9,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicReference
 
 enum class LogLevel { Info, Warn, Error }
@@ -24,8 +26,11 @@ data class LogEntry(
     val message: String,
 )
 
-class Logger(private val context: Context) {
-    private val logDir = File(context.filesDir, "logs").apply { mkdirs() }
+class Logger(
+    private val context: Context,
+    logDirectory: File? = null,
+) {
+    private val logDir = (logDirectory ?: File(context.filesDir, "logs")).apply { mkdirs() }
     private val diagnosticsFile = File(logDir, "diagnostics.log")
     private val rotatedDiagnosticsFile = File(logDir, "diagnostics.log.1")
     private val crashFile = File(logDir, "crash.log")
@@ -117,11 +122,12 @@ class Logger(private val context: Context) {
                 if (!file.isFile) {
                     emptyList()
                 } else {
-                    val text = file.readText()
+                    val bounded = readTail(file, MAX_LEGACY_READ_BYTES)
+                    val text = bounded.text
                     val decoded = text.lineSequence().mapNotNull { line ->
                         runCatching { json.decodeFromString<LogEntry>(line) }.getOrNull()
                     }.toList()
-                    if (decoded.isNotEmpty() || text.isBlank()) {
+                    if (decoded.isNotEmpty() || (text.isBlank() && !bounded.truncated)) {
                         decoded
                     } else {
                         listOf(
@@ -133,7 +139,7 @@ class Logger(private val context: Context) {
                                     LogLevel.Info
                                 },
                                 tag = "Legacy ${file.name}",
-                                message = SupportRedactor.redact(text),
+                                message = legacyMessage(bounded),
                             ),
                         )
                     }
@@ -141,7 +147,58 @@ class Logger(private val context: Context) {
             }.getOrDefault(emptyList())
         }.takeLast(MAX_ENTRIES)
 
+    private fun legacyMessage(bounded: BoundedTail): String {
+        val marker = if (bounded.truncated || bounded.text.length > MAX_LEGACY_MESSAGE_CHARS) {
+            "[TRUNCATED: only the last $MAX_LEGACY_READ_BYTES bytes were retained]"
+        } else {
+            ""
+        }
+        val available = (MAX_LEGACY_MESSAGE_CHARS - marker.length - 1).coerceAtLeast(0)
+        val tail = bounded.text.takeLast(available)
+        val combined = if (marker.isBlank()) tail else "$marker\n$tail"
+        return SupportRedactor.redact(combined, maxChars = MAX_LEGACY_MESSAGE_CHARS)
+    }
+
+    private fun readTail(file: File, maxBytes: Int): BoundedTail {
+        val truncated = file.length() > maxBytes
+        val skip = (file.length() - maxBytes).coerceAtLeast(0L)
+        val bytes = file.inputStream().buffered().use { input ->
+            var remaining = skip
+            while (remaining > 0L) {
+                val skipped = input.skip(remaining)
+                if (skipped > 0L) {
+                    remaining -= skipped
+                } else if (input.read() < 0) {
+                    break
+                } else {
+                    remaining -= 1L
+                }
+            }
+            val output = ByteArrayOutputStream(maxBytes)
+            val buffer = ByteArray(8 * 1024)
+            var total = 0
+            while (total < maxBytes) {
+                val count = input.read(buffer, 0, minOf(buffer.size, maxBytes - total))
+                if (count <= 0) break
+                output.write(buffer, 0, count)
+                total += count
+            }
+            output.toByteArray()
+        }
+        return BoundedTail(
+            text = String(bytes, StandardCharsets.UTF_8),
+            truncated = truncated,
+        )
+    }
+
+    private data class BoundedTail(
+        val text: String,
+        val truncated: Boolean,
+    )
+
     companion object {
+        internal const val MAX_LEGACY_READ_BYTES = 128 * 1024
+        internal const val MAX_LEGACY_MESSAGE_CHARS = 32 * 1024
         private const val MAX_ENTRIES = 500
         private const val MAX_BYTES = 256L * 1024L
     }
