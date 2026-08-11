@@ -67,6 +67,10 @@
     <string name="apk_variant_device_match">matches this device</string>
     <string name="apk_variant_universal">universal</string>
     <string name="apk_variant_any">any</string>
+    <string name="split_selection_title">Choose APK splits</string>
+    <string name="split_selection_body">The archive contains split APKs. Keep the base APK and select only the ABI, density, language, and feature splits needed by this device.</string>
+    <string name="split_selection_base">%1$s · base APK</string>
+    <string name="split_selection_install">Install selected splits</string>
     <string name="no_release_description">No release description provided.</string>
     <string name="release_history">Release history</string>
     <string name="release_history_title">Release history</string>

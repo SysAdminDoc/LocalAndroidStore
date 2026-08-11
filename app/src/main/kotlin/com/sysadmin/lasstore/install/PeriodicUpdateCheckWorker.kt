@@ -6,11 +6,13 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.sysadmin.lasstore.data.AppIdEntry
 import com.sysadmin.lasstore.data.InstallProvenance
+import com.sysadmin.lasstore.data.InstallArtifactKind
 import com.sysadmin.lasstore.data.InstalledInfo
 import com.sysadmin.lasstore.data.ReleaseAssetIdentity
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.UpdateCadenceMode
 import com.sysadmin.lasstore.data.normalizeSha256Digest
+import com.sysadmin.lasstore.data.installArtifactKind
 import com.sysadmin.lasstore.domain.AppInfo
 import com.sysadmin.lasstore.domain.CatalogFailureKind
 import com.sysadmin.lasstore.domain.DiscoveryUseCase
@@ -154,7 +156,12 @@ internal fun shouldQueuePeriodicUpdate(
     if (info.applicationId != null && !info.applicationId.equals(cached.applicationId, ignoreCase = true)) {
         return false
     }
-    if (ignored || info.isStale || info.assetChoices.size > 1) return false
+    if (
+        ignored ||
+            info.isStale ||
+            info.assetChoices.size > 1 ||
+            installArtifactKind(info.asset.name) != InstallArtifactKind.APK
+    ) return false
     if (normalizeSha256Digest(info.asset.digest) == null) return false
     if (
         pinnedSignerSha256 != null &&

@@ -7,11 +7,13 @@ import android.content.pm.PackageInstaller
 import com.sysadmin.lasstore.data.ApkInspectionResult
 import com.sysadmin.lasstore.data.GitHubFailureKind
 import com.sysadmin.lasstore.data.GitHubRequestException
+import com.sysadmin.lasstore.data.InstallArtifactKind
 import com.sysadmin.lasstore.data.InstallProvenance
 import com.sysadmin.lasstore.data.InvalidReleaseAssetDigestException
 import com.sysadmin.lasstore.data.ReleaseAssetDigestMismatchException
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.normalizeSha256Digest
+import com.sysadmin.lasstore.data.installArtifactKind
 import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.IOException
@@ -107,6 +109,11 @@ object QueuedUpdateRunner {
         ServiceLocator.init(context.applicationContext)
         val sl = ServiceLocator
         val info = payload.toAppInfo()
+        if (installArtifactKind(info.asset.name) != InstallArtifactKind.APK) {
+            val message = "APK-set updates require foreground split selection."
+            sl.logger.warn("QueuedUpdate", message)
+            return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.Policy)
+        }
         if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
         if (normalizeSha256Digest(payload.assetDigest) == null) {
             val message = "Queued update blocked; GitHub did not publish a valid SHA-256 digest " +

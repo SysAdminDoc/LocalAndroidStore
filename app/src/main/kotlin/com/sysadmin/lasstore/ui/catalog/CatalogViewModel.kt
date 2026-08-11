@@ -7,7 +7,6 @@ import android.provider.MediaStore
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sysadmin.lasstore.data.AppIdEntry
-import com.sysadmin.lasstore.data.ApkInspectionResult
 import com.sysadmin.lasstore.data.ApkMetadata
 import com.sysadmin.lasstore.data.AccentColor
 import com.sysadmin.lasstore.data.AppSettings
@@ -19,9 +18,11 @@ import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.GhRelease
 import com.sysadmin.lasstore.data.InstallProvenance
 import com.sysadmin.lasstore.data.InstalledInfo
+import com.sysadmin.lasstore.data.InstallArtifactKind
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.SourceBranding
 import com.sysadmin.lasstore.data.UpdateCadence
+import com.sysadmin.lasstore.data.installArtifactKind
 import com.sysadmin.lasstore.data.signerMatchesArtifactOrLineage
 import com.sysadmin.lasstore.data.signerMatchesPin
 import com.sysadmin.lasstore.domain.AppInfo
@@ -40,9 +41,12 @@ import com.sysadmin.lasstore.domain.classifyReleaseVersion
 import com.sysadmin.lasstore.domain.sourceVerificationStatus
 import com.sysadmin.lasstore.install.InstallResult
 import com.sysadmin.lasstore.install.BatchUninstallEntry
+import com.sysadmin.lasstore.install.BundleArtifactPreparer
 import com.sysadmin.lasstore.install.ForegroundInstallFinalizer
 import com.sysadmin.lasstore.install.ForegroundInstallPhase
 import com.sysadmin.lasstore.install.ExternalLaunchResult
+import com.sysadmin.lasstore.install.InstallArtifactException
+import com.sysadmin.lasstore.install.PreparedInstallArtifact
 import com.sysadmin.lasstore.install.ArtifactVerificationRejection
 import com.sysadmin.lasstore.install.ArtifactVerificationResult
 import com.sysadmin.lasstore.install.verifyInstallArtifact
@@ -53,6 +57,7 @@ import com.sysadmin.lasstore.install.QueuedUpdatePayload
 import com.sysadmin.lasstore.install.QueuedUpdatePhase
 import com.sysadmin.lasstore.install.safeLaunchExternalIntent
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -103,6 +108,21 @@ data class CardState(
     val transparencyReport: ApkTransparencyReport? = null,
     val transparencyBusy: Boolean = false,
     val transparencyError: String? = null,
+    val splitSelection: SplitSelectionState? = null,
+)
+
+data class SplitSelectionEntryState(
+    val id: String,
+    val displayName: String,
+    val splitName: String?,
+    val sizeBytes: Long,
+    val selected: Boolean,
+    val base: Boolean,
+)
+
+data class SplitSelectionState(
+    val baseId: String,
+    val entries: List<SplitSelectionEntryState>,
 )
 
 data class UnmanagedInstallDetails(
@@ -203,6 +223,7 @@ internal fun preserveActivityResumeContext(previous: CardState, rebuilt: CardSta
         transparencyReport = previous.transparencyReport,
         transparencyBusy = previous.transparencyBusy,
         transparencyError = previous.transparencyError,
+        splitSelection = previous.splitSelection,
     )
 
 internal fun reserveUniqueDownloadFile(directory: File, filename: String): File {
@@ -224,6 +245,9 @@ internal fun reserveUniqueDownloadFile(directory: File, filename: String): File 
 class CatalogViewModel : ViewModel() {
     private val sl = ServiceLocator
     private val transparencyInspector by lazy { ApkTransparencyInspector(sl.appContext) }
+    private val artifactPreparer by lazy {
+        BundleArtifactPreparer(sl.appContext, sl.apkInspector)
+    }
     private val discovery = DiscoveryUseCase(
         github = sl.github,
         logger = sl.logger,
@@ -253,6 +277,7 @@ class CatalogViewModel : ViewModel() {
     @Volatile private var batchQueueJob: Job? = null
     /** Publisher-pin recovery performs secret, audit, and cache I/O off the Compose path. */
     private val publisherPinJobs = ConcurrentHashMap<String, Job>()
+    private val splitSelectionWaiters = ConcurrentHashMap<String, CompletableDeferred<Set<String>?>>()
     @Volatile private var refreshJob: Job? = null
     @Volatile private var resumeReconcileJob: Job? = null
     @Volatile private var refreshGeneration = 0L
@@ -332,7 +357,9 @@ class CatalogViewModel : ViewModel() {
                 ForegroundInstallPhase.PermissionReview -> {
                     val apk = sl.foregroundInstalls.apkFile(operation)
                     val metadata = operation.metadata
-                    if (apk != null && apk.isFile && metadata != null) {
+                    if (apk != null && apk.exists() && metadata != null &&
+                        (apk.isFile || apk.listFiles()?.any { it.extension.equals("apk", true) } == true)
+                    ) {
                         pendingInstalls[operation.key] = PendingInstallData(
                             apkFile = apk,
                             meta = metadata,
@@ -639,6 +666,12 @@ class CatalogViewModel : ViewModel() {
         }
         if (card.info.assetChoices.size > 1) {
             _state.update { it.copy(warning = "Choose an APK variant before adding it to the batch.") }
+            return
+        }
+        if (installArtifactKind(card.info.asset.name) != InstallArtifactKind.APK) {
+            _state.update {
+                it.copy(warning = "APK-set updates require foreground split selection.")
+            }
             return
         }
         if (card.status != CardStatus.UpdateAvailable) {
@@ -1093,6 +1126,64 @@ class CatalogViewModel : ViewModel() {
         )
     }
 
+    fun confirmSplitSelection(card: CardState, selectedIds: Set<String>) {
+        val selection = card.splitSelection ?: return
+        if (selection.baseId !in selectedIds || selectedIds.isEmpty()) {
+            _state.update { it.copy(warning = "The base APK must remain selected.") }
+            return
+        }
+        splitSelectionWaiters[cardKey(card.info)]?.complete(selectedIds)
+    }
+
+    fun cancelSplitSelection(card: CardState) {
+        splitSelectionWaiters[cardKey(card.info)]?.complete(null)
+    }
+
+    private suspend fun awaitSplitSelection(
+        card: CardState,
+        operationId: String,
+        artifact: PreparedInstallArtifact,
+    ): PreparedInstallArtifact? {
+        if (!artifact.isSplitInstall) return artifact
+        val key = cardKey(card.info)
+        val baseId = artifact.entries.first { it.file == artifact.baseFile }.id
+        val deferred = CompletableDeferred<Set<String>?>()
+        splitSelectionWaiters[key] = deferred
+        updateCardForAction(card.info, operationId) {
+            it.copy(
+                status = CardStatus.Working,
+                progress = 1f,
+                message = "Choose the APK splits for this device.",
+                splitSelection = SplitSelectionState(
+                    baseId = baseId,
+                    entries = artifact.entries.map { entry ->
+                        SplitSelectionEntryState(
+                            id = entry.id,
+                            displayName = entry.displayName,
+                            splitName = entry.splitName,
+                            sizeBytes = entry.size,
+                            selected = entry.selectedByDefault,
+                            base = entry.file == artifact.baseFile,
+                        )
+                    },
+                ),
+            )
+        }
+        val selected = try {
+            deferred.await()
+        } finally {
+            splitSelectionWaiters.remove(key, deferred)
+            updateCardForAction(card.info, operationId) {
+                it.copy(splitSelection = null)
+            }
+        }
+        if (selected == null) {
+            artifact.cleanup()
+            return null
+        }
+        return artifact.retain(selected)
+    }
+
     fun install(card: CardState, allowUnmanagedReplacement: Boolean = false) {
         if (card.status == CardStatus.Unmanaged && !allowUnmanagedReplacement) {
             _state.update {
@@ -1136,8 +1227,13 @@ class CatalogViewModel : ViewModel() {
         cancelPersistedForegroundOperation(key)
         val operationId = newActionId()
         val cacheDir = File(sl.appContext.cacheDir, "apks").apply { mkdirs() }
+        val assetExtension = card.info.asset.name
+            .substringAfterLast('.', missingDelimiterValue = "apk")
+            .lowercase(Locale.US)
+            .takeIf { it.matches(Regex("[a-z0-9]{1,8}")) }
+            ?: "apk"
         val safeName = "${card.info.sourceKey}_${card.info.owner}_${card.info.repo}_" +
-            "${card.info.tagName}_$operationId.apk"
+            "${card.info.tagName}_$operationId.$assetExtension"
         val target = File(
             cacheDir,
             safeName.replace(Regex("[^a-zA-Z0-9._-]"), "_"),
@@ -1228,29 +1324,43 @@ class CatalogViewModel : ViewModel() {
                 }
                 if (!sl.foregroundInstalls.isCurrent(key, operationId)) return@launch
 
-                val meta = when (val inspection = sl.apkInspector.inspectResult(target)) {
-                    is ApkInspectionResult.Verified -> inspection.metadata
-                    is ApkInspectionResult.Rejected -> {
-                        preapprovalSessionId?.let { sl.installer.abandonSession(it) }
-                        sl.foregroundInstalls.removeIfCurrent(key, operationId)
-                        sl.logger.error(
-                            "Install",
-                            "Rejected ${card.info.owner}/${card.info.repo} APK: " +
-                                "${inspection.reason.name} (${inspection.diagnostics})",
-                        )
-                        updateCardForAction(card.info, operationId) {
-                            it.copy(
-                                status = if (inspection.reason.isSignatureFailure) {
-                                    CardStatus.SignatureMismatch
-                                } else {
-                                    CardStatus.Error
-                                },
-                                message = inspection.reason.userMessage,
-                            )
-                        }
-                        return@launch
+                val prepared = try {
+                    artifactPreparer.prepare(
+                        source = target,
+                        stagingRoot = File(target.parentFile, "${target.name}.splits"),
+                        expectedApplicationId = cached?.applicationId,
+                    )
+                } catch (throwable: InstallArtifactException) {
+                    preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                    sl.foregroundInstalls.removeIfCurrent(key, operationId)
+                    sl.logger.error(
+                        "Install",
+                        "Rejected ${card.info.owner}/${card.info.repo} artifact: ${throwable.message}",
+                    )
+                    updateCardForAction(card.info, operationId) {
+                        it.copy(status = CardStatus.Error, message = throwable.message)
+                    }
+                    return@launch
+                }
+                val selectedArtifact = awaitSplitSelection(card, operationId, prepared)
+                if (selectedArtifact == null) {
+                    preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                    sl.foregroundInstalls.removeIfCurrent(key, operationId)
+                    updateCardForAction(card.info, operationId) {
+                        it.copy(status = CardStatus.UpdateAvailable, message = "APK-set install cancelled.")
+                    }
+                    return@launch
+                }
+                val targetArtifact = selectedArtifact.installRoot
+                if (targetArtifact != target) {
+                    checkNotNull(
+                        sl.foregroundInstalls.setArtifactPath(key, operationId, targetArtifact),
+                    ) { "Could not persist extracted APK-set ownership" }
+                    if (target.isFile && !target.delete()) {
+                        throw IOException("Could not remove the downloaded APK-set archive")
                     }
                 }
+                val meta = selectedArtifact.metadata
 
                 val expectedInstalled = cached?.applicationId
                     ?.let { sl.installState.info(it) }
@@ -1409,7 +1519,7 @@ class CatalogViewModel : ViewModel() {
                     val newDangerousPerms = computeNewDangerousPermissions(meta)
                     if (newDangerousPerms.isNotEmpty()) {
                         pendingInstalls[key] = PendingInstallData(
-                            apkFile = target,
+                            apkFile = targetArtifact,
                             meta = meta,
                             pinned = pinned,
                             installedAlready = installedAlready,
@@ -1441,7 +1551,7 @@ class CatalogViewModel : ViewModel() {
 
                 performInstall(
                     card = card,
-                    target = target,
+                    target = targetArtifact,
                     meta = meta,
                     pinned = pinned,
                     installedAlready = installedAlready,
@@ -1777,6 +1887,12 @@ class CatalogViewModel : ViewModel() {
         }
         if (card.info.assetChoices.size > 1) {
             _state.update { it.copy(warning = "Choose an APK variant before queueing an update.") }
+            return
+        }
+        if (installArtifactKind(card.info.asset.name) != InstallArtifactKind.APK) {
+            _state.update {
+                it.copy(warning = "APK-set updates require foreground split selection.")
+            }
             return
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsGranted) {

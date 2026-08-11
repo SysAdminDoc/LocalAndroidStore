@@ -94,6 +94,15 @@ class ForegroundInstallStore(private val context: Context) {
     fun isCurrent(key: String, operationId: String): Boolean =
         get(key)?.operationId == operationId
 
+    /** Move durable ownership from a downloaded archive to its extracted APK-set directory. */
+    fun setArtifactPath(
+        key: String,
+        operationId: String,
+        artifact: File,
+    ): ForegroundInstallOperation? = transform(key, operationId) {
+        it.copy(apkPath = artifact.absolutePath)
+    }
+
     fun markPreapproving(
         key: String,
         operationId: String,
@@ -306,7 +315,13 @@ class ForegroundInstallStore(private val context: Context) {
                 }
                 val isActive = runCatching { File(finalPath).canonicalPath in activePaths }
                     .getOrDefault(false)
-                !isActive && file.delete()
+                if (isActive) {
+                    false
+                } else if (file.isDirectory) {
+                    file.deleteRecursively()
+                } else {
+                    file.delete()
+                }
             }
     }
 
@@ -329,7 +344,9 @@ class ForegroundInstallStore(private val context: Context) {
     }
 
     private fun deleteFiles(operation: ForegroundInstallOperation) {
-        apkFile(operation)?.delete()
+        apkFile(operation)?.let { file ->
+            if (file.isDirectory) file.deleteRecursively() else file.delete()
+        }
         partialFile(operation)?.delete()
     }
 

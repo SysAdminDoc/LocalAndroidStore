@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- Added bounded `.apks`, `.xapk`, `.apkm`, and `.apkset` installation. Each extracted split is
+  independently verified for package, version, and publisher continuity, and a foreground checklist
+  streams the selected set atomically through PackageInstaller.
 - Added an APKMirror-style standalone-variant matrix with ABI, density, minimum SDK, digest prefix,
   and size columns; the device-compatible row is identified before download.
 - Added long-press multi-select actions for install, staged update, and uninstall batches. Android

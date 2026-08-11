@@ -13,8 +13,11 @@ import com.sysadmin.lasstore.data.GitHubGateway
 import com.sysadmin.lasstore.data.GitHubRepoListResult
 import com.sysadmin.lasstore.data.GitHubRequestException
 import com.sysadmin.lasstore.data.GitHubSource
+import com.sysadmin.lasstore.data.InstallArtifactKind
 import com.sysadmin.lasstore.data.Logger
 import com.sysadmin.lasstore.data.NetworkUnavailableException
+import com.sysadmin.lasstore.data.installArtifactKind
+import com.sysadmin.lasstore.data.isInstallableArtifactName
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -540,19 +543,18 @@ class DiscoveryUseCase(
     }
 }
 
-/**
- * Conservative single-APK selection until the variant/bundle UI ships.
- *
- * Explicit universal/noarch artifacts win. A lone unlabeled APK remains compatible with the
- * existing GitHub-release convention. For ABI-only releases, the device ABI order is honored;
- * an incompatible variant or a split-config set is never handed to PackageInstaller as if it
- * were a standalone APK.
- */
+/** Selects one standalone APK or one archive; archive contents are verified after download. */
 internal object ApkAssetClassifier {
     fun classify(
         assets: List<GhAsset>,
         supportedAbis: List<String>,
     ): ApkAssetSelection {
+        val archiveAssets = assets.filter { asset ->
+            isInstallableArtifactName(asset.name) &&
+                installArtifactKind(asset.name) != InstallArtifactKind.APK
+        }
+        if (archiveAssets.isNotEmpty()) return archiveAssets.toSelection()
+
         val apkAssets = assets.filter { asset ->
             val name = asset.name.lowercase(Locale.US)
             name.endsWith(".apk") &&
@@ -590,6 +592,8 @@ internal object ApkAssetClassifier {
     ): GhAsset? = (classify(assets, supportedAbis) as? ApkAssetSelection.Selected)?.asset
 
     internal fun variantLabel(name: String): String = when {
+        installArtifactKind(name) == InstallArtifactKind.ZIP_APK_SET -> "APK set"
+        installArtifactKind(name) == InstallArtifactKind.AAB -> "Android App Bundle"
         isUniversal(name) -> "Universal"
         abiForName(name) != null -> abiForName(name)!!
         else -> "Unlabeled standalone APK"

@@ -566,16 +566,18 @@ class DiscoveryUseCaseTest {
                 supportedAbis = listOf("arm64-v8a"),
             ),
         )
-        assertEquals(
-            null,
-            ApkAssetClassifier.select(
-                assets = listOf(
-                    asset("app.apk.idsig", size = 10),
-                    asset("app.aab", size = 100),
-                    asset("app.apkm", size = 100),
-                ),
-                supportedAbis = listOf("arm64-v8a"),
+        val archiveSelection = ApkAssetClassifier.classify(
+            assets = listOf(
+                asset("app.apk.idsig", size = 10),
+                asset("app.aab", size = 100),
+                asset("app.apkm", size = 100),
             ),
+            supportedAbis = listOf("arm64-v8a"),
+        )
+        assertTrue(archiveSelection is ApkAssetSelection.SelectionRequired)
+        assertEquals(
+            listOf("app.aab", "app.apkm"),
+            (archiveSelection as ApkAssetSelection.SelectionRequired).candidates.map { it.name },
         )
     }
 

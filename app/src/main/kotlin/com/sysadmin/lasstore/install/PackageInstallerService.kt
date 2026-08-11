@@ -663,12 +663,7 @@ class PackageInstallerService(
         val pending: PendingIntent = PendingIntent.getBroadcast(context, sessionId, statusIntent, flags)
         val sender: IntentSender = pending.intentSender
         openSession(installer, sessionId).use { session ->
-            apk.inputStream().use { input ->
-                session.openWrite("base.apk", 0, apk.length()).use { out ->
-                    input.copyTo(out)
-                    session.fsync(out)
-                }
-            }
+            writeArtifact(session, apk)
             session.commit(sender)
         }
     }
@@ -682,12 +677,7 @@ class PackageInstallerService(
     ) {
         val pi = installer.packageInstaller
         openSession(installer, sessionId).use { session ->
-            apk.inputStream().use { input ->
-                session.openWrite("base.apk", 0, apk.length()).use { out ->
-                    input.copyTo(out)
-                    session.fsync(out)
-                }
-            }
+            writeArtifact(session, apk)
         }
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         val pending = PendingIntent.getBroadcast(context, sessionId, statusIntent, flags)
@@ -702,6 +692,35 @@ class PackageInstallerService(
             constraints,
             CONSTRAINT_TIMEOUT_MILLIS,
         )
+    }
+
+    /** Stream a monolithic APK or every selected split from a private staging directory. */
+    private fun writeArtifact(
+        session: PackageInstaller.Session,
+        artifact: File,
+    ) {
+        val files = if (artifact.isDirectory) {
+            artifact.listFiles()
+                .orEmpty()
+                .filter { file -> file.isFile && file.name.endsWith(".apk", ignoreCase = true) }
+                .sortedWith(
+                    compareBy<File> { file ->
+                        if (file.name.equals("base.apk", ignoreCase = true)) 0 else 1
+                    }.thenBy { file -> file.name },
+                )
+        } else {
+            listOf(artifact)
+        }
+        if (files.isEmpty()) throw java.io.IOException("No APKs were prepared for installation.")
+        files.forEach { file ->
+            file.inputStream().use { input ->
+                val sessionName = if (files.size == 1) "base.apk" else file.name
+                session.openWrite(sessionName, 0, file.length()).use { out ->
+                    input.copyTo(out)
+                    session.fsync(out)
+                }
+            }
+        }
     }
 
     private companion object {

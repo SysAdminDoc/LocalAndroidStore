@@ -119,6 +119,7 @@ fun CatalogExperience(
     val sourceCount = remember(state.cards) {
         state.cards.map { it.info.sourceKey }.distinct().size
     }
+    val splitSelectionCard = state.cards.firstOrNull { it.splitSelection != null }
 
     Column(
         modifier = Modifier
@@ -126,6 +127,15 @@ fun CatalogExperience(
             .background(Catppuccin.Crust),
     ) {
         CatalogAccessibilityLiveRegion(state)
+        splitSelectionCard?.splitSelection?.let { selection ->
+            SplitSelectionDialog(
+                state = selection,
+                onConfirm = { selectedIds ->
+                    viewModel.confirmSplitSelection(splitSelectionCard, selectedIds)
+                },
+                onCancel = { viewModel.cancelSplitSelection(splitSelectionCard) },
+            )
+        }
         CatalogHero(
             refreshing = state.refreshing,
             onRefresh = {
