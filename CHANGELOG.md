@@ -30,6 +30,7 @@
 - Removed the unused legacy catalog screen and app-card implementations so routing, previews, accessibility coverage, and production behavior share one catalog surface.
 - Added explicit provenance adoption for apps installed outside LocalAndroidStore: verified observations are labeled unmanaged, signer and source evidence are shown, adoption enrolls a signer pin and audit record, and queued updates remain blocked until confirmation.
 - Added bounded GitHub repository pagination with typed truncation evidence; sources now report fetched/omitted repositories and a continuation page, while truncated refreshes avoid stale snapshot backfill and recommend narrowing with a topic filter.
+- Added bounded, paged historical release browsing with explicit foreground selection; selected older releases retain available version/digest/signer evidence, use the normal inspection/trust/downgrade gates, are audit-recorded, and cannot enter the background queue.
 
 ### Fixed
 - Restored GitHub API and release-download connectivity by removing the stale static root-CA pinset and relying on Android's maintained system trust store. Cleartext traffic remains disabled, and a regression test prevents static pins from returning.

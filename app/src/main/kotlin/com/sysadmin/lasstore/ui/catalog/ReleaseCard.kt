@@ -16,7 +16,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
@@ -73,6 +76,8 @@ import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.domain.ApkAssetClassifier
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import java.time.Instant
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun ReleaseCard(
@@ -93,6 +98,9 @@ fun ReleaseCard(
     onSelectAsset: (GhAsset) -> Unit,
     onAdopt: () -> Unit = {},
     onManualInstall: () -> Unit = {},
+    onBrowseHistory: () -> Unit = {},
+    onLoadMoreHistory: () -> Unit = {},
+    onSelectHistoricalRelease: (HistoricalRelease) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isStale = remember(state.info.publishedAt) {
@@ -116,6 +124,7 @@ fun ReleaseCard(
         state.info.handle,
         state.unmanagedInstall?.installedSignerSha256,
     ) { mutableStateOf(false) }
+    var historyVisible by rememberSaveable(state.info.handle) { mutableStateOf(false) }
     val cardShape = RoundedCornerShape(24.dp)
 
     if (assetSelectionVisible) {
@@ -221,6 +230,148 @@ fun ReleaseCard(
         }
     }
 
+    if (historyVisible) {
+        val history = state.releaseHistory
+        AlertDialog(
+            onDismissRequest = { historyVisible = false },
+            title = { Text(stringResource(R.string.release_history_title)) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 520.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.release_history_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Subtext,
+                    )
+                    if (history == null || (history.loading && history.releases.isEmpty())) {
+                        Text(stringResource(R.string.release_history_loading))
+                    }
+                    history?.error?.let { error ->
+                        Text(
+                            text = stringResource(R.string.release_history_error, error),
+                            color = Catppuccin.Red,
+                        )
+                        if (history.loading.not()) {
+                            OutlinedButton(
+                                onClick = onBrowseHistory,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(stringResource(R.string.release_history_retry))
+                            }
+                        }
+                    }
+                    if (history != null && history.releases.isEmpty() && !history.loading) {
+                        Text(stringResource(R.string.release_history_empty), color = Catppuccin.Subtext)
+                    }
+                    history?.releases?.forEach { historical ->
+                        val info = historical.info
+                        val prereleaseLabel = if (historical.release.prerelease) {
+                            stringResource(R.string.release_history_prerelease)
+                        } else {
+                            null
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                if (info != null) {
+                                    historyVisible = false
+                                    onSelectHistoricalRelease(historical)
+                                }
+                            },
+                            enabled = info != null,
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    text = historical.release.name
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?: historical.release.tagName,
+                                    color = Catppuccin.TextStrong,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = listOfNotNull(
+                                        historical.release.tagName,
+                                        formatHistoricalDate(historical.release.publishedAt),
+                                        prereleaseLabel,
+                                    ).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Catppuccin.Subtext,
+                                )
+                                if (info == null) {
+                                    Text(
+                                        text = stringResource(R.string.release_history_no_apk),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Catppuccin.Peach,
+                                    )
+                                } else {
+                                    val digest = normalizeSha256Digest(info.asset.digest)
+                                        ?: stringResource(R.string.unknown)
+                                    Text(
+                                        text = stringResource(
+                                            R.string.release_history_asset,
+                                            info.asset.name,
+                                            formatAssetSize(info.asset.size),
+                                            digest.take(16),
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Catppuccin.Subtext,
+                                    )
+                                    val inspectedVersion = historical.inspectedVersionCode
+                                    if (inspectedVersion != null) {
+                                        Text(
+                                            text = stringResource(
+                                                R.string.release_history_inspected,
+                                                historical.inspectedVersionName
+                                                    ?: stringResource(R.string.unknown),
+                                                inspectedVersion,
+                                                historical.inspectedSignerSha256
+                                                    ?: stringResource(R.string.unknown),
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Catppuccin.Mint,
+                                        )
+                                    } else {
+                                        Text(
+                                            text = stringResource(R.string.release_history_inspect_on_select),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Catppuccin.Sapphire,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (history?.loading == true && history.releases.isNotEmpty()) {
+                        Text(stringResource(R.string.release_history_loading), color = Catppuccin.Subtext)
+                    }
+                    if (history?.nextPage != null && history.error == null) {
+                        OutlinedButton(
+                            onClick = onLoadMoreHistory,
+                            enabled = history.loading.not(),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.release_history_load_more))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { historyVisible = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = cardShape,
@@ -293,6 +444,10 @@ fun ReleaseCard(
                         onSaveApk = onSaveApk,
                         onUninstall = onUninstall,
                         onManualInstall = onManualInstall,
+                        onBrowseHistory = {
+                            historyVisible = true
+                            onBrowseHistory()
+                        },
                     )
                 }
 
@@ -312,6 +467,14 @@ fun ReleaseCard(
                             accent = Catppuccin.Peach,
                         )
                     }
+                }
+
+                if (state.historicalSelection) {
+                    Text(
+                        text = stringResource(R.string.historical_release_selected),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Catppuccin.Peach,
+                    )
                 }
 
                 Text(
@@ -780,6 +943,14 @@ private fun formatAssetSize(bytes: Long): String = when {
     else -> stringResource(R.string.asset_size_bytes, bytes)
 }
 
+private fun formatHistoricalDate(value: String?): String {
+    if (value.isNullOrBlank()) return "—"
+    return runCatching {
+        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+            .format(Date.from(Instant.parse(value)))
+    }.getOrElse { value }
+}
+
 @Composable
 private fun AccentButton(
     text: String,
@@ -818,6 +989,7 @@ private fun ReleaseOverflowMenu(
     onSaveApk: () -> Unit,
     onUninstall: () -> Unit,
     onManualInstall: () -> Unit,
+    onBrowseHistory: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -848,7 +1020,8 @@ private fun ReleaseOverflowMenu(
                     },
                 )
             }
-            if (state.status == CardStatus.UpdateAvailable &&
+            if (!state.historicalSelection &&
+                state.status == CardStatus.UpdateAvailable &&
                 state.queuedUpdateStatus?.isPending != true
             ) {
                 ReleaseMenuItem(
@@ -922,6 +1095,14 @@ private fun ReleaseOverflowMenu(
                     },
                 )
             }
+            ReleaseMenuItem(
+                text = stringResource(R.string.release_history),
+                icon = Icons.Default.Schedule,
+                onClick = {
+                    expanded = false
+                    onBrowseHistory()
+                },
+            )
             ReleaseMenuItem(
                 text = stringResource(R.string.open_repository),
                 icon = Icons.Default.Code,

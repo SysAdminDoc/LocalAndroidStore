@@ -41,6 +41,7 @@ class InstallAuditLog(context: Context) {
         val certSha256: String = "",
         val previousCertSha256: String = "",
         val installedCertSha256: String = "",
+        val assetDigest: String = "",
         val verifiedLineageSha256: List<String> = emptyList(),
         val verifiedSignatureSchemes: List<String> = emptyList(),
         val reason: String = "",
@@ -81,6 +82,18 @@ class InstallAuditLog(context: Context) {
             versionCode = meta.versionCode, certSha256 = meta.signingSha256,
             reason = reason,
         ))
+
+    fun historicalReleaseSelected(info: AppInfo): Boolean = append(
+        Entry(
+            ts = System.currentTimeMillis(),
+            event = "historical_release_selected",
+            applicationId = info.applicationId.orEmpty(),
+            source = info.handle,
+            tagName = info.tagName,
+            assetDigest = info.asset.digest.orEmpty(),
+            reason = "explicit_foreground_release_selection",
+        ),
+    )
 
     fun externalAppObserved(info: AppInfo, meta: ApkMetadata, installed: InstalledInfo): Boolean =
         append(

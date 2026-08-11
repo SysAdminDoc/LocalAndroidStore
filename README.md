@@ -45,6 +45,7 @@ That's what this is.
 - **Audited publisher-key recovery** — an unrelated signer remains blocked by default. Trust details compare the source, live installed signer, stored pin, downloaded signer, verified schemes, and rotation lineage. Replacing the pin requires typing the exact package id, advancing to a separate warning, and affirming independent fingerprint verification; the decision is durably audited and never resumes an install automatically.
 - **Developer Verification preflight** — installs separately report whether a Google verification surface is present, that package registration is **Unknown** (Android exposes no status capability to this app), and that LocalAndroidStore's direct sideload route is outside the initial participating-store enforcement beginning 2026-09-30. The advisory links to Google's official guidance.
 - **Version-aware installed state** — source-scoped records retain package, manifest version, signer, and GitHub asset identity. A tag or asset change is shown as a new release until its APK is inspected; only a higher manifest `versionCode` becomes an update, while equal-code reinstalls and lower-code downgrades require explicit actions.
+- **Historical release browsing** — open a bounded, paged release history from a card, review dates, pre-release labels, APK digests, and any cached signer/version evidence, then explicitly select an older release for the normal foreground inspection and downgrade/trust gates. Historical selections never enter the background update queue.
 - **GitHub PATs (optional)** — source-specific tokens bump API rate limits from 60 → 5,000/hr and unlock private repos for that source. Stored in a Tink AEAD-encrypted app-private file, with the keyset protected by the Android Keystore.
 - **Durable device journal + redacted support export** — runtime diagnostics, install/trust decisions, and crash evidence are separate restart-safe streams with independent clear controls. A bounded ZIP can be shared without PATs, authorization headers, credential-bearing URLs, signing secrets, or installed-app inventory.
 - **Async everywhere** — the UI never blocks on a download or an API call.
@@ -84,6 +85,8 @@ attested release artifacts; release signing is a deliberate local release-owner 
 
 Every qualifying repo appears as a card. Tap **Install** — the APK downloads, the system install dialog appears, you confirm. Tap **Open** to launch. Tap **Uninstall** to land on the system uninstall confirmation.
 
+To inspect or restore an older published version, open a card's overflow menu and choose **Release history**. Select a release to replace the card's current target; LocalAndroidStore records that foreground choice, then requires the same APK inspection, publisher-trust, permission, and explicit downgrade checks used by any other install. It never queues a historical selection automatically.
+
 ---
 
 ## How discovery works
@@ -96,6 +99,8 @@ For each enabled GitHub source, LocalAndroidStore:
 4. Picks one installable APK asset per release: skips signature sidecars, app bundles, and split/config APK sets; prefers an explicit universal/no-arch build, then an unlabeled standalone APK, then the device's highest-priority compatible ABI.
 5. Drops repos with no APK asset on their latest release. Archived repos and forks are dropped at step 1.
 6. Persists ETag-tagged GitHub responses and a per-source catalog snapshot. A `304 Not Modified` reuses the saved response; partial, offline, and rate-limited refreshes keep usable releases and show snapshot age. Truncated repository results are never backfilled from an older snapshot, because that could hide the omitted portion behind a false complete state.
+
+Release history is a separate, explicit card action. It requests at most ten pages of 20 releases, filters drafts and the source's pre-release policy, and does not change the normal latest-release target until the user selects an entry.
 
 There is no opinionated topic filter unless you turn one on — your own user / org listing already keeps the catalog tight.
 

@@ -106,6 +106,12 @@ data class GitHubRepoListResult(
     val isTruncated: Boolean get() = continuationPage != null
 }
 
+data class GitHubReleaseHistoryPage(
+    val releases: List<GhRelease>,
+    val page: Int,
+    val hasMore: Boolean,
+)
+
 interface GitHubGateway {
     suspend fun listUserRepos(
         user: String,
@@ -132,6 +138,20 @@ interface GitHubGateway {
         patOverride: String? = null,
         sourceKey: String = owner,
     ): GhRelease?
+
+    suspend fun listReleaseHistory(
+        owner: String,
+        repo: String,
+        includePrereleases: Boolean,
+        page: Int = 1,
+        perPage: Int = 20,
+        patOverride: String? = null,
+        sourceKey: String = owner,
+    ): GitHubReleaseHistoryPage = GitHubReleaseHistoryPage(
+        releases = emptyList(),
+        page = page,
+        hasMore = false,
+    )
 }
 
 @Serializable
@@ -277,6 +297,37 @@ class GitHubClient(
                 json.decodeFromString<GhRelease>(body)
             }
         }
+
+    override suspend fun listReleaseHistory(
+        owner: String,
+        repo: String,
+        includePrereleases: Boolean,
+        page: Int,
+        perPage: Int,
+        patOverride: String?,
+        sourceKey: String,
+    ): GitHubReleaseHistoryPage = withContext(Dispatchers.IO) {
+        require(page >= 1) { "Release history pages start at one" }
+        require(perPage in 1..RELEASE_HISTORY_PAGE_SIZE) {
+            "Release history page size must be between 1 and $RELEASE_HISTORY_PAGE_SIZE"
+        }
+        val boundedPage = page.coerceAtMost(MAX_RELEASE_HISTORY_PAGES)
+        val body = getJson(
+            "$apiBaseUrl/repos/${encodePathSegment(owner)}/${encodePathSegment(repo)}/releases" +
+                "?per_page=$perPage&page=$boundedPage",
+            patOverride,
+            sourceKey,
+        ) ?: "[]"
+        val raw = json.decodeFromString<List<GhRelease>>(body)
+        val releases = raw.filter { release ->
+            !release.draft && (includePrereleases || !release.prerelease)
+        }
+        GitHubReleaseHistoryPage(
+            releases = releases,
+            page = boundedPage,
+            hasMore = raw.size == perPage && boundedPage < MAX_RELEASE_HISTORY_PAGES,
+        )
+    }
 
     suspend fun testConnection(
         user: String,
@@ -700,6 +751,8 @@ class GitHubClient(
         private const val MAX_INLINE_RATE_LIMIT_WAIT_MILLIS = 2_000L
         private const val REPOSITORIES_PER_PAGE = 100
         private const val MAX_REPO_PAGES = 50
+        private const val RELEASE_HISTORY_PAGE_SIZE = 20
+        private const val MAX_RELEASE_HISTORY_PAGES = 10
         private val TRUSTED_ASSET_HOSTS = setOf(
             "api.github.com",
             "github.com",

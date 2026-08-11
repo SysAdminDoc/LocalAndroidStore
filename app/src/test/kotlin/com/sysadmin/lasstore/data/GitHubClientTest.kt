@@ -177,6 +177,86 @@ class GitHubClientTest {
     }
 
     @Test
+    fun releaseHistoryFiltersDraftsAndPrereleasesBySourcePolicy() = runBlocking {
+        val body = """
+            [
+              {
+                "tag_name":"v3.0.0",
+                "name":"Stable 3",
+                "published_at":"2026-07-01T12:00:00Z",
+                "html_url":"https://github.com/alice/app/releases/tag/v3.0.0",
+                "assets":[]
+              },
+              {
+                "tag_name":"v2.0.0-beta",
+                "name":"Beta 2",
+                "prerelease":true,
+                "published_at":"2026-06-01T12:00:00Z",
+                "html_url":"https://github.com/alice/app/releases/tag/v2.0.0-beta",
+                "assets":[]
+              },
+              {
+                "tag_name":"v1.0.0-draft",
+                "draft":true,
+                "html_url":"https://github.com/alice/app/releases/tag/v1.0.0-draft",
+                "assets":[]
+              }
+            ]
+        """.trimIndent()
+        server.enqueue(MockResponse().setResponseCode(200).setBody(body))
+        val stable = client().listReleaseHistory(
+            owner = "alice",
+            repo = "app",
+            includePrereleases = false,
+            sourceKey = "source-a",
+        )
+
+        assertEquals(listOf("v3.0.0"), stable.releases.map { it.tagName })
+        assertFalse(stable.hasMore)
+        assertTrue(server.takeRequest().path.orEmpty().contains("per_page=20&page=1"))
+
+        server.enqueue(MockResponse().setResponseCode(200).setBody(body))
+        val withPrereleases = client().listReleaseHistory(
+            owner = "alice",
+            repo = "app",
+            includePrereleases = true,
+            sourceKey = "source-a",
+        )
+
+        assertEquals(
+            listOf("v3.0.0", "v2.0.0-beta"),
+            withPrereleases.releases.map { it.tagName },
+        )
+        assertTrue(server.takeRequest().path.orEmpty().contains("per_page=20&page=1"))
+    }
+
+    @Test
+    fun releaseHistoryReportsAContinuationWhenTheBoundedPageIsFull() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    (1..2).joinToString(prefix = "[", postfix = "]") { index ->
+                        releaseJson("v$index.0.0")
+                    },
+                ),
+        )
+
+        val result = client().listReleaseHistory(
+            owner = "alice",
+            repo = "app",
+            includePrereleases = true,
+            page = 2,
+            perPage = 2,
+            sourceKey = "source-a",
+        )
+
+        assertEquals(2, result.page)
+        assertTrue(result.hasMore)
+        assertTrue(server.takeRequest().path.orEmpty().contains("per_page=2&page=2"))
+    }
+
+    @Test
     fun authenticationAndAuthorizationFailuresAreDistinctAndNeverRetried() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(401))
         val authentication = runCatching {
@@ -554,6 +634,14 @@ class GitHubClientTest {
               "full_name":"alice/$name",
               "html_url":"https://github.com/alice/$name",
               "owner":{"login":"alice"}
+            }
+        """.trimIndent()
+
+        fun releaseJson(tagName: String) = """
+            {
+              "tag_name":"$tagName",
+              "html_url":"https://github.com/alice/app/releases/tag/$tagName",
+              "assets":[]
             }
         """.trimIndent()
 

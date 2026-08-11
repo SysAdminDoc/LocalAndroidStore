@@ -11,12 +11,15 @@ import com.sysadmin.lasstore.data.ApkInspectionResult
 import com.sysadmin.lasstore.data.ApkMetadata
 import com.sysadmin.lasstore.data.DeveloperVerificationNotice
 import com.sysadmin.lasstore.data.GhAsset
+import com.sysadmin.lasstore.data.GhRelease
 import com.sysadmin.lasstore.data.InstallProvenance
 import com.sysadmin.lasstore.data.InstalledInfo
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.signerMatchesArtifactOrLineage
 import com.sysadmin.lasstore.data.signerMatchesPin
 import com.sysadmin.lasstore.domain.AppInfo
+import com.sysadmin.lasstore.domain.ApkAssetSelection
+import com.sysadmin.lasstore.domain.ApkAssetClassifier
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.domain.CatalogDiscoveryResult
 import com.sysadmin.lasstore.domain.CatalogFailureKind
@@ -64,6 +67,8 @@ data class CardState(
     val queuedUpdateStatus: QueuedUpdateStatus? = null,
     val publisherTrustDetails: PublisherTrustDetails? = null,
     val unmanagedInstall: UnmanagedInstallDetails? = null,
+    val releaseHistory: ReleaseHistoryState? = null,
+    val historicalSelection: Boolean = false,
 )
 
 data class UnmanagedInstallDetails(
@@ -72,6 +77,21 @@ data class UnmanagedInstallDetails(
     val installedVersionCode: Long,
     val installedSignerSha256: String?,
     val source: String,
+)
+
+data class HistoricalRelease(
+    val release: GhRelease,
+    val info: AppInfo?,
+    val inspectedVersionCode: Long? = null,
+    val inspectedVersionName: String? = null,
+    val inspectedSignerSha256: String? = null,
+)
+
+data class ReleaseHistoryState(
+    val loading: Boolean = false,
+    val releases: List<HistoricalRelease> = emptyList(),
+    val nextPage: Int? = 1,
+    val error: String? = null,
 )
 
 data class PublisherTrustDetails(
@@ -126,6 +146,8 @@ class CatalogViewModel : ViewModel() {
     private val activeJobs = ConcurrentHashMap<String, Job>()
     /** Generation for the current foreground action; stale callbacks cannot mutate the card. */
     private val activeActionIds = ConcurrentHashMap<String, String>()
+    /** One explicit release-history request per catalog card. */
+    private val historyJobs = ConcurrentHashMap<String, Job>()
     @Volatile private var refreshJob: Job? = null
     @Volatile private var refreshGeneration = 0L
 
@@ -1079,6 +1101,12 @@ class CatalogViewModel : ViewModel() {
 
     /** Queue an installed update through UIDT/WorkManager and gentle PackageInstaller constraints. */
     fun queueBackgroundUpdate(card: CardState, notificationsGranted: Boolean = true) {
+        if (card.historicalSelection) {
+            _state.update {
+                it.copy(warning = "Historical releases require an explicit foreground install.")
+            }
+            return
+        }
         if (card.info.assetChoices.size > 1) {
             _state.update { it.copy(warning = "Choose an APK variant before queueing an update.") }
             return
@@ -1320,6 +1348,100 @@ class CatalogViewModel : ViewModel() {
         sl.appContext.startActivity(intent)
     }
 
+    /** Load a bounded, paged release history only after an explicit user request. */
+    fun loadReleaseHistory(card: CardState, append: Boolean = false) {
+        val key = cardKey(card.info)
+        val current = _state.value.cards.firstOrNull { cardKey(it.info) == key } ?: card
+        val existing = current.releaseHistory ?: ReleaseHistoryState()
+        if (existing.loading || (append && existing.nextPage == null)) return
+        val page = if (append) existing.nextPage ?: return else 1
+        val starting = if (append) existing else ReleaseHistoryState()
+        updateCard(card.info) {
+            it.copy(releaseHistory = starting.copy(loading = true, error = null))
+        }
+
+        historyJobs[key]?.cancel()
+        val job = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val settings = sl.settings.flow.first()
+                val source = settings.sources.firstOrNull { it.key == card.info.sourceKey }
+                val pageResult = sl.github.listReleaseHistory(
+                    owner = card.info.owner,
+                    repo = card.info.repo,
+                    includePrereleases = source?.showPrereleases ?: card.info.prerelease,
+                    page = page,
+                    patOverride = sl.settings.getPat(card.info.sourceKey),
+                    sourceKey = card.info.sourceKey,
+                )
+                val entries = pageResult.releases.map { release ->
+                    historicalRelease(card.info, release)
+                }
+                updateCard(card.info) { currentCard ->
+                    val history = currentCard.releaseHistory ?: starting
+                    currentCard.copy(
+                        releaseHistory = history.copy(
+                            loading = false,
+                            releases = (history.releases + entries)
+                                .distinctBy { it.release.tagName },
+                            nextPage = pageResult.page
+                                .plus(1)
+                                .takeIf { pageResult.hasMore },
+                            error = null,
+                        ),
+                    )
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (throwable: Throwable) {
+                sl.logger.error("Catalog", "Release history failed for ${card.info.handle}", throwable)
+                updateCard(card.info) { currentCard ->
+                    val history = currentCard.releaseHistory ?: starting
+                    currentCard.copy(
+                        releaseHistory = history.copy(
+                            loading = false,
+                            error = throwable.message ?: "Could not load release history.",
+                        ),
+                    )
+                }
+            }
+        }
+        historyJobs[key] = job
+        job.invokeOnCompletion { historyJobs.remove(key, job) }
+    }
+
+    fun selectHistoricalRelease(card: CardState, historical: HistoricalRelease) {
+        val selectedInfo = historical.info
+        if (selectedInfo == null) {
+            _state.update {
+                it.copy(warning = "This historical release does not contain a supported standalone APK.")
+            }
+            return
+        }
+        if (!sl.audit.historicalReleaseSelected(selectedInfo)) {
+            _state.update {
+                it.copy(warning = "The historical release selection could not be recorded in Activity.")
+            }
+            return
+        }
+        val cached = sl.appIdCache.get(
+            selectedInfo.sourceKey,
+            selectedInfo.owner,
+            selectedInfo.repo,
+        )
+        val selectedState = buildCardState(selectedInfo, cached)
+        val history = _state.value.cards
+            .firstOrNull { cardKey(it.info) == cardKey(card.info) }
+            ?.releaseHistory
+            ?: card.releaseHistory
+        updateCard(card.info) {
+            selectedState.copy(
+                releaseHistory = history,
+                historicalSelection = true,
+                message = "Historical release selected. Inspect it before installing.",
+            )
+        }
+    }
+
     fun selectAsset(card: CardState, asset: GhAsset) {
         if (asset !in card.info.assetChoices) return
         val selectedInfo = card.info.copy(
@@ -1340,6 +1462,57 @@ class CatalogViewModel : ViewModel() {
     }
 
     fun dismissWarning() = _state.update { it.copy(warning = null) }
+
+    private fun historicalRelease(cardInfo: AppInfo, release: GhRelease): HistoricalRelease {
+        val info = appInfoForRelease(cardInfo, release)
+        val cached = info?.let {
+            sl.appIdCache.get(it.sourceKey, it.owner, it.repo)
+        }
+        val inspected = info?.let { candidate ->
+            cached?.inspectedRelease?.takeIf {
+                it.asset == com.sysadmin.lasstore.data.ReleaseAssetIdentity.from(candidate)
+            }
+        }
+        return HistoricalRelease(
+            release = release,
+            info = info,
+            inspectedVersionCode = inspected?.versionCode,
+            inspectedVersionName = inspected?.versionName,
+            inspectedSignerSha256 = inspected?.signerSha256,
+        )
+    }
+
+    private fun appInfoForRelease(cardInfo: AppInfo, release: GhRelease): AppInfo? {
+        val selection = ApkAssetClassifier.classify(
+            assets = release.assets,
+            supportedAbis = Build.SUPPORTED_ABIS.toList(),
+        )
+        val asset: GhAsset
+        val choices: List<GhAsset>
+        when (selection) {
+            ApkAssetSelection.Unavailable -> return null
+            is ApkAssetSelection.Selected -> {
+                asset = selection.asset
+                choices = emptyList()
+            }
+            is ApkAssetSelection.SelectionRequired -> {
+                asset = selection.candidates.first()
+                choices = selection.candidates
+            }
+        }
+        return cardInfo.copy(
+            displayName = cardInfo.displayName,
+            tagName = release.tagName,
+            versionName = release.tagName.removePrefix("v").removePrefix("V"),
+            versionCode = null,
+            asset = asset,
+            publishedAt = release.publishedAt,
+            prerelease = release.prerelease,
+            releaseBody = release.body?.takeIf { it.isNotBlank() },
+            assetChoices = choices,
+            htmlUrl = release.htmlUrl,
+        )
+    }
 
     // region Private helpers
 

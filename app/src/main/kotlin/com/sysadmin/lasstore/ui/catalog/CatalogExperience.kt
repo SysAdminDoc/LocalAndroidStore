@@ -192,6 +192,11 @@ fun CatalogExperience(
                                 onManualInstall = {
                                     viewModel.install(card, allowUnmanagedReplacement = true)
                                 },
+                                onBrowseHistory = { viewModel.loadReleaseHistory(card) },
+                                onLoadMoreHistory = { viewModel.loadReleaseHistory(card, append = true) },
+                                onSelectHistoricalRelease = { historical ->
+                                    viewModel.selectHistoricalRelease(card, historical)
+                                },
                             )
                         }
                     }
