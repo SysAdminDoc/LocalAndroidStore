@@ -39,6 +39,7 @@ import com.sysadmin.lasstore.domain.SourceVerificationStatus
 import com.sysadmin.lasstore.domain.classifyReleaseVersion
 import com.sysadmin.lasstore.domain.sourceVerificationStatus
 import com.sysadmin.lasstore.install.InstallResult
+import com.sysadmin.lasstore.install.BatchUninstallEntry
 import com.sysadmin.lasstore.install.ForegroundInstallFinalizer
 import com.sysadmin.lasstore.install.ForegroundInstallPhase
 import com.sysadmin.lasstore.install.ExternalLaunchResult
@@ -173,7 +174,12 @@ data class CatalogUiState(
     val sourceBrandings: List<CatalogSourceBranding> = emptyList(),
     val stagedUpdates: List<QueuedUpdatePayload> = emptyList(),
     val batchQueueBusy: Boolean = false,
+    val selectionMode: Boolean = false,
+    val selectedCardKeys: Set<String> = emptySet(),
 )
+
+internal fun catalogCardKey(info: AppInfo): String =
+    "${info.sourceKey}/${info.owner}/${info.repo}"
 
 internal fun validatedGitHubRepositoryUri(rawUrl: String): android.net.Uri? {
     val uri = runCatching { android.net.Uri.parse(rawUrl.trim()) }.getOrNull() ?: return null
@@ -385,6 +391,7 @@ class CatalogViewModel : ViewModel() {
     /** Reconcile state after returning from Android Settings or an external uninstall flow. */
     fun onActivityResumed() {
         refreshInstallPermission()
+        reconcileBatchUninstall()
         if (resumeReconcileJob?.isActive != true) {
             val job = viewModelScope.launch(Dispatchers.IO) {
                 val rebuilt = _state.value.cards.associateBy(
@@ -461,6 +468,160 @@ class CatalogViewModel : ViewModel() {
             val selected = current.selectedAntiFeatures.toMutableSet()
             if (!selected.add(feature)) selected.remove(feature)
             current.copy(selectedAntiFeatures = selected)
+        }
+    }
+
+    fun enterSelectionMode(card: CardState) {
+        _state.update {
+            it.copy(
+                selectionMode = true,
+                selectedCardKeys = it.selectedCardKeys + catalogCardKey(card.info),
+            )
+        }
+    }
+
+    fun toggleCardSelection(card: CardState) {
+        val key = catalogCardKey(card.info)
+        _state.update { current ->
+            val selected = current.selectedCardKeys.toMutableSet()
+            if (!selected.add(key)) selected.remove(key)
+            current.copy(
+                selectionMode = selected.isNotEmpty(),
+                selectedCardKeys = selected,
+            )
+        }
+    }
+
+    fun selectAllCards(keys: List<String>) {
+        val allowed = keys.toSet()
+        _state.update { current ->
+            val selected = if (current.selectedCardKeys.containsAll(allowed) && allowed.isNotEmpty()) {
+                emptySet()
+            } else {
+                allowed
+            }
+            current.copy(
+                selectionMode = selected.isNotEmpty(),
+                selectedCardKeys = selected,
+            )
+        }
+    }
+
+    fun exitSelectionMode() {
+        _state.update { it.copy(selectionMode = false, selectedCardKeys = emptySet()) }
+    }
+
+    /** Start the existing guarded foreground installer for every selected installable card. */
+    fun installSelected() {
+        val selected = selectedCards().filter { card ->
+            card.status in setOf(
+                CardStatus.NotInstalled,
+                CardStatus.ReleaseAvailable,
+                CardStatus.UpdateAvailable,
+                CardStatus.ReinstallAvailable,
+                CardStatus.DowngradeAvailable,
+            )
+        }
+        exitSelectionMode()
+        if (selected.isEmpty()) {
+            _state.update { it.copy(warning = "No selected card is ready for installation.") }
+            return
+        }
+        selected.forEach(::install)
+        _state.update {
+            it.copy(warning = "Started installation for ${selected.size} selected card(s).")
+        }
+    }
+
+    /** Stage every selected higher-version managed update into the durable batch queue. */
+    fun stageSelectedUpdates() {
+        val selected = selectedCards().filter { it.status == CardStatus.UpdateAvailable }
+        exitSelectionMode()
+        if (selected.isEmpty()) {
+            _state.update { it.copy(warning = "No selected card has a managed update to stage.") }
+            return
+        }
+        selected.forEach(::stageBackgroundUpdate)
+        _state.update {
+            it.copy(warning = "Staged ${selected.size} selected update(s). Confirm the batch when ready.")
+        }
+    }
+
+    /** Queue selected uninstall confirmations; Android still requires one confirmation per app. */
+    fun uninstallSelected() {
+        val entries = selectedCards()
+            .filter { card -> card.status in INSTALLED_CARD_STATUSES }
+            .mapNotNull { card ->
+                val applicationId = card.info.applicationId
+                    ?: sl.appIdCache.get(card.info.sourceKey, card.info.owner, card.info.repo)
+                        ?.applicationId
+                applicationId?.let {
+                    BatchUninstallEntry(
+                        applicationId = it,
+                        displayName = card.info.displayName,
+                        handle = card.info.handle,
+                    )
+                }
+            }
+            .distinctBy(BatchUninstallEntry::applicationId)
+        exitSelectionMode()
+        if (entries.isEmpty()) {
+            _state.update { it.copy(warning = "No selected card is currently installed.") }
+            return
+        }
+        sl.batchUninstalls.begin(entries)
+        launchNextBatchUninstall()
+    }
+
+    private fun selectedCards(): List<CardState> {
+        val selected = _state.value.selectedCardKeys
+        return _state.value.cards.filter { catalogCardKey(it.info) in selected }
+    }
+
+    private fun reconcileBatchUninstall() {
+        val current = sl.batchUninstalls.peek() ?: return
+        if (!sl.batchUninstalls.isAwaitingConfirmation()) {
+            launchNextBatchUninstall()
+            return
+        }
+        if (sl.installState.info(current.applicationId) == null) {
+            sl.batchUninstalls.remove(current.applicationId)
+            sl.batchUninstalls.markAwaitingConfirmation(false)
+            if (sl.batchUninstalls.peek() == null) {
+                sl.batchUninstalls.clear()
+                _state.update { it.copy(warning = "Batch uninstall completed.") }
+            } else {
+                launchNextBatchUninstall()
+            }
+        } else {
+            sl.batchUninstalls.clear()
+            _state.update {
+                it.copy(warning = "Batch uninstall stopped; ${current.displayName} remains installed.")
+            }
+        }
+    }
+
+    private fun launchNextBatchUninstall() {
+        val current = sl.batchUninstalls.peek() ?: return
+        if (sl.installState.info(current.applicationId) == null) {
+            sl.batchUninstalls.remove(current.applicationId)
+            launchNextBatchUninstall()
+            return
+        }
+        sl.batchUninstalls.markAwaitingConfirmation(true)
+        when (val result = sl.installer.openAppInfo(current.applicationId)) {
+            ExternalLaunchResult.Started -> {
+                sl.audit.uninstallInitiated(current.applicationId, current.handle)
+                _state.update {
+                    it.copy(
+                        warning = "Confirm uninstall for ${current.displayName}; the next selected app opens after you return.",
+                    )
+                }
+            }
+            is ExternalLaunchResult.Failed -> {
+                sl.batchUninstalls.clear()
+                _state.update { it.copy(warning = result.message) }
+            }
         }
     }
 
@@ -2205,7 +2366,7 @@ class CatalogViewModel : ViewModel() {
         }
     }
 
-    private fun cardKey(info: AppInfo) = "${info.sourceKey}/${info.owner}/${info.repo}"
+    private fun cardKey(info: AppInfo) = catalogCardKey(info)
 
     private fun hasActiveOperation(card: CardState): Boolean {
         val key = cardKey(card.info)
@@ -2370,6 +2531,14 @@ class CatalogViewModel : ViewModel() {
     private companion object {
         private val PACKAGE_NAME_PATTERN = Regex(
             "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$",
+        )
+        private val INSTALLED_CARD_STATUSES = setOf(
+            CardStatus.Unmanaged,
+            CardStatus.Installed,
+            CardStatus.ReleaseAvailable,
+            CardStatus.UpdateAvailable,
+            CardStatus.ReinstallAvailable,
+            CardStatus.DowngradeAvailable,
         )
     }
 

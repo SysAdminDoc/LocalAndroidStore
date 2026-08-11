@@ -120,6 +120,13 @@
     <string name="confirming_batch">Confirming…</string>
     <string name="clear_staged_updates">Clear staged updates</string>
     <string name="staged_updates_body">Nothing downloads until you confirm this batch.</string>
+    <string name="batch_selection_count">%1$d selected</string>
+    <string name="batch_select_visible">Select visible</string>
+    <string name="batch_clear_visible">Clear visible</string>
+    <string name="batch_exit_selection">Exit selection mode</string>
+    <string name="batch_install_selected">Install selected</string>
+    <string name="batch_stage_updates">Stage updates</string>
+    <string name="batch_uninstall_selected">Uninstall selected</string>
     <plurals name="staged_updates_count">
         <item quantity="one">1 update staged</item>
         <item quantity="other">%1$d updates staged</item>

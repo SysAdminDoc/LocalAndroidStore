@@ -50,6 +50,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -174,6 +175,33 @@ fun CatalogExperience(
                 onClear = viewModel::clearStagedUpdates,
             )
         }
+        if (state.selectionMode) {
+            BatchSelectionBar(
+                selectedCount = state.selectedCardKeys.size,
+                allVisibleSelected = visibleCards.isNotEmpty() && visibleCards.all {
+                    catalogCardKey(it.info) in state.selectedCardKeys
+                },
+                canInstall = state.cards.any {
+                    catalogCardKey(it.info) in state.selectedCardKeys &&
+                        it.status in INSTALLABLE_BATCH_STATUSES
+                },
+                canStageUpdates = state.cards.any {
+                    catalogCardKey(it.info) in state.selectedCardKeys &&
+                        it.status == CardStatus.UpdateAvailable
+                },
+                canUninstall = state.cards.any {
+                    catalogCardKey(it.info) in state.selectedCardKeys &&
+                        it.status in INSTALLED_BATCH_STATUSES
+                },
+                onToggleAll = {
+                    viewModel.selectAllCards(visibleCards.map { catalogCardKey(it.info) })
+                },
+                onInstall = viewModel::installSelected,
+                onStageUpdates = viewModel::stageSelectedUpdates,
+                onUninstall = viewModel::uninstallSelected,
+                onExit = viewModel::exitSelectionMode,
+            )
+        }
 
         Box(
             modifier = Modifier
@@ -222,6 +250,10 @@ fun CatalogExperience(
                         ) { card ->
                             ReleaseCard(
                                 state = card,
+                                selectionMode = state.selectionMode,
+                                selected = catalogCardKey(card.info) in state.selectedCardKeys,
+                                onToggleSelection = { viewModel.toggleCardSelection(card) },
+                                onLongPress = { viewModel.enterSelectionMode(card) },
                                 onInstall = { viewModel.install(card) },
                                 onUpdate = { viewModel.install(card) },
                                 onQueueUpdate = { viewModel.stageBackgroundUpdate(card) },
@@ -275,6 +307,96 @@ fun CatalogExperience(
         }
     }
 }
+
+@Composable
+private fun BatchSelectionBar(
+    selectedCount: Int,
+    allVisibleSelected: Boolean,
+    canInstall: Boolean,
+    canStageUpdates: Boolean,
+    canUninstall: Boolean,
+    onToggleAll: () -> Unit,
+    onInstall: () -> Unit,
+    onStageUpdates: () -> Unit,
+    onUninstall: () -> Unit,
+    onExit: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = Catppuccin.Surface1,
+        border = BorderStroke(1.dp, Catppuccin.Sapphire.copy(alpha = 0.55f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.batch_selection_count, selectedCount),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Catppuccin.TextStrong,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onToggleAll) {
+                    Text(
+                        stringResource(
+                            if (allVisibleSelected) {
+                                R.string.batch_clear_visible
+                            } else {
+                                R.string.batch_select_visible
+                            },
+                        ),
+                    )
+                }
+                IconButton(onClick = onExit) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = stringResource(R.string.batch_exit_selection),
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                OutlinedButton(onClick = onInstall, enabled = canInstall) {
+                    Text(stringResource(R.string.batch_install_selected))
+                }
+                OutlinedButton(onClick = onStageUpdates, enabled = canStageUpdates) {
+                    Text(stringResource(R.string.batch_stage_updates))
+                }
+                OutlinedButton(onClick = onUninstall, enabled = canUninstall) {
+                    Text(stringResource(R.string.batch_uninstall_selected))
+                }
+            }
+        }
+    }
+}
+
+private val INSTALLABLE_BATCH_STATUSES = setOf(
+    CardStatus.NotInstalled,
+    CardStatus.ReleaseAvailable,
+    CardStatus.UpdateAvailable,
+    CardStatus.ReinstallAvailable,
+    CardStatus.DowngradeAvailable,
+)
+
+private val INSTALLED_BATCH_STATUSES = setOf(
+    CardStatus.Unmanaged,
+    CardStatus.Installed,
+    CardStatus.ReleaseAvailable,
+    CardStatus.UpdateAvailable,
+    CardStatus.ReinstallAvailable,
+    CardStatus.DowngradeAvailable,
+)
 
 @Composable
 private fun StagedUpdateBar(

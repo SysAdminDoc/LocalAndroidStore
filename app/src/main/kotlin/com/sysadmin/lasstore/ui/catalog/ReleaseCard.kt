@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -119,6 +120,10 @@ fun ReleaseCard(
     onOpenLanguageSettings: () -> Unit = {},
     onOpenAdvancedSideloading: () -> Unit = {},
     onInspectTransparency: () -> Unit = {},
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onToggleSelection: () -> Unit = {},
+    onLongPress: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val sourceAccent = Catppuccin.accent(state.sourceAccent)
@@ -540,10 +545,20 @@ fun ReleaseCard(
     }
 
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = { if (selectionMode) onToggleSelection() },
+                onLongClick = onLongPress,
+            ),
         shape = cardShape,
         color = Catppuccin.Panel,
-        border = BorderStroke(1.dp, Catppuccin.StrokeBright.copy(alpha = 0.75f)),
+        border = BorderStroke(
+            1.dp,
+            if (selectionMode && selected) Catppuccin.MauveStrong else {
+                Catppuccin.StrokeBright.copy(alpha = 0.75f)
+            },
+        ),
     ) {
         Box(
             modifier = Modifier.background(
@@ -918,6 +933,27 @@ fun ReleaseCard(
                         resumeAvailable = state.resumableDownloadBytes > 0L,
                         sourceAccent = sourceAccent,
                     )
+                }
+            }
+            if (selectionMode) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(10.dp)
+                        .size(26.dp),
+                    shape = RoundedCornerShape(13.dp),
+                    color = if (selected) Catppuccin.MauveStrong else Catppuccin.Surface1,
+                    border = BorderStroke(1.dp, Catppuccin.MauveStrong.copy(alpha = 0.8f)),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        if (selected) {
+                            Text(
+                                text = "✓",
+                                color = Catppuccin.Crust,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    }
                 }
             }
         }

@@ -51,6 +51,7 @@ That's what this is.
 - **One-tap uninstall** — fires `Intent.ACTION_DELETE`, lands on the system uninstall confirmation. Catalog refreshes after.
 - **One-tap open** — launches the installed app's main activity.
 - **Gentle queued updates** — installed updates can run through Android 14+ user-initiated data-transfer jobs (WorkManager fallback on older versions), then wait for the target app to leave the foreground, device idle, and calls to end before commit. Attempts are capped and terminal reasons persist on the card.
+- **Batch selection actions** — long-press a card to enter selection mode, then install selected releases, stage selected managed updates into the durable confirmation queue, or start a persisted one-at-a-time uninstall sequence. Android confirmation remains required for each uninstall.
 - **Verified APK signature pinning** — `apksig` must cryptographically verify the exact downloaded bytes, expose exactly one current signer, and agree with Android's archive parser before the first SHA-256 pin can be enrolled. Invalid, tampered, unsigned, malformed, or unexpectedly multi-signed APKs are blocked before permission review. Future updates must match the pin or carry a verified v3/v3.1 proof-of-rotation lineage.
 - **Audited publisher-key recovery** — an unrelated signer remains blocked by default. Trust details compare the source, live installed signer, stored pin, downloaded signer, verified schemes, and rotation lineage. Replacing the pin requires typing the exact package id, advancing to a separate warning, and affirming independent fingerprint verification; the decision is durably audited and never resumes an install automatically.
 - **Developer Verification preflight** — installs separately report whether a Google verification surface is present, that package registration is **Unknown** (Android exposes no status capability to this app), and that LocalAndroidStore's direct sideload route is outside the initial participating-store enforcement beginning 2026-09-30. The advisory links to Google's official guidance.
@@ -113,6 +114,11 @@ beta, alpha, nightly, release-candidate, and development tags are recognized aut
 
 To inspect or restore an older published version, open a card's overflow menu and choose **Release history**. Select a release to replace the card's current target; LocalAndroidStore records that foreground choice, then requires the same APK inspection, publisher-trust, permission, and explicit downgrade checks used by any other install. It never queues a historical selection automatically.
 
+To operate on several cards, long-press any card. Tap other cards to select them, use **Select
+visible** when useful, then choose **Install selected**, **Stage updates**, or **Uninstall selected**.
+The update action uses the durable batch queue and the uninstall action opens Android's confirmation
+screen one package at a time; returning to LocalAndroidStore advances the queue.
+
 ---
 
 ## How discovery works
@@ -167,6 +173,7 @@ a refresh.
 | SharedPreferences `queued_update_status` | Attempt count and durable queued-update terminal state |
 | SharedPreferences `las_release_channels_v1` | Per-source repository release-channel preferences |
 | SharedPreferences `las_shizuku_install_v1` | Explicit opt-in for the optional Shizuku shell installer |
+| SharedPreferences `las_batch_uninstall_v1` | Persisted one-at-a-time Android confirmations for multi-select uninstall |
 
 The app declares `android:allowBackup="false"` and excludes everything from cloud / device-transfer backups — secrets stay on the device.
 
@@ -199,6 +206,7 @@ app/src/main/kotlin/com/sysadmin/lasstore/
 │   ├── PackageInstallerService.kt   Session-backed install, Shizuku fallback, uninstall, launch
 │   ├── ShizukuInstaller.kt           Optional shell/root IPackageInstaller bridge
 │   ├── ForegroundInstallStore.kt    Process-safe download/review/commit ownership + cleanup
+│   ├── BatchUninstallStore.kt        Persisted one-at-a-time uninstall confirmation queue
 │   └── QueuedUpdate*.kt             UIDT/WorkManager scheduling, constraints, durable outcomes
 ├── ui/
 │   ├── theme/                 Catppuccin Mocha/Latte palettes + accent tokens
