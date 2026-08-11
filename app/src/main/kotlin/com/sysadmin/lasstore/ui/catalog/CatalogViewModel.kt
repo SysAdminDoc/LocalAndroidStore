@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -151,6 +152,22 @@ internal fun preserveActivityResumeContext(previous: CardState, rebuilt: CardSta
         releaseHistory = previous.releaseHistory,
         historicalSelection = previous.historicalSelection,
     )
+
+internal fun reserveUniqueDownloadFile(directory: File, filename: String): File {
+    val extensionIndex = filename.lastIndexOf('.').takeIf { it > 0 } ?: filename.length
+    val base = filename.substring(0, extensionIndex)
+    val extension = filename.substring(extensionIndex)
+    for (suffix in 0..9999) {
+        val candidateName = if (suffix == 0) {
+            filename
+        } else {
+            "$base ($suffix)$extension"
+        }
+        val candidate = File(directory, candidateName)
+        if (candidate.createNewFile()) return candidate
+    }
+    throw IOException("No collision-free Downloads filename available for $filename")
+}
 
 class CatalogViewModel : ViewModel() {
     private val sl = ServiceLocator
@@ -1347,7 +1364,7 @@ class CatalogViewModel : ViewModel() {
                     }
                 }
                 if (!ownsAction(key, actionId)) return@launch
-                saveToDownloads(filename, target)
+                val savedFilename = saveToDownloads(filename, target)
                 if (!ownsAction(key, actionId)) return@launch
                 val cached = sl.appIdCache.get(
                     card.info.sourceKey,
@@ -1364,7 +1381,7 @@ class CatalogViewModel : ViewModel() {
                                     c.info.repo == card.info.repo
                                 ) freshState else c
                             },
-                            warning = "Saved to Downloads: $filename",
+                            warning = "Saved to Downloads: $savedFilename",
                         )
                     }
                 }
@@ -1938,7 +1955,7 @@ class CatalogViewModel : ViewModel() {
      * API 29+: MediaStore (no permission required).
      * API 26–28: App-scoped external Downloads (no permission required).
      */
-    private fun saveToDownloads(filename: String, source: File) {
+    private fun saveToDownloads(filename: String, source: File): String {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, filename)
@@ -1959,6 +1976,7 @@ class CatalogViewModel : ViewModel() {
                     throw java.io.IOException("Could not publish $filename")
                 }
                 sl.foregroundInstalls.completePendingMediaStoreUri(uri)
+                return filename
             } catch (throwable: Throwable) {
                 runCatching { resolver.delete(uri, null, null) }
                 sl.foregroundInstalls.completePendingMediaStoreUri(uri)
@@ -1970,7 +1988,16 @@ class CatalogViewModel : ViewModel() {
             val downloads = sl.appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
                 ?: throw java.io.IOException("External storage unavailable")
             downloads.mkdirs()
-            source.copyTo(File(downloads, filename), overwrite = true)
+            val destination = reserveUniqueDownloadFile(downloads, filename)
+            try {
+                source.inputStream().use { input ->
+                    destination.outputStream().use { output -> input.copyTo(output) }
+                }
+                return destination.name
+            } catch (throwable: Throwable) {
+                destination.delete()
+                throw throwable
+            }
         }
     }
 

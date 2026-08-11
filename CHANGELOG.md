@@ -33,6 +33,7 @@
 - Added bounded, paged historical release browsing with explicit foreground selection; selected older releases retain available version/digest/signer evidence, use the normal inspection/trust/downgrade gates, are audit-recorded, and cannot enter the background queue.
 
 ### Fixed
+- Made legacy Save APK destinations collision-safe with reserved unique filenames and cleanup on failed copies; repeated saves preserve earlier downloads and report the actual saved name.
 - Validated GitHub repository links and wrapped installer permission, uninstall, launch, and confirmation intents with resolver checks and actionable failure results; failed launches now reconcile raced package state instead of crashing the catalog.
 - Reconciled install permission and visible package state when the Activity resumes from Android Settings or an external uninstall, while preserving catalog search state and avoiding overlapping refresh jobs.
 - Preserved malformed multi-source settings payloads in a recoverable backup, surfaced an actionable Settings recovery state, and blocked ordinary saves until the user explicitly replaces the unreadable registry.
