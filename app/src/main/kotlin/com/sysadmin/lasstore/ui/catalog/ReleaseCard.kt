@@ -91,6 +91,8 @@ fun ReleaseCard(
     onSaveApk: () -> Unit,
     onReplacePublisherPin: (typedApplicationId: String, independentlyVerified: Boolean) -> Unit,
     onSelectAsset: (GhAsset) -> Unit,
+    onAdopt: () -> Unit = {},
+    onManualInstall: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isStale = remember(state.info.publishedAt) {
@@ -110,6 +112,10 @@ fun ReleaseCard(
     ) {
         mutableStateOf(false)
     }
+    var adoptionVisible by rememberSaveable(
+        state.info.handle,
+        state.unmanagedInstall?.installedSignerSha256,
+    ) { mutableStateOf(false) }
     val cardShape = RoundedCornerShape(24.dp)
 
     if (assetSelectionVisible) {
@@ -171,6 +177,45 @@ fun ReleaseCard(
                 onConfirm = { typedApplicationId, independentlyVerified ->
                     trustRecoveryVisible = false
                     onReplacePublisherPin(typedApplicationId, independentlyVerified)
+                },
+            )
+        }
+    }
+
+    if (adoptionVisible) {
+        state.unmanagedInstall?.let { unmanaged ->
+            val signer = unmanaged.installedSignerSha256
+                ?: stringResource(R.string.unknown)
+            AlertDialog(
+                onDismissRequest = { adoptionVisible = false },
+                title = { Text(stringResource(R.string.adopt_installed_app_title)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text(stringResource(R.string.adopt_installed_app_body))
+                        Text(stringResource(R.string.installed_elsewhere_package, unmanaged.applicationId))
+                        Text(
+                            stringResource(
+                                R.string.installed_elsewhere_version,
+                                unmanaged.installedVersionName ?: stringResource(R.string.unknown),
+                                unmanaged.installedVersionCode,
+                            ),
+                        )
+                        Text(stringResource(R.string.installed_elsewhere_signer, signer))
+                        Text(stringResource(R.string.installed_elsewhere_source, unmanaged.source))
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            adoptionVisible = false
+                            onAdopt()
+                        },
+                    ) { Text(stringResource(R.string.adopt_installed_app)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { adoptionVisible = false }) {
+                        Text(stringResource(R.string.cancel))
+                    }
                 },
             )
         }
@@ -247,6 +292,7 @@ fun ReleaseCard(
                         onIgnore = onIgnore,
                         onSaveApk = onSaveApk,
                         onUninstall = onUninstall,
+                        onManualInstall = onManualInstall,
                     )
                 }
 
@@ -276,6 +322,40 @@ fun ReleaseCard(
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
+
+                state.unmanagedInstall?.let { unmanaged ->
+                    val signer = unmanaged.installedSignerSha256
+                        ?: stringResource(R.string.unknown)
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(
+                            text = stringResource(
+                                R.string.installed_elsewhere_version,
+                                unmanaged.installedVersionName ?: stringResource(R.string.unknown),
+                                unmanaged.installedVersionCode,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Catppuccin.Peach,
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.installed_elsewhere_package,
+                                unmanaged.applicationId,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Catppuccin.Subtext,
+                        )
+                        Text(
+                            text = stringResource(R.string.installed_elsewhere_signer, signer),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Catppuccin.Subtext,
+                        )
+                        Text(
+                            text = stringResource(R.string.installed_elsewhere_source, unmanaged.source),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Catppuccin.Subtext,
+                        )
+                    }
+                }
 
                 if (state.info.assetChoices.size > 1) {
                     Text(
@@ -336,6 +416,7 @@ fun ReleaseCard(
                 state.message?.let { message ->
                     val messageColor = when (state.status) {
                         CardStatus.Error, CardStatus.SignatureMismatch -> Catppuccin.Red
+                        CardStatus.Unmanaged -> Catppuccin.Peach
                         else -> Catppuccin.Subtext
                     }
                     Text(
@@ -467,6 +548,7 @@ fun ReleaseCard(
                         onReviewTrust = state.publisherTrustDetails?.let {
                             { trustRecoveryVisible = true }
                         },
+                        onRequestAdoption = { adoptionVisible = true },
                         assetSelectionRequired = state.info.assetChoices.size > 1,
                         onChooseAsset = { assetSelectionVisible = true },
                     )
@@ -539,6 +621,7 @@ private fun PrimaryReleaseAction(
     onCancel: () -> Unit,
     onProceedPermissions: () -> Unit,
     onReviewTrust: (() -> Unit)?,
+    onRequestAdoption: () -> Unit,
     assetSelectionRequired: Boolean,
     onChooseAsset: () -> Unit,
 ) {
@@ -564,6 +647,15 @@ private fun PrimaryReleaseAction(
                 icon = Icons.Default.Download,
                 accent = Catppuccin.MauveStrong,
                 onClick = onInstall,
+                modifier = modifier,
+            )
+        }
+        CardStatus.Unmanaged -> {
+            AccentButton(
+                text = stringResource(R.string.adopt_installed_app),
+                icon = Icons.Default.Security,
+                accent = Catppuccin.Peach,
+                onClick = onRequestAdoption,
                 modifier = modifier,
             )
         }
@@ -725,6 +817,7 @@ private fun ReleaseOverflowMenu(
     onIgnore: () -> Unit,
     onSaveApk: () -> Unit,
     onUninstall: () -> Unit,
+    onManualInstall: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -778,7 +871,7 @@ private fun ReleaseOverflowMenu(
                     tint = Catppuccin.Red,
                 )
             }
-            if (state.status.hasInstalledApp()) {
+            if (state.status.hasManagedInstall()) {
                 ReleaseMenuItem(
                     text = stringResource(
                         if (state.isIgnored) {
@@ -806,6 +899,17 @@ private fun ReleaseOverflowMenu(
                         expanded = false
                         onCancelPermissions()
                     },
+                )
+            }
+            if (state.status == CardStatus.Unmanaged) {
+                ReleaseMenuItem(
+                    text = stringResource(R.string.manual_install_release),
+                    icon = Icons.Default.Download,
+                    onClick = {
+                        expanded = false
+                        onManualInstall()
+                    },
+                    tint = Catppuccin.Peach,
                 )
             }
             if (state.status != CardStatus.Working) {
@@ -842,12 +946,16 @@ private fun ReleaseOverflowMenu(
 }
 
 private fun CardStatus.hasInstalledApp(): Boolean = this in setOf(
+    CardStatus.Unmanaged,
     CardStatus.Installed,
     CardStatus.ReleaseAvailable,
     CardStatus.UpdateAvailable,
     CardStatus.ReinstallAvailable,
     CardStatus.DowngradeAvailable,
 )
+
+private fun CardStatus.hasManagedInstall(): Boolean =
+    hasInstalledApp() && this != CardStatus.Unmanaged
 
 @Composable
 private fun ReleaseMenuItem(

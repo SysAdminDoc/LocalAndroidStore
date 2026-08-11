@@ -82,6 +82,54 @@ class InstallAuditLog(context: Context) {
             reason = reason,
         ))
 
+    fun externalAppObserved(info: AppInfo, meta: ApkMetadata, installed: InstalledInfo): Boolean =
+        append(
+            Entry(
+                ts = System.currentTimeMillis(),
+                event = "external_app_observed",
+                applicationId = installed.applicationId,
+                source = info.handle,
+                tagName = info.tagName,
+                versionName = installed.versionName,
+                versionCode = installed.versionCode,
+                certSha256 = meta.signingSha256,
+                installedCertSha256 = installed.currentSignerSha256.orEmpty(),
+                reason = "installed_before_local_android_store_adoption",
+            ),
+        )
+
+    fun externalAppAdoptionPending(info: AppInfo, installed: InstalledInfo): Boolean =
+        append(
+            Entry(
+                ts = System.currentTimeMillis(),
+                event = "external_app_adoption_pending",
+                applicationId = installed.applicationId,
+                source = info.handle,
+                tagName = info.tagName,
+                versionName = installed.versionName,
+                versionCode = installed.versionCode,
+                certSha256 = installed.currentSignerSha256.orEmpty(),
+                installedCertSha256 = installed.currentSignerSha256.orEmpty(),
+                reason = "user_confirmed_adoption_state_transition_pending",
+            ),
+        )
+
+    fun externalAppAdopted(info: AppInfo, installed: InstalledInfo): Boolean =
+        append(
+            Entry(
+                ts = System.currentTimeMillis(),
+                event = "external_app_adopted",
+                applicationId = installed.applicationId,
+                source = info.handle,
+                tagName = info.tagName,
+                versionName = installed.versionName,
+                versionCode = installed.versionCode,
+                certSha256 = installed.currentSignerSha256.orEmpty(),
+                installedCertSha256 = installed.currentSignerSha256.orEmpty(),
+                reason = "user_confirmed_external_provenance",
+            ),
+        )
+
     fun installFailed(info: AppInfo, meta: ApkMetadata, message: String) =
         append(Entry(
             ts = System.currentTimeMillis(), event = "install_failed",

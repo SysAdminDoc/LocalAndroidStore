@@ -45,6 +45,7 @@ data class AppInfo(
 
 enum class CardStatus {
     NotInstalled,
+    Unmanaged,
     Installed,
     ReleaseAvailable,
     UpdateAvailable,

@@ -11,7 +11,10 @@ import com.sysadmin.lasstore.data.ApkInspectionResult
 import com.sysadmin.lasstore.data.ApkMetadata
 import com.sysadmin.lasstore.data.DeveloperVerificationNotice
 import com.sysadmin.lasstore.data.GhAsset
+import com.sysadmin.lasstore.data.InstallProvenance
+import com.sysadmin.lasstore.data.InstalledInfo
 import com.sysadmin.lasstore.data.ServiceLocator
+import com.sysadmin.lasstore.data.signerMatchesArtifactOrLineage
 import com.sysadmin.lasstore.data.signerMatchesPin
 import com.sysadmin.lasstore.domain.AppInfo
 import com.sysadmin.lasstore.domain.CardStatus
@@ -60,6 +63,15 @@ data class CardState(
     val isIgnored: Boolean = false,
     val queuedUpdateStatus: QueuedUpdateStatus? = null,
     val publisherTrustDetails: PublisherTrustDetails? = null,
+    val unmanagedInstall: UnmanagedInstallDetails? = null,
+)
+
+data class UnmanagedInstallDetails(
+    val applicationId: String,
+    val installedVersionName: String?,
+    val installedVersionCode: Long,
+    val installedSignerSha256: String?,
+    val source: String,
 )
 
 data class PublisherTrustDetails(
@@ -319,9 +331,16 @@ class CatalogViewModel : ViewModel() {
     private fun buildCardState(info: AppInfo, cached: AppIdEntry? = null): CardState {
         val applicationId = info.applicationId ?: cached?.applicationId
         val installed = applicationId?.let { sl.installState.info(it) }
+        val reconciled = cached?.let { entry ->
+            installed?.let { installedInfo ->
+                sl.appIdCache.reconcileInstalled(entry, installedInfo)
+            } ?: entry
+        }
         val isIgnored = sl.ignoreList.isIgnored(info.handle)
         val baseState = when {
             installed == null -> CardState(info = info, status = CardStatus.NotInstalled)
+            reconciled?.provenance == InstallProvenance.EXTERNAL_UNMANAGED ->
+                unmanagedCardState(info, reconciled, installed)
             info.assetChoices.size > 1 -> {
                 val pinnedSignerSha256 = sl.secrets.getPin(installed.applicationId)
                 if (!signerMatchesPin(installed.currentSignerSha256, pinnedSignerSha256)) {
@@ -346,12 +365,6 @@ class CatalogViewModel : ViewModel() {
                 }
             }
             else -> {
-                val reconciled = cached?.let {
-                    sl.appIdCache.reconcileInstalled(
-                        entry = it,
-                        installed = installed,
-                    )
-                }
                 val pinnedSignerSha256 = sl.secrets.getPin(installed.applicationId)
                 if (!signerMatchesPin(installed.currentSignerSha256, pinnedSignerSha256)) {
                     CardState(
@@ -403,7 +416,43 @@ class CatalogViewModel : ViewModel() {
         return withForegroundInstallState(withQueuedUpdateStatus(baseState))
     }
 
-    fun install(card: CardState) {
+    private fun unmanagedCardState(
+        info: AppInfo,
+        entry: AppIdEntry,
+        installed: InstalledInfo,
+    ): CardState {
+        val inspected = entry.inspectedRelease
+            ?.takeIf { it.asset == com.sysadmin.lasstore.data.ReleaseAssetIdentity.from(info) }
+        val hydratedInfo = info.copy(
+            applicationId = installed.applicationId,
+            versionCode = inspected?.versionCode ?: info.versionCode,
+            versionName = inspected?.versionName ?: info.versionName,
+        )
+        return CardState(
+            info = hydratedInfo,
+            status = CardStatus.Unmanaged,
+            installedVersion = installed.versionName,
+            installedVersionCode = installed.versionCode,
+            message = "Installed elsewhere. Confirm adoption before LocalAndroidStore manages updates.",
+            unmanagedInstall = UnmanagedInstallDetails(
+                applicationId = installed.applicationId,
+                installedVersionName = installed.versionName,
+                installedVersionCode = installed.versionCode,
+                installedSignerSha256 = installed.currentSignerSha256,
+                source = if (info.sourceLabel == info.owner) info.handle else {
+                    "${info.sourceLabel} · ${info.handle}"
+                },
+            ),
+        )
+    }
+
+    fun install(card: CardState, allowUnmanagedReplacement: Boolean = false) {
+        if (card.status == CardStatus.Unmanaged && !allowUnmanagedReplacement) {
+            _state.update {
+                it.copy(warning = "Confirm adoption first, or choose the explicit manual install action.")
+            }
+            return
+        }
         if (card.info.assetChoices.size > 1) {
             _state.update { it.copy(warning = "Choose an APK variant before downloading.") }
             return
@@ -579,7 +628,8 @@ class CatalogViewModel : ViewModel() {
 
                 // Signature pinning — block silent publisher swap.
                 val pinned = sl.secrets.getPin(meta.applicationId)
-                val installedAlready = sl.installState.info(meta.applicationId) != null
+                val installedInfo = sl.installState.info(meta.applicationId)
+                val installedAlready = installedInfo != null
                 val pinAccepted = when {
                     pinned.isNullOrEmpty() -> true
                     pinned == meta.signingSha256 -> true
@@ -624,29 +674,96 @@ class CatalogViewModel : ViewModel() {
                     return@launch
                 }
 
+                if (
+                    installedInfo != null &&
+                    !signerMatchesArtifactOrLineage(
+                        currentSignerSha256 = installedInfo.currentSignerSha256,
+                        expectedSignerSha256 = meta.signingSha256,
+                        lineageSha256 = meta.lineageSha256,
+                    )
+                ) {
+                    preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                    sl.foregroundInstalls.removeIfCurrent(key, operationId)
+                    sl.audit.installBlocked(card.info, meta, reason = "installed_signer_mismatch")
+                    updateCardForAction(card.info, operationId) {
+                        it.copy(
+                            status = CardStatus.SignatureMismatch,
+                            message = "Installed publisher key does not match the verified release; " +
+                                "the update is blocked.",
+                            publisherTrustDetails = pinned?.let { storedPin ->
+                                PublisherTrustDetails(
+                                    source = if (card.info.sourceLabel == card.info.owner) {
+                                        card.info.handle
+                                    } else {
+                                        "${card.info.sourceLabel} · ${card.info.handle}"
+                                    },
+                                    installedSignerSha256 = installedInfo.currentSignerSha256,
+                                    storedPinSha256 = storedPin,
+                                    downloadedMetadata = meta,
+                                )
+                            },
+                        )
+                    }
+                    return@launch
+                }
+
+                val externalObservation = installedInfo?.takeIf {
+                    pinned.isNullOrBlank() &&
+                        (cached == null || cached.provenance == InstallProvenance.EXTERNAL_UNMANAGED)
+                }
+                if (externalObservation != null && !allowUnmanagedReplacement) {
+                    val observed = sl.appIdCache.recordExternalObservation(
+                        info = card.info,
+                        metadata = meta,
+                        installed = externalObservation,
+                    )
+                    if (!sl.audit.externalAppObserved(card.info, meta, externalObservation)) {
+                        sl.logger.warn(
+                            "Install",
+                            "External install observation was persisted without audit completion",
+                        )
+                    }
+                    preapprovalSessionId?.let { sl.installer.abandonSession(it) }
+                    sl.foregroundInstalls.removeIfCurrent(key, operationId)
+                    val unmanaged = unmanagedCardState(
+                        info = card.info.copy(
+                            applicationId = meta.applicationId,
+                            versionCode = meta.versionCode,
+                            versionName = meta.versionName ?: card.info.versionName,
+                        ),
+                        entry = observed,
+                        installed = externalObservation,
+                    )
+                    updateCardForAction(card.info, operationId) { unmanaged }
+                    return@launch
+                }
+
                 if (installedAlready) {
                     sl.appIdCache.recordInspected(card.info, meta)
-                    val installedInfo = requireNotNull(sl.installState.info(meta.applicationId))
+                    val currentInstalled = requireNotNull(installedInfo)
                     val classifiedStatus = when {
-                        meta.versionCode > installedInfo.versionCode ->
+                        meta.versionCode > currentInstalled.versionCode ->
                             CardStatus.UpdateAvailable
-                        meta.versionCode == installedInfo.versionCode ->
+                        meta.versionCode == currentInstalled.versionCode ->
                             CardStatus.ReinstallAvailable
                         else -> CardStatus.DowngradeAvailable
                     }
-                    if (card.status != classifiedStatus) {
+                    if (
+                        card.status != classifiedStatus &&
+                        !(allowUnmanagedReplacement && card.status == CardStatus.Unmanaged)
+                    ) {
                         preapprovalSessionId?.let { sl.installer.abandonSession(it) }
                         sl.foregroundInstalls.removeIfCurrent(key, operationId)
                         val actionMessage = when (classifiedStatus) {
                             CardStatus.UpdateAvailable ->
                                 "Inspected version code ${meta.versionCode} is newer than " +
-                                    "installed ${installedInfo.versionCode}. Tap Update to continue."
+                                    "installed ${currentInstalled.versionCode}. Tap Update to continue."
                             CardStatus.ReinstallAvailable ->
                                 "This release has the installed version code " +
-                                    "${installedInfo.versionCode}. Tap Reinstall to continue."
+                                    "${currentInstalled.versionCode}. Tap Reinstall to continue."
                             CardStatus.DowngradeAvailable ->
                                 "Release version code ${meta.versionCode} is below installed " +
-                                    "${installedInfo.versionCode}. Tap Downgrade to explicitly continue."
+                                    "${currentInstalled.versionCode}. Tap Downgrade to explicitly continue."
                             else -> null
                         }
                         updateCardForAction(card.info, operationId) {
@@ -657,8 +774,8 @@ class CatalogViewModel : ViewModel() {
                                     versionName = meta.versionName ?: it.info.versionName,
                                 ),
                                 status = classifiedStatus,
-                                installedVersion = installedInfo.versionName,
-                                installedVersionCode = installedInfo.versionCode,
+                                installedVersion = currentInstalled.versionName,
+                                installedVersionCode = currentInstalled.versionCode,
                                 progress = 0f,
                                 message = actionMessage,
                             )
@@ -726,6 +843,98 @@ class CatalogViewModel : ViewModel() {
             }
         }
         registerActionJob(key, operationId, job)
+    }
+
+    /** Confirm external provenance, enroll the observed signer, and enable managed updates. */
+    fun adopt(card: CardState) {
+        val details = card.unmanagedInstall ?: return
+        val cached = sl.appIdCache.get(
+            card.info.sourceKey,
+            card.info.owner,
+            card.info.repo,
+        )
+        val installed = sl.installState.info(details.applicationId)
+        val signer = installed?.currentSignerSha256
+        if (
+            cached?.provenance != InstallProvenance.EXTERNAL_UNMANAGED ||
+            installed == null ||
+            signer.isNullOrBlank() ||
+            signer != details.installedSignerSha256 ||
+            cached.inspectedRelease?.let {
+                signerMatchesArtifactOrLineage(
+                    currentSignerSha256 = signer,
+                    expectedSignerSha256 = it.signerSha256,
+                    lineageSha256 = it.lineageSha256,
+                )
+            } != true
+        ) {
+            _state.update {
+                it.copy(
+                    warning = "The installed package changed. Refresh and review adoption again.",
+                )
+            }
+            refresh()
+            return
+        }
+        if (!sl.secrets.getPin(details.applicationId).isNullOrBlank()) {
+            _state.update {
+                it.copy(
+                    warning = "Adoption is blocked because a publisher pin already exists. Refresh to review trust.",
+                )
+            }
+            refresh()
+            return
+        }
+        if (!sl.audit.externalAppAdoptionPending(card.info, installed)) {
+            _state.update {
+                it.copy(warning = "Adoption could not be recorded in the install journal.")
+            }
+            return
+        }
+
+        val adopted = runCatching {
+            sl.secrets.setPin(details.applicationId, signer)
+            check(sl.secrets.getPin(details.applicationId) == signer) {
+                "Signer pin enrollment did not persist"
+            }
+            checkNotNull(
+                sl.appIdCache.adoptExternal(
+                    sourceKey = card.info.sourceKey,
+                    owner = card.info.owner,
+                    repo = card.info.repo,
+                    installed = installed,
+                ),
+            ) { "External install record was not available for adoption" }
+        }
+        if (adopted.isFailure) {
+            runCatching { sl.secrets.clearPin(details.applicationId) }
+            sl.logger.error("Adoption", "External app adoption failed", adopted.exceptionOrNull())
+            _state.update {
+                it.copy(
+                    warning = "Adoption failed; the app remains unmanaged and background updates stay blocked.",
+                )
+            }
+            return
+        }
+
+        val adoptedEntry = adopted.getOrThrow()
+        val freshState = buildCardState(
+            info = card.info.copy(applicationId = details.applicationId),
+            cached = adoptedEntry,
+        )
+        val auditComplete = sl.audit.externalAppAdopted(card.info, installed)
+        _state.update { ui ->
+            ui.copy(
+                cards = ui.cards.map { current ->
+                    if (cardKey(current.info) == cardKey(card.info)) freshState else current
+                },
+                warning = if (auditComplete) {
+                    "${card.info.displayName} adopted. Future background updates are now enabled."
+                } else {
+                    "${card.info.displayName} adopted, but the completion journal entry is pending."
+                },
+            )
+        }
     }
 
     /** Cancel an in-flight download/install and reset the card to its pre-working state. */

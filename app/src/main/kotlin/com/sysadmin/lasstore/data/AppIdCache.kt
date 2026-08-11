@@ -44,7 +44,15 @@ data class InspectedReleaseIdentity(
     val versionCode: Long,
     val versionName: String?,
     val signerSha256: String,
+    val lineageSha256: List<String> = emptyList(),
 )
+
+@Serializable
+enum class InstallProvenance {
+    LOCAL_ANDROID_STORE,
+    EXTERNAL_UNMANAGED,
+    USER_ADOPTED,
+}
 
 /**
  * Source-scoped install identity for one catalog repository.
@@ -65,6 +73,8 @@ data class AppIdEntry(
     val installedSignerSha256: String? = null,
     val installedAsset: ReleaseAssetIdentity? = null,
     val inspectedRelease: InspectedReleaseIdentity? = null,
+    val provenance: InstallProvenance = InstallProvenance.LOCAL_ANDROID_STORE,
+    val provenanceRecordedAtEpochMillis: Long? = null,
 )
 
 /**
@@ -115,6 +125,7 @@ class AppIdCache(context: Context) {
             versionCode = metadata.versionCode,
             versionName = metadata.versionName,
             signerSha256 = metadata.signingSha256,
+            lineageSha256 = metadata.lineageSha256,
         )
         return existing.copy(inspectedRelease = inspected).also(::put)
     }
@@ -138,7 +149,86 @@ class AppIdCache(context: Context) {
                 versionCode = metadata.versionCode,
                 versionName = metadata.versionName,
                 signerSha256 = metadata.signingSha256,
+                lineageSha256 = metadata.lineageSha256,
             ),
+            provenance = InstallProvenance.LOCAL_ANDROID_STORE,
+            provenanceRecordedAtEpochMillis = System.currentTimeMillis(),
+        ).also(::put)
+    }
+
+    /**
+     * Records a verified package that was already installed before LocalAndroidStore managed it.
+     * This is deliberately not a managed install record: background updates remain ineligible
+     * until the user explicitly adopts the package and its current signer.
+     */
+    @Synchronized
+    fun recordExternalObservation(
+        info: AppInfo,
+        metadata: ApkMetadata,
+        installed: InstalledInfo,
+    ): AppIdEntry {
+        require(metadata.applicationId == installed.applicationId) {
+            "Observed package does not match the inspected APK"
+        }
+        val existing = get(info.sourceKey, info.owner, info.repo)
+        check(existing == null || existing.provenance == InstallProvenance.EXTERNAL_UNMANAGED) {
+            "A LocalAndroidStore-managed install cannot be replaced by an external observation"
+        }
+        val asset = ReleaseAssetIdentity.from(info)
+        return AppIdEntry(
+            sourceKey = info.sourceKey,
+            owner = info.owner,
+            repo = info.repo,
+            applicationId = installed.applicationId,
+            installedTagName = info.tagName,
+            installedVersionCode = installed.versionCode,
+            installedVersionName = installed.versionName,
+            installedSignerSha256 = installed.currentSignerSha256,
+            installedAsset = asset.takeIf {
+                metadata.versionCode == installed.versionCode &&
+                    metadata.signingSha256 == installed.currentSignerSha256
+            },
+            inspectedRelease = InspectedReleaseIdentity(
+                asset = asset,
+                applicationId = metadata.applicationId,
+                versionCode = metadata.versionCode,
+                versionName = metadata.versionName,
+                signerSha256 = metadata.signingSha256,
+                lineageSha256 = metadata.lineageSha256,
+            ),
+            provenance = InstallProvenance.EXTERNAL_UNMANAGED,
+            provenanceRecordedAtEpochMillis = System.currentTimeMillis(),
+        ).also(::put)
+    }
+
+    /** Promote an observed external install to a user-adopted managed record. */
+    @Synchronized
+    fun adoptExternal(
+        sourceKey: String,
+        owner: String,
+        repo: String,
+        installed: InstalledInfo,
+    ): AppIdEntry? {
+        val existing = get(sourceKey, owner, repo) ?: return null
+        if (
+            existing.provenance != InstallProvenance.EXTERNAL_UNMANAGED ||
+            existing.applicationId != installed.applicationId
+        ) {
+            return null
+        }
+        val inspected = existing.inspectedRelease
+        val installedAsset = inspected?.takeIf {
+            it.applicationId == installed.applicationId &&
+                it.versionCode == installed.versionCode &&
+                it.signerSha256 == installed.currentSignerSha256
+        }?.asset
+        return existing.copy(
+            installedVersionCode = installed.versionCode,
+            installedVersionName = installed.versionName,
+            installedSignerSha256 = installed.currentSignerSha256,
+            installedAsset = installedAsset,
+            provenance = InstallProvenance.USER_ADOPTED,
+            provenanceRecordedAtEpochMillis = System.currentTimeMillis(),
         ).also(::put)
     }
 

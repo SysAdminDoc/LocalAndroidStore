@@ -188,6 +188,10 @@ fun CatalogExperience(
                                     )
                                 },
                                 onSelectAsset = { asset -> viewModel.selectAsset(card, asset) },
+                                onAdopt = { viewModel.adopt(card) },
+                                onManualInstall = {
+                                    viewModel.install(card, allowUnmanagedReplacement = true)
+                                },
                             )
                         }
                     }

@@ -53,6 +53,15 @@
     <string name="integrity_unavailable">Integrity unavailable · GitHub did not publish a SHA-256 digest; background updates are disabled.</string>
     <string name="installed_release_versions">Installed %1$s  →  Release %2$s</string>
     <string name="installed_tag_not_inspected">Installed %1$s  •  Tag %2$s not inspected</string>
+    <string name="installed_elsewhere_version">Installed elsewhere · version %1$s (%2$d)</string>
+    <string name="installed_elsewhere_package">Package %1$s</string>
+    <string name="installed_elsewhere_signer">Current signer: %1$s</string>
+    <string name="installed_elsewhere_source">Observed from %1$s</string>
+    <string name="adopt_installed_app">Adopt installed app</string>
+    <string name="adopt_installed_app_title">Adopt this installed app?</string>
+    <string name="adopt_installed_app_body">This package was installed outside LocalAndroidStore. Adoption records its current signer and this source, then permits managed and background updates. A different signer remains blocked.</string>
+    <string name="manual_install_release">Install release manually</string>
+    <string name="status_unmanaged">Unmanaged</string>
     <string name="no_release_past_year">No release in the past year</string>
     <string name="update_alerts_muted">Update alerts muted</string>
     <string name="choose_apk">Choose APK</string>

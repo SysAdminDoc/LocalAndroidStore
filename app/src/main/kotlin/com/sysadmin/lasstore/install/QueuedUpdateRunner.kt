@@ -7,10 +7,12 @@ import android.content.pm.PackageInstaller
 import com.sysadmin.lasstore.data.ApkInspectionResult
 import com.sysadmin.lasstore.data.GitHubFailureKind
 import com.sysadmin.lasstore.data.GitHubRequestException
+import com.sysadmin.lasstore.data.InstallProvenance
 import com.sysadmin.lasstore.data.InvalidReleaseAssetDigestException
 import com.sysadmin.lasstore.data.ReleaseAssetDigestMismatchException
 import com.sysadmin.lasstore.data.ServiceLocator
 import com.sysadmin.lasstore.data.normalizeSha256Digest
+import com.sysadmin.lasstore.data.signerMatchesArtifactOrLineage
 import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.IOException
@@ -120,9 +122,14 @@ object QueuedUpdateRunner {
         }
 
         val cached = sl.appIdCache.get(payload.sourceKey, payload.owner, payload.repo)
-        val applicationId = payload.applicationId ?: cached?.applicationId
-        val installedInfo = applicationId?.let { sl.installState.info(it) }
-        if (applicationId == null || installedInfo == null) {
+        if (cached == null || cached.provenance == InstallProvenance.EXTERNAL_UNMANAGED) {
+            val message = "Queued update blocked; the installed app has not been adopted by LocalAndroidStore"
+            sl.logger.warn("QueuedUpdate", message)
+            return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.Policy)
+        }
+        val applicationId = payload.applicationId ?: cached.applicationId
+        val installedInfo = sl.installState.info(applicationId)
+        if (installedInfo == null) {
             val message = "Queued update skipped; ${payload.owner}/${payload.repo} is no longer installed"
             sl.logger.warn("QueuedUpdate", message)
             return QueuedUpdateResult.Failed(message, QueuedUpdateFailureKind.Policy)
@@ -170,6 +177,20 @@ object QueuedUpdateRunner {
                 return QueuedUpdateResult.Failed(
                     "Downloaded APK package changed from $applicationId to ${meta.applicationId}",
                     QueuedUpdateFailureKind.PackageIdentity,
+                )
+            }
+
+            if (
+                !signerMatchesArtifactOrLineage(
+                    currentSignerSha256 = installedInfo.currentSignerSha256,
+                    expectedSignerSha256 = meta.signingSha256,
+                    lineageSha256 = meta.lineageSha256,
+                )
+            ) {
+                sl.audit.installBlocked(hydratedInfo, meta, "installed_signer_mismatch")
+                return QueuedUpdateResult.Failed(
+                    "Queued update blocked; installed publisher key does not match the verified release",
+                    QueuedUpdateFailureKind.Signature,
                 )
             }
 

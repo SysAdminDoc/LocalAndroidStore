@@ -18,6 +18,7 @@ import com.sysadmin.lasstore.ui.theme.Catppuccin
 fun StatusBadge(status: CardStatus, modifier: Modifier = Modifier) {
     val (labelRes, color) = when (status) {
         CardStatus.NotInstalled -> R.string.status_available to Catppuccin.Sapphire
+        CardStatus.Unmanaged -> R.string.status_unmanaged to Catppuccin.Peach
         CardStatus.Installed -> R.string.status_installed to Catppuccin.Mint
         CardStatus.ReleaseAvailable -> R.string.status_new_release to Catppuccin.Sapphire
         CardStatus.UpdateAvailable -> R.string.status_update to Catppuccin.Peach

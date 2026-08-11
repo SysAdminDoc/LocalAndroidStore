@@ -87,6 +87,43 @@ class AppIdCacheInstrumentedTest {
         assertNull(reconciled.installedAsset)
     }
 
+    @Test
+    fun externalObservationStaysUnmanagedUntilUserAdoptsIt() {
+        val cache = AppIdCache(context)
+        val installed = InstalledInfo(
+            applicationId = "com.example.a",
+            versionName = "10",
+            versionCode = 10,
+            currentSignerSha256 = "AA",
+        )
+        val observed = cache.recordExternalObservation(
+            info = app(sourceKey = "source-a", assetId = 101),
+            metadata = metadata(
+                applicationId = installed.applicationId,
+                versionCode = installed.versionCode,
+                signer = installed.currentSignerSha256!!,
+            ),
+            installed = installed,
+        )
+
+        assertEquals(InstallProvenance.EXTERNAL_UNMANAGED, observed.provenance)
+        assertEquals(
+            InstallProvenance.EXTERNAL_UNMANAGED,
+            cache.get("source-a", OWNER, REPO)?.provenance,
+        )
+
+        val adopted = cache.adoptExternal(
+            sourceKey = "source-a",
+            owner = OWNER,
+            repo = REPO,
+            installed = installed,
+        )
+
+        assertEquals(InstallProvenance.USER_ADOPTED, adopted?.provenance)
+        assertEquals("AA", adopted?.installedSignerSha256)
+        assertEquals(InstallProvenance.USER_ADOPTED, cache.get("source-a", OWNER, REPO)?.provenance)
+    }
+
     private fun app(sourceKey: String, assetId: Long) = AppInfo(
         owner = OWNER,
         repo = REPO,

@@ -21,6 +21,15 @@ internal fun signerMatchesVerifiedArtifact(
     expectedSignerSha256: String,
 ): Boolean = expectedSignerSha256.isNotBlank() && currentSignerSha256 == expectedSignerSha256
 
+/** The installed signer must be the APK signer or an older signer in its verified lineage. */
+internal fun signerMatchesArtifactOrLineage(
+    currentSignerSha256: String?,
+    expectedSignerSha256: String,
+    lineageSha256: List<String>,
+): Boolean =
+    signerMatchesVerifiedArtifact(currentSignerSha256, expectedSignerSha256) ||
+        (currentSignerSha256 != null && currentSignerSha256 in lineageSha256)
+
 class InstallStateRepo(private val context: Context) {
     fun isInstalled(applicationId: String): Boolean = info(applicationId) != null
 
