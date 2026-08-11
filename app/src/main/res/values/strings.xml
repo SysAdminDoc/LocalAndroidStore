@@ -39,6 +39,8 @@
     <string name="open_source_settings">Open source Settings</string>
     <string name="nothing_matches_query">Nothing matches “%1$s”</string>
     <string name="search_empty_body">Try an app name, repository, version, or package ID.</string>
+    <string name="unverified_sources_hidden_title">Unverified sources are hidden</string>
+    <string name="unverified_sources_hidden_body">Turn off “Hide unverified sources” in Settings to review cards that do not yet have a pinned publisher key.</string>
     <plurals name="catalog_app_count">
         <item quantity="one">app</item>
         <item quantity="other">apps</item>
@@ -127,6 +129,16 @@
     <string name="permission_item">• %1$s</string>
     <string name="cancel_review">Cancel review</string>
     <string name="official_android_guidance">Official Android guidance</string>
+    <string name="source_verification_verified">Verified</string>
+    <string name="source_verification_unverified">Unverified</string>
+    <string name="source_verification_unknown">Unknown</string>
+    <string name="source_verification_badge_description">Source verification: %1$s. Tap for details.</string>
+    <string name="source_verification_title">Source verification · %1$s</string>
+    <string name="source_verification_verified_body">%1$s has a locally pinned publisher key, and the recorded signer matches that pin. This verifies publisher continuity for this device; it does not certify the source or prove Google\'s developer-registration status.</string>
+    <string name="source_verification_unverified_body">%1$s does not have a locally pinned publisher key for this package yet, or its observed signer differs from the pin. Review the APK evidence before trusting it. The normal Android install confirmation still controls whether installation proceeds.</string>
+    <string name="source_verification_unknown_body">LocalAndroidStore does not yet have enough package or signer evidence for %1$s to classify this source. Inspecting the APK supplies the missing local evidence.</string>
+    <string name="source_verification_google_unknown">Google developer registration is a separate system decision. Android exposes that result to the system installer, not to LocalAndroidStore. If Android requires the advanced sideloading flow, it includes its own safeguards and may impose a one-day waiting period.</string>
+    <string name="open_advanced_sideloading">Open Android developer options</string>
     <string name="asset_size_mib">%.1f MiB</string>
     <string name="asset_size_kib">%.1f KiB</string>
     <string name="asset_size_bytes">%d bytes</string>
@@ -175,6 +187,10 @@
     <string name="background_update_notifications">Background update notifications</string>
     <string name="background_update_notifications_body">Android may hide queued-update progress or results if notifications are off. Foreground installs are unaffected.</string>
     <string name="open_android_notification_settings">Open Android notification settings</string>
+    <string name="hide_unverified_sources_setting">Hide unverified sources</string>
+    <string name="hide_unverified_sources_subtitle">Remove catalog cards without a pinned publisher key. Unknown sources remain visible.</string>
+    <string name="source_verification_settings_title">Source verification</string>
+    <string name="source_verification_settings_body">Badges describe LocalAndroidStore\'s local publisher-key evidence. Google\'s registration status remains Unknown until Android\'s installer evaluates an APK.</string>
     <string name="source_number">Source %1$02d</string>
     <string name="not_configured">Not configured</string>
     <string name="enable_github_source">Enable GitHub source %1$d</string>

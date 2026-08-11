@@ -68,4 +68,12 @@ class ExternalIntentSafetyTest {
         assertTrue(intent!!.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
         assertNull(appLanguageSettingsIntent("not a package"))
     }
+
+    @Test
+    fun advancedSideloadingIntentUsesThePublicDeveloperSettingsEntryPoint() {
+        val intent = advancedSideloadingIntent()
+
+        assertEquals(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, intent.action)
+        assertTrue(intent.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+    }
 }

@@ -28,7 +28,9 @@ import com.sysadmin.lasstore.domain.CatalogSourceIssue
 import com.sysadmin.lasstore.domain.DiscoveryUseCase
 import com.sysadmin.lasstore.domain.ReleaseVersionRelation
 import com.sysadmin.lasstore.domain.ReleaseChannel
+import com.sysadmin.lasstore.domain.SourceVerificationStatus
 import com.sysadmin.lasstore.domain.classifyReleaseVersion
+import com.sysadmin.lasstore.domain.sourceVerificationStatus
 import com.sysadmin.lasstore.install.InstallResult
 import com.sysadmin.lasstore.install.ForegroundInstallFinalizer
 import com.sysadmin.lasstore.install.ForegroundInstallPhase
@@ -69,6 +71,7 @@ data class CardState(
     val progress: Float = 0f,
     val message: String? = null,
     val developerVerificationNotice: DeveloperVerificationNotice? = null,
+    val sourceVerification: SourceVerificationStatus = SourceVerificationStatus.Unknown,
     /** New dangerous permissions the update requests vs the installed version (Item 34). */
     val newDangerousPermissions: List<String> = emptyList(),
     /** True when the user has silenced update notifications for this app (Item 35). */
@@ -142,6 +145,7 @@ data class CatalogUiState(
     val noEnabledSources: Boolean = false,
     val warning: String? = null,
     val selectedAntiFeatures: Set<String> = emptySet(),
+    val hideUnverifiedSources: Boolean = false,
 )
 
 internal fun validatedGitHubRepositoryUri(rawUrl: String): android.net.Uri? {
@@ -235,6 +239,11 @@ class CatalogViewModel : ViewModel() {
                 _state.update { ui ->
                     ui.copy(cards = ui.cards.map(::withQueuedUpdateStatus))
                 }
+            }
+        }
+        viewModelScope.launch {
+            sl.settings.flow.collectLatest { settings ->
+                _state.update { it.copy(hideUnverifiedSources = settings.hideUnverifiedSources) }
             }
         }
         viewModelScope.launch {
@@ -391,6 +400,14 @@ class CatalogViewModel : ViewModel() {
         }
     }
 
+    /** Open Android's public Developer options entry point for the advanced sideloading flow. */
+    fun openAdvancedSideloadingFlow() {
+        when (val result = sl.installer.openAdvancedSideloadingSettings()) {
+            ExternalLaunchResult.Started -> Unit
+            is ExternalLaunchResult.Failed -> _state.update { it.copy(warning = result.message) }
+        }
+    }
+
     fun updateSearchQuery(query: String) {
         _state.update { it.copy(searchQuery = query) }
     }
@@ -470,6 +487,7 @@ class CatalogViewModel : ViewModel() {
                         current.copy(
                             refreshing = false,
                             cards = cards,
+                            hideUnverifiedSources = settings.hideUnverifiedSources,
                             noEnabledSources = enabledSources.isEmpty() && enabledFdroidSources.isEmpty(),
                             errorMessage = catalogNotice.takeIf {
                                 cards.isEmpty() && discoveryResult.issues.isNotEmpty()
@@ -594,6 +612,12 @@ class CatalogViewModel : ViewModel() {
         return withForegroundInstallState(
             withQueuedUpdateStatus(
                 baseState.copy(
+                    sourceVerification = sourceVerificationStatus(
+                        applicationId = applicationId,
+                        knownSignerSha256 = installed?.currentSignerSha256
+                            ?: reconciled?.inspectedRelease?.signerSha256,
+                        pinnedSignerSha256 = applicationId?.let(sl.secrets::getPin),
+                    ),
                     alternativeSources = alternatives,
                     channelPreference = sl.channelPreferences.get(info),
                     resumableDownloadBytes = sl.foregroundInstalls.partialDownloadSize(info),
@@ -2141,6 +2165,12 @@ class CatalogViewModel : ViewModel() {
                         progress = 1f,
                         message = null,
                         developerVerificationNotice = null,
+                        sourceVerification = sourceVerificationStatus(
+                            applicationId = meta.applicationId,
+                            knownSignerSha256 = installedInfo?.currentSignerSha256
+                                ?: meta.signingSha256,
+                            pinnedSignerSha256 = sl.secrets.getPin(meta.applicationId),
+                        ),
                         newDangerousPermissions = emptyList(),
                     )
                 }

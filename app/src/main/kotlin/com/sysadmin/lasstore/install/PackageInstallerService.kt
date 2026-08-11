@@ -77,6 +77,18 @@ class PackageInstallerService(
         )
     }
 
+    /**
+     * Open Android's public developer-settings entry point for the advanced sideloading flow.
+     * Android's final developer-registration decision remains owned by PackageInstaller when the
+     * APK install is committed; no public third-party intent exists for bypassing that flow.
+     */
+    fun openAdvancedSideloadingSettings(): ExternalLaunchResult {
+        return launchExternalIntent(
+            intent = advancedSideloadingIntent(),
+            failureMessage = "Could not open Android's developer settings.",
+        )
+    }
+
     /** Launch the installed app's main activity. */
     fun launch(applicationId: String): ExternalLaunchResult {
         val intent = context.packageManager.getLaunchIntentForPackage(applicationId)
@@ -603,6 +615,10 @@ internal fun appLanguageSettingsIntent(applicationId: String): Intent? {
         .setData(Uri.fromParts("package", applicationId, null))
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 }
+
+internal fun advancedSideloadingIntent(): Intent = Intent(
+    Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS,
+).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
 sealed interface InstallResult {
     data object Success : InstallResult

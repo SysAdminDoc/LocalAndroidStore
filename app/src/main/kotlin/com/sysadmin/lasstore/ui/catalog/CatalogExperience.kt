@@ -69,6 +69,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.LaunchedEffect
 import com.sysadmin.lasstore.R
 import com.sysadmin.lasstore.domain.CardStatus
+import com.sysadmin.lasstore.domain.SourceVerificationStatus
 import com.sysadmin.lasstore.domain.antiFeatureBadge
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import kotlinx.coroutines.flow.Flow
@@ -97,12 +98,19 @@ fun CatalogExperience(
         state.cards,
         state.searchQuery,
         state.selectedAntiFeatures,
+        state.hideUnverifiedSources,
     ) {
         filterCards(state.cards, state.searchQuery)
             .filter { card ->
                 state.selectedAntiFeatures.all { it in card.info.antiFeatures }
             }
+            .filter { card ->
+                !state.hideUnverifiedSources ||
+                    card.sourceVerification != SourceVerificationStatus.Unverified
+            }
     }
+    val unverifiedSourcesHidden = state.hideUnverifiedSources &&
+        state.cards.any { it.sourceVerification == SourceVerificationStatus.Unverified }
     val updateCount = remember(state.cards) {
         state.cards.count { it.status == CardStatus.UpdateAvailable }
     }
@@ -170,10 +178,14 @@ fun CatalogExperience(
                     )
                 }
                 visibleCards.isEmpty() -> {
-                    SearchEmpty(
-                        query = state.searchQuery,
-                        onClear = { viewModel.updateSearchQuery("") },
-                    )
+                    if (unverifiedSourcesHidden && state.searchQuery.isBlank()) {
+                        VerificationFilterEmpty(onOpenSettings = onOpenSettings)
+                    } else {
+                        SearchEmpty(
+                            query = state.searchQuery,
+                            onClear = { viewModel.updateSearchQuery("") },
+                        )
+                    }
                 }
                 else -> {
                     LazyVerticalGrid(
@@ -238,6 +250,7 @@ fun CatalogExperience(
                                 onOpenLanguageSettings = {
                                     viewModel.openAppLanguageSettings(card)
                                 },
+                                onOpenAdvancedSideloading = viewModel::openAdvancedSideloadingFlow,
                             )
                         }
                     }
@@ -759,6 +772,43 @@ private fun CatalogNoticeStrip(text: String) {
                 style = MaterialTheme.typography.bodySmall,
                 color = Catppuccin.Yellow,
             )
+        }
+    }
+}
+
+@Composable
+private fun VerificationFilterEmpty(onOpenSettings: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(28.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Security,
+                contentDescription = null,
+                tint = Catppuccin.Yellow,
+                modifier = Modifier.size(42.dp),
+            )
+            Text(
+                text = stringResource(R.string.unverified_sources_hidden_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = Catppuccin.TextStrong,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            Text(
+                text = stringResource(R.string.unverified_sources_hidden_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Catppuccin.Subtext,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+            OutlinedButton(onClick = onOpenSettings) {
+                Text(stringResource(R.string.open_source_settings))
+            }
         }
     }
 }

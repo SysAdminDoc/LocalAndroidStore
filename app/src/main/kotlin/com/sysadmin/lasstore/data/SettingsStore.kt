@@ -104,6 +104,7 @@ class SettingsStore(
     private val keyPrereleases = booleanPreferencesKey("show_prereleases")
     private val keySources = stringPreferencesKey("github_sources_v1")
     private val keyFdroidSources = stringPreferencesKey("fdroid_sources_v1")
+    private val keyHideUnverifiedSources = booleanPreferencesKey("hide_unverified_sources")
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -268,6 +269,7 @@ class SettingsStore(
                 fdroidSourceListSerializer,
                 canonical.fdroidSources,
             )
+            prefs[keyHideUnverifiedSources] = canonical.hideUnverifiedSources
         }
     }
 
@@ -284,6 +286,7 @@ class SettingsStore(
             settings = legacy.copy(
                 sources = normalizeSources(sources),
                 fdroidSources = decodeFdroidSources(prefs[keyFdroidSources]),
+                hideUnverifiedSources = prefs[keyHideUnverifiedSources] ?: false,
             ),
             payloadState = decoded.state,
             malformedPayload = decoded.rawPayload,
@@ -300,6 +303,7 @@ class SettingsStore(
             showPrereleases = primary.showPrereleases,
             sources = sources,
             fdroidSources = normalizeFdroidSources(settings.fdroidSources),
+            hideUnverifiedSources = settings.hideUnverifiedSources,
         )
     }
 

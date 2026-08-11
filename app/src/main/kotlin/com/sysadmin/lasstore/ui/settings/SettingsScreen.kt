@@ -96,6 +96,9 @@ fun SettingsScreen(
             state.settings.fdroidSources.map(FdroidSourceDraft::from),
         )
     }
+    var hideUnverifiedSources by remember(state.settings.hideUnverifiedSources) {
+        mutableStateOf(state.settings.hideUnverifiedSources)
+    }
     val draftFdroidSources = fdroidDrafts.map(FdroidSourceDraft::toSource)
     val fdroidValidationError = validateFdroidSources(draftFdroidSources)
     val normalizedFdroidSources = normalizeFdroidSources(draftFdroidSources)
@@ -108,7 +111,8 @@ fun SettingsScreen(
         normalizedSources != normalizeSources(state.settings.sources) ||
         normalizedSourcePats(sourcePats) != normalizedSourcePats(state.sourcePats) ||
         fdroidDrafts != persistedFdroidDrafts ||
-        normalizedFdroidSources != normalizeFdroidSources(state.settings.fdroidSources)
+        normalizedFdroidSources != normalizeFdroidSources(state.settings.fdroidSources) ||
+        hideUnverifiedSources != state.settings.hideUnverifiedSources
 
     Column(
         modifier = Modifier
@@ -122,6 +126,11 @@ fun SettingsScreen(
         SettingsHeader()
 
         SecurityPosture(encryptedAtRest = state.encryptedAtRest)
+
+        SourceVerificationPosture(
+            hideUnverifiedSources = hideUnverifiedSources,
+            onHideUnverifiedSourcesChange = { hideUnverifiedSources = it },
+        )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             NotificationPosture(onOpenSettings = onOpenNotificationSettings)
@@ -282,6 +291,7 @@ fun SettingsScreen(
                         sources = draftSources,
                         sourcePats = sourcePats,
                         fdroidSources = draftFdroidSources,
+                        hideUnverifiedSources = hideUnverifiedSources,
                     )
                 },
                 enabled = validationError == null && fdroidValidationError == null && !state.saving &&
@@ -301,6 +311,7 @@ fun SettingsScreen(
                     sources = draftSources,
                     sourcePats = sourcePats,
                     fdroidSources = draftFdroidSources,
+                    hideUnverifiedSources = hideUnverifiedSources,
                 )
             },
             enabled = validationError == null && fdroidValidationError == null &&
@@ -472,6 +483,41 @@ private fun SecurityPosture(encryptedAtRest: Boolean) {
                     color = Catppuccin.Subtext,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SourceVerificationPosture(
+    hideUnverifiedSources: Boolean,
+    onHideUnverifiedSourcesChange: (Boolean) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = Catppuccin.Surface1,
+        border = BorderStroke(1.dp, Catppuccin.Stroke),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.source_verification_settings_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = Catppuccin.TextStrong,
+            )
+            Text(
+                text = stringResource(R.string.source_verification_settings_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = Catppuccin.Subtext,
+            )
+            SettingRow(
+                title = stringResource(R.string.hide_unverified_sources_setting),
+                subtitle = stringResource(R.string.hide_unverified_sources_subtitle),
+                value = hideUnverifiedSources,
+                onChange = onHideUnverifiedSourcesChange,
+            )
         }
     }
 }

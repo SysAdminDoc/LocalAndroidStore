@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -73,6 +74,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sysadmin.lasstore.R
+import com.sysadmin.lasstore.data.DeveloperVerificationCopy
 import com.sysadmin.lasstore.data.GhAsset
 import com.sysadmin.lasstore.data.normalizeSha256Digest
 import com.sysadmin.lasstore.domain.AntiFeatureBadge
@@ -80,6 +82,7 @@ import com.sysadmin.lasstore.domain.AntiFeatureSeverity
 import com.sysadmin.lasstore.domain.CardStatus
 import com.sysadmin.lasstore.domain.ApkAssetClassifier
 import com.sysadmin.lasstore.domain.ReleaseChannel
+import com.sysadmin.lasstore.domain.SourceVerificationStatus
 import com.sysadmin.lasstore.domain.antiFeatureBadges
 import com.sysadmin.lasstore.ui.theme.Catppuccin
 import java.time.Instant
@@ -111,6 +114,7 @@ fun ReleaseCard(
     onSelectPreferredSource: (String) -> Unit = {},
     onSetChannelPreference: (ReleaseChannel?) -> Unit = {},
     onOpenLanguageSettings: () -> Unit = {},
+    onOpenAdvancedSideloading: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isReleaseStale = remember(state.info.publishedAt) {
@@ -143,6 +147,9 @@ fun ReleaseCard(
         state.info.handle,
         state.channelPreference,
     ) { mutableStateOf(false) }
+    var sourceVerificationVisible by rememberSaveable(state.info.handle) {
+        mutableStateOf(false)
+    }
     val antiFeatureBadges = remember(state.info.antiFeatures) {
         antiFeatureBadges(state.info.antiFeatures)
     }
@@ -195,6 +202,18 @@ fun ReleaseCard(
                 TextButton(onClick = { assetSelectionVisible = false }) {
                     Text(stringResource(R.string.cancel))
                 }
+            },
+        )
+    }
+
+    if (sourceVerificationVisible) {
+        SourceVerificationDialog(
+            sourceLabel = state.info.sourceLabel,
+            status = state.sourceVerification,
+            onDismiss = { sourceVerificationVisible = false },
+            onOpenAdvancedSideloading = {
+                sourceVerificationVisible = false
+                onOpenAdvancedSideloading()
             },
         )
     }
@@ -854,6 +873,10 @@ fun ReleaseCard(
                                 maxLines = 1,
                             )
                         }
+                        SourceVerificationBadge(
+                            status = state.sourceVerification,
+                            onClick = { sourceVerificationVisible = true },
+                        )
                     }
 
                     PrimaryReleaseAction(
@@ -1492,6 +1515,117 @@ private fun PermissionReview(
             }
         }
     }
+}
+
+@Composable
+private fun SourceVerificationBadge(
+    status: SourceVerificationStatus,
+    onClick: () -> Unit,
+) {
+    val label = sourceVerificationLabel(status)
+    val description = stringResource(
+        R.string.source_verification_badge_description,
+        label,
+    )
+    val color = when (status) {
+        SourceVerificationStatus.Verified -> Catppuccin.Mint
+        SourceVerificationStatus.Unverified -> Catppuccin.Peach
+        SourceVerificationStatus.Unknown -> Catppuccin.Sapphire
+    }
+    Surface(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .semantics {
+                contentDescription = description
+            },
+        shape = RoundedCornerShape(50),
+        color = color.copy(alpha = 0.1f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.3f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Security,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(13.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = color,
+            )
+        }
+    }
+}
+
+@Composable
+private fun sourceVerificationLabel(status: SourceVerificationStatus): String = stringResource(
+    when (status) {
+        SourceVerificationStatus.Verified -> R.string.source_verification_verified
+        SourceVerificationStatus.Unverified -> R.string.source_verification_unverified
+        SourceVerificationStatus.Unknown -> R.string.source_verification_unknown
+    },
+)
+
+@Composable
+private fun SourceVerificationDialog(
+    sourceLabel: String,
+    status: SourceVerificationStatus,
+    onDismiss: () -> Unit,
+    onOpenAdvancedSideloading: () -> Unit,
+) {
+    val uriHandler = LocalUriHandler.current
+    val label = sourceVerificationLabel(status)
+    val body = when (status) {
+        SourceVerificationStatus.Verified -> stringResource(
+            R.string.source_verification_verified_body,
+            sourceLabel,
+        )
+        SourceVerificationStatus.Unverified -> stringResource(
+            R.string.source_verification_unverified_body,
+            sourceLabel,
+        )
+        SourceVerificationStatus.Unknown -> stringResource(
+            R.string.source_verification_unknown_body,
+            sourceLabel,
+        )
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.source_verification_title, label)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(body)
+                Text(
+                    text = stringResource(R.string.source_verification_google_unknown),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Catppuccin.Subtext,
+                )
+                TextButton(
+                    onClick = {
+                        uriHandler.openUri(DeveloperVerificationCopy.OFFICIAL_GUIDANCE_URL)
+                    },
+                    contentPadding = PaddingValues(horizontal = 0.dp),
+                ) {
+                    Text(stringResource(R.string.official_android_guidance))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onOpenAdvancedSideloading) {
+                Text(stringResource(R.string.open_advanced_sideloading))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 @Composable

@@ -76,6 +76,19 @@ class SettingsStoreTransactionRobolectricTest {
         assertEquals(target.sources, store.flow.first().sources)
     }
 
+    @Test
+    fun hideUnverifiedSourcesPreferencePersistsWithTheSourceRegistry() = runBlocking {
+        val store = newStore(FakeSettingsSecrets())
+        val target = AppSettings(
+            sources = listOf(GitHubSource(user = "alice")),
+            hideUnverifiedSources = true,
+        )
+
+        store.update(target)
+
+        assertTrue(store.flow.first().hideUnverifiedSources)
+    }
+
     private fun newStore(
         secrets: FakeSettingsSecrets,
         dataStore: DataStore<Preferences> = newDataStore(),

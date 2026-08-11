@@ -39,6 +39,7 @@ data class AppSettings(
         )
     ),
     val fdroidSources: List<FdroidSource> = emptyList(),
+    val hideUnverifiedSources: Boolean = false,
 )
 
 const val DEFAULT_GITHUB_USER = "SysAdminDoc"

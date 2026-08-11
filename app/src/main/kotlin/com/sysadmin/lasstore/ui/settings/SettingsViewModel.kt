@@ -115,8 +115,15 @@ class SettingsViewModel : ViewModel() {
         sources: List<GitHubSource>,
         sourcePats: Map<String, String>,
         fdroidSources: List<FdroidSource>,
+        hideUnverifiedSources: Boolean = _state.value.settings.hideUnverifiedSources,
     ) {
-        saveInternal(sources, sourcePats, fdroidSources, replaceMalformedRegistry = false)
+        saveInternal(
+            sources = sources,
+            sourcePats = sourcePats,
+            fdroidSources = fdroidSources,
+            hideUnverifiedSources = hideUnverifiedSources,
+            replaceMalformedRegistry = false,
+        )
     }
 
     fun replaceMalformedRegistry(
@@ -134,14 +141,22 @@ class SettingsViewModel : ViewModel() {
         sources: List<GitHubSource>,
         sourcePats: Map<String, String>,
         fdroidSources: List<FdroidSource>,
+        hideUnverifiedSources: Boolean = _state.value.settings.hideUnverifiedSources,
     ) {
-        saveInternal(sources, sourcePats, fdroidSources, replaceMalformedRegistry = true)
+        saveInternal(
+            sources = sources,
+            sourcePats = sourcePats,
+            fdroidSources = fdroidSources,
+            hideUnverifiedSources = hideUnverifiedSources,
+            replaceMalformedRegistry = true,
+        )
     }
 
     private fun saveInternal(
         sources: List<GitHubSource>,
         sourcePats: Map<String, String>,
         fdroidSources: List<FdroidSource>,
+        hideUnverifiedSources: Boolean,
         replaceMalformedRegistry: Boolean,
     ) {
         if (_state.value.saveStatus == SettingsSaveStatus.Saving) return
@@ -195,6 +210,7 @@ class SettingsViewModel : ViewModel() {
                 val targetSettings = AppSettings(
                     sources = normalizeSources(normalized),
                     fdroidSources = normalizedFdroidSources,
+                    hideUnverifiedSources = hideUnverifiedSources,
                 )
                 val persistedSourcePats = sourcePats
                     .filter { (key, value) ->

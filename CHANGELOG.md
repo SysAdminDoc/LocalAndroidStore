@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added per-source verification badges with an in-app explanation, an Android developer-options entry point for advanced sideloading, and a Settings preference to hide locally unverified catalog cards while leaving unknown cards visible.
 - Added package-identity aggregation across configured sources with a persisted preferred-source chooser for duplicate releases.
 - Added normalized release-channel derivation and per-repository channel pinning; GitHub discovery now selects the newest matching stable, beta, alpha, nightly, release-candidate, or development release within its bounded history.
 - Added per-app language controls that open Android 13+'s package-scoped language settings from installed catalog cards, plus automatic locale configuration generation for future translations.
