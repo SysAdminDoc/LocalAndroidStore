@@ -38,12 +38,7 @@ internal object SupportRedactor {
     )
 
     fun redact(value: String, maxChars: Int = MAX_ENTRY_CHARS): String {
-        val bounded = if (value.length > maxChars) {
-            value.take(maxChars) + "\n[TRUNCATED]"
-        } else {
-            value
-        }
-        return bounded
+        val redacted = value
             .replace(authorization) { "${it.groupValues[1]}[REDACTED]" }
             .replace(bearer, "Bearer [REDACTED]")
             .replace(githubToken, "[REDACTED]")
@@ -52,6 +47,11 @@ internal object SupportRedactor {
             }
             .replace(queryCredential) { "${it.groupValues[1]}[REDACTED]" }
             .replace(urlUserInfo) { "${it.groupValues[1]}[REDACTED]@" }
+        return if (redacted.length > maxChars) {
+            redacted.take(maxChars) + "\n[TRUNCATED]"
+        } else {
+            redacted
+        }
     }
 
     private const val MAX_ENTRY_CHARS = 32 * 1024
