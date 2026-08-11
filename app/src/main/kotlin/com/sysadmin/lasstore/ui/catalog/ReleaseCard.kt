@@ -390,6 +390,7 @@ fun ReleaseCard(
                 ),
             ),
         ) {
+            CardAccessibilityLiveRegion(state)
             Column(
                 modifier = Modifier.padding(17.dp),
                 verticalArrangement = Arrangement.spacedBy(11.dp),

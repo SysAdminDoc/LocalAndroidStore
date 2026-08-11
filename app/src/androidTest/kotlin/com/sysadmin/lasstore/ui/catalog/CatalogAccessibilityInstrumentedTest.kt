@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -98,6 +101,48 @@ class CatalogAccessibilityInstrumentedTest {
             .assertDoesNotExist()
     }
 
+    @Test
+    fun installFailureIsExposedAsOneDeduplicatedLiveAnnouncement() {
+        var state by mutableStateOf(
+            cardState().copy(
+                status = CardStatus.Working,
+                message = "Installing…",
+            ),
+        )
+        composeRule.setContent {
+            LocalAndroidStoreTheme {
+                ReleaseCard(
+                    state = state,
+                    onInstall = {},
+                    onUpdate = {},
+                    onQueueUpdate = {},
+                    onCancelQueuedUpdate = {},
+                    onUninstall = {},
+                    onOpen = {},
+                    onRepo = {},
+                    onCancel = {},
+                    onProceedPermissions = {},
+                    onCancelPermissions = {},
+                    onIgnore = {},
+                    onSaveApk = {},
+                    onReplacePublisherPin = { _, _ -> },
+                    onSelectAsset = {},
+                )
+            }
+        }
+        composeRule.runOnIdle {
+            state = state.copy(
+                status = CardStatus.Error,
+                message = "Network unavailable",
+            )
+        }
+
+        composeRule.onNodeWithContentDescription(
+            "Example: installation failed. Network unavailable Review the error and retry.",
+            useUnmergedTree = true,
+        ).assertExists()
+    }
+
     private fun renderCard(
         state: CardState = cardState(),
         fontScale: Float = 1f,
@@ -130,6 +175,7 @@ class CatalogAccessibilityInstrumentedTest {
                             onIgnore = {},
                             onSaveApk = {},
                             onReplacePublisherPin = { _, _ -> },
+                            onSelectAsset = {},
                         )
                     }
                 }

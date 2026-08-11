@@ -98,6 +98,7 @@ fun CatalogExperience(
             .fillMaxSize()
             .background(Catppuccin.Crust),
     ) {
+        CatalogAccessibilityLiveRegion(state)
         CatalogHero(
             refreshing = state.refreshing,
             onRefresh = {
