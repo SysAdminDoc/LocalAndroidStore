@@ -232,7 +232,7 @@ fun LogScreen() {
             ) {
                 items(
                     items = entries.reversed(),
-                    key = { "${category.name}-${it.ts}-${it.tag}-${it.message.hashCode()}" },
+                    key = { diagnosticEntryKey(category.name, it) },
                 ) { entry ->
                     ActivityEntry(
                         entry = entry,
@@ -616,7 +616,11 @@ private fun ActivityEntry(
     }
 }
 
+internal fun diagnosticEntryKey(category: String, entry: LogEntry): String =
+    "$category-${entry.id}"
+
 private fun InstallAuditLog.Entry.asLogEntry(): LogEntry = LogEntry(
+    id = id,
     ts = ts,
     level = when (event) {
         "install_failed" -> LogLevel.Error

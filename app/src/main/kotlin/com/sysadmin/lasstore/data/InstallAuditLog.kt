@@ -11,6 +11,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
+import java.util.UUID
 
 /**
  * On-disk JSON-Lines record of every install / uninstall / signature-block event.
@@ -46,6 +47,7 @@ class InstallAuditLog(context: Context) {
         val verifiedSignatureSchemes: List<String> = emptyList(),
         val reason: String = "",
         val message: String = "",
+        val id: String = "",
     )
 
     private val _entries = MutableStateFlow(readEntries())
@@ -246,8 +248,9 @@ class InstallAuditLog(context: Context) {
     }
 
     private fun append(entry: Entry): Boolean {
+        val persistedEntry = entry.copy(id = entry.id.ifBlank { UUID.randomUUID().toString() })
         val written = runCatching {
-            val line = json.encodeToString(entry) + "\n"
+            val line = json.encodeToString(persistedEntry) + "\n"
             synchronized(fileLock) {
                 if (file.length() + line.toByteArray().size > MAX_BYTES) {
                     rotated.delete()
@@ -263,7 +266,7 @@ class InstallAuditLog(context: Context) {
             }
         }.isSuccess
         if (written) {
-            _entries.value = (_entries.value + entry).takeLast(MAX_ENTRIES)
+            _entries.value = (_entries.value + persistedEntry).takeLast(MAX_ENTRIES)
         }
         return written
     }
@@ -276,8 +279,14 @@ class InstallAuditLog(context: Context) {
                         emptyList()
                     } else {
                         source.useLines { lines ->
-                            lines.mapNotNull { line ->
-                                runCatching { json.decodeFromString<Entry>(line) }.getOrNull()
+                            lines.mapIndexedNotNull { index, line ->
+                                runCatching { json.decodeFromString<Entry>(line) }
+                                    .getOrNull()
+                                    ?.let { entry ->
+                                        entry.copy(
+                                            id = entry.id.ifBlank { "legacy-${source.name}-$index" },
+                                        )
+                                    }
                             }.toList()
                         }
                     }

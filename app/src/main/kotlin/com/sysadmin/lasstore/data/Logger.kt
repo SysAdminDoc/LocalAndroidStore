@@ -15,6 +15,7 @@ import java.io.PrintWriter
 import java.io.StringWriter
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicReference
+import java.util.UUID
 
 enum class LogLevel { Info, Warn, Error }
 
@@ -24,6 +25,7 @@ data class LogEntry(
     val level: LogLevel,
     val tag: String,
     val message: String,
+    val id: String = "",
 )
 
 class Logger(
@@ -57,6 +59,7 @@ class Logger(
             level = level,
             tag = SupportRedactor.redact(tag),
             message = SupportRedactor.redact(message),
+            id = UUID.randomUUID().toString(),
         )
         persist(diagnosticsFile, rotatedDiagnosticsFile, entry)
         _entries.update { (it + entry).takeLast(MAX_ENTRIES) }
@@ -96,6 +99,7 @@ class Logger(
             level = LogLevel.Error,
             tag = SupportRedactor.redact(tag),
             message = SupportRedactor.redact(message),
+            id = UUID.randomUUID().toString(),
         )
         persist(crashFile, rotatedCrashFile, entry)
         _crashEntries.update { (it + entry).takeLast(MAX_ENTRIES) }
@@ -124,8 +128,12 @@ class Logger(
                 } else {
                     val bounded = readTail(file, MAX_LEGACY_READ_BYTES)
                     val text = bounded.text
-                    val decoded = text.lineSequence().mapNotNull { line ->
-                        runCatching { json.decodeFromString<LogEntry>(line) }.getOrNull()
+                    val decoded = text.lineSequence().mapIndexedNotNull { index, line ->
+                        runCatching { json.decodeFromString<LogEntry>(line) }
+                            .getOrNull()
+                            ?.let { entry ->
+                                entry.copy(id = entry.id.ifBlank { "legacy-${file.name}-$index" })
+                            }
                     }.toList()
                     if (decoded.isNotEmpty() || (text.isBlank() && !bounded.truncated)) {
                         decoded
@@ -140,6 +148,7 @@ class Logger(
                                 },
                                 tag = "Legacy ${file.name}",
                                 message = legacyMessage(bounded),
+                                id = "legacy-${file.name}",
                             ),
                         )
                     }

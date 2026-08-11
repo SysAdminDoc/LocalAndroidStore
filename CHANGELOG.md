@@ -33,6 +33,7 @@
 - Added bounded, paged historical release browsing with explicit foreground selection; selected older releases retain available version/digest/signer evidence, use the normal inspection/trust/downgrade gates, are audit-recorded, and cannot enter the background queue.
 
 ### Fixed
+- Added persisted IDs to diagnostics and install-audit events, migrated legacy entries to deterministic IDs, and removed timestamp/hash-based Compose keys so identical activity rows remain distinct and stable.
 - Bounded Logger startup reads to a 128 KiB tail per persisted file; oversized malformed legacy diagnostics and crash logs now retain a marked tail without loading the full file into memory.
 - Made support-bundle exports unique and share-safe: prior bundles remain readable, known bundles are pruned only after a 24-hour safety window within a bounded retention budget, and share-sheet failures become visible errors.
 - Made legacy Save APK destinations collision-safe with reserved unique filenames and cleanup on failed copies; repeated saves preserve earlier downloads and report the actual saved name.
