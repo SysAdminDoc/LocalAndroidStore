@@ -1672,12 +1672,14 @@ class CatalogViewModel : ViewModel() {
                     installedInfo = installedInfo,
                     metadata = meta,
                     pinnedSignerSha256 = sl.secrets.getPin(meta.applicationId),
+                    declaredSignerSha256 = sl.libraryRestore.declaredSignerFor(meta.applicationId),
                 )
                 if (verification is ArtifactVerificationResult.Rejected) {
                     preapprovalSessionId?.let { sl.installer.abandonSession(it) }
                     sl.foregroundInstalls.removeIfCurrent(key, operationId)
                     val reason = when (verification.reason) {
                         ArtifactVerificationRejection.PackageIdentity -> "application_id_changed"
+                        ArtifactVerificationRejection.DeclaredSigner -> "restore_cert_mismatch"
                         ArtifactVerificationRejection.InstalledSigner -> "installed_signer_mismatch"
                         ArtifactVerificationRejection.PublisherPin -> "signature_pin_mismatch"
                     }
@@ -1713,7 +1715,12 @@ class CatalogViewModel : ViewModel() {
                                         downloadedMetadata = meta,
                                     )
                                 }
-                        ArtifactVerificationRejection.PackageIdentity -> null
+                        // A declared-signer mismatch is not a pin-replacement decision: the device
+                        // may hold no pin at all. The user resolves it by correcting or dropping
+                        // the imported restore entry, so the pin-recovery dialog stays closed.
+                        ArtifactVerificationRejection.DeclaredSigner,
+                        ArtifactVerificationRejection.PackageIdentity,
+                        -> null
                     }
                     updateCardForAction(card.info, operationId) {
                         it.copy(

@@ -182,11 +182,13 @@ object QueuedUpdateRunner {
                 installedInfo = installedInfo,
                 metadata = meta,
                 pinnedSignerSha256 = sl.secrets.getPin(meta.applicationId),
+                declaredSignerSha256 = sl.libraryRestore.declaredSignerFor(meta.applicationId),
             )
             if (verification is ArtifactVerificationResult.Rejected) {
                 if (!sl.queuedUpdateStatus.isCurrent(payload)) return QueuedUpdateResult.Stale
                 val reason = when (verification.reason) {
                     ArtifactVerificationRejection.PackageIdentity -> "application_id_changed"
+                    ArtifactVerificationRejection.DeclaredSigner -> "restore_cert_mismatch"
                     ArtifactVerificationRejection.InstalledSigner -> "installed_signer_mismatch"
                     ArtifactVerificationRejection.PublisherPin -> "signature_pin_mismatch"
                 }
@@ -196,6 +198,7 @@ object QueuedUpdateRunner {
                     verification.message,
                     when (verification.reason) {
                         ArtifactVerificationRejection.PackageIdentity -> QueuedUpdateFailureKind.PackageIdentity
+                        ArtifactVerificationRejection.DeclaredSigner,
                         ArtifactVerificationRejection.InstalledSigner,
                         ArtifactVerificationRejection.PublisherPin -> QueuedUpdateFailureKind.Signature
                     },

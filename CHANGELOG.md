@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Library restore now verifies the publisher certificate the export recorded. The `.las-library` lockfile has always carried `certSha256` per app, but restore matched only on source, repository, package and asset identity and discarded it, so a re-imaged device accepted whatever signing key the source currently served. Every install route now passes that value to the shared artifact verifier as a declared signer; a mismatch is blocked before permission review and audited as `restore_cert_mismatch`. A declared certificate that appears in the artifact's verified v3/v3.1 rotation lineage is still accepted, so a stale export does not block a publisher who legitimately rotated keys.
+
 ## v0.2.5 (2026-08-29)
 
 > **v0.2.5 status**: Current 2026-08-29 (`versionCode = 7`, `versionName = "0.2.5"`).

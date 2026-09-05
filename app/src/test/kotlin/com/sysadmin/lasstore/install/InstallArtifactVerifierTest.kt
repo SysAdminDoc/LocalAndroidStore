@@ -15,6 +15,7 @@ class InstallArtifactVerifierTest {
             installedInfo = null,
             metadata = metadata(applicationId = "com.example.other"),
             pinnedSignerSha256 = null,
+            declaredSignerSha256 = null,
         )
 
         assertEquals(
@@ -24,12 +25,84 @@ class InstallArtifactVerifierTest {
     }
 
     @Test
+    fun rejectsAnArtifactThatContradictsTheDeclaredRestoreCertificate() {
+        val result = verifyInstallArtifact(
+            expectedApplicationId = PACKAGE_NAME,
+            installedInfo = null,
+            metadata = metadata(),
+            pinnedSignerSha256 = null,
+            declaredSignerSha256 = OTHER_SIGNER,
+        )
+
+        val rejected = result as ArtifactVerificationResult.Rejected
+        assertEquals(ArtifactVerificationRejection.DeclaredSigner, rejected.reason)
+        assertEquals(OTHER_SIGNER, rejected.declaredSignerSha256)
+    }
+
+    @Test
+    fun rejectsADeclaredCertificateThatDiffersByASingleCharacter() {
+        val mutated = NEW_SIGNER.dropLast(1) + if (NEW_SIGNER.last() == 'a') 'b' else 'a'
+        val result = verifyInstallArtifact(
+            expectedApplicationId = PACKAGE_NAME,
+            installedInfo = null,
+            metadata = metadata(),
+            pinnedSignerSha256 = null,
+            declaredSignerSha256 = mutated,
+        )
+
+        assertEquals(
+            ArtifactVerificationRejection.DeclaredSigner,
+            (result as ArtifactVerificationResult.Rejected).reason,
+        )
+    }
+
+    @Test
+    fun acceptsAnArtifactThatMatchesTheDeclaredRestoreCertificate() {
+        val result = verifyInstallArtifact(
+            expectedApplicationId = PACKAGE_NAME,
+            installedInfo = null,
+            metadata = metadata(),
+            pinnedSignerSha256 = null,
+            declaredSignerSha256 = NEW_SIGNER.uppercase(),
+        )
+
+        assertTrue(result is ArtifactVerificationResult.Accepted)
+    }
+
+    @Test
+    fun acceptsADeclaredCertificateThatAppearsInTheVerifiedRotationLineage() {
+        val result = verifyInstallArtifact(
+            expectedApplicationId = PACKAGE_NAME,
+            installedInfo = null,
+            metadata = metadata(lineage = listOf(OLD_SIGNER, NEW_SIGNER)),
+            pinnedSignerSha256 = null,
+            declaredSignerSha256 = OLD_SIGNER,
+        )
+
+        assertTrue(result is ArtifactVerificationResult.Accepted)
+    }
+
+    @Test
+    fun ignoresAMalformedDeclaredCertificate() {
+        val result = verifyInstallArtifact(
+            expectedApplicationId = PACKAGE_NAME,
+            installedInfo = null,
+            metadata = metadata(),
+            pinnedSignerSha256 = null,
+            declaredSignerSha256 = "not-a-fingerprint",
+        )
+
+        assertTrue(result is ArtifactVerificationResult.Accepted)
+    }
+
+    @Test
     fun acceptsAnInstalledSignerThatAppearsInVerifiedLineage() {
         val result = verifyInstallArtifact(
             expectedApplicationId = PACKAGE_NAME,
             installedInfo = InstalledInfo(PACKAGE_NAME, "1", 1, OLD_SIGNER),
             metadata = metadata(lineage = listOf(OLD_SIGNER, NEW_SIGNER)),
             pinnedSignerSha256 = OLD_SIGNER,
+            declaredSignerSha256 = null,
         )
 
         val accepted = result as ArtifactVerificationResult.Accepted
@@ -44,6 +117,7 @@ class InstallArtifactVerifierTest {
             installedInfo = InstalledInfo(PACKAGE_NAME, "1", 1, NEW_SIGNER),
             metadata = metadata(),
             pinnedSignerSha256 = OTHER_SIGNER,
+            declaredSignerSha256 = null,
         )
 
         assertEquals(

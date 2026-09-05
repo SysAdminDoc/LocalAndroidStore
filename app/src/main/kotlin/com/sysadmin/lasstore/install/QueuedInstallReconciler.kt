@@ -58,6 +58,7 @@ internal object QueuedInstallReconciler {
                         installedInfo = installed,
                         metadata = metadata,
                         pinnedSignerSha256 = sl.secrets.getPin(applicationId),
+                        declaredSignerSha256 = sl.libraryRestore.declaredSignerFor(applicationId),
                     )
                 }
                 if (verification.isFailure) {

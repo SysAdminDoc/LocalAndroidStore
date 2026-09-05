@@ -223,6 +223,18 @@ class LibraryRestoreStore(context: Context) {
         replace(pending().filterNot { it.key == entry.key })
     }
 
+    /**
+     * The publisher certificate the imported lockfile recorded for [applicationId], if any.
+     * Install routes pass this as the declared signer so a restore onto a device with no pin is
+     * verified against the user's own export instead of trusting whatever the source now serves.
+     */
+    @Synchronized
+    fun declaredSignerFor(applicationId: String): String? = pending()
+        .asSequence()
+        .filter { it.applicationId.equals(applicationId, ignoreCase = true) }
+        .mapNotNull { normalizeSigningCertificateSha256(it.certSha256) }
+        .firstOrNull()
+
     @Synchronized
     fun removeInstalled(info: com.sysadmin.lasstore.domain.AppInfo, metadata: ApkMetadata) {
         val remaining = pending().filterNot { entry ->
