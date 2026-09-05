@@ -35,8 +35,52 @@ data class Release(
     val prerelease: Boolean = false,
     val body: String? = null,
     val minSdk: Int? = null,
+    val maxSdk: Int? = null,
+    /** ABIs this build ships native code for. Empty means an architecture-independent build. */
+    val nativeCode: List<String> = emptyList(),
     val assets: List<ReleaseAsset> = emptyList(),
 )
+
+/** What this device can run, as the catalog needs to know it to pick a build. */
+data class DeviceBuildSupport(
+    /** `Build.VERSION.SDK_INT`, or null when the caller cannot supply it. */
+    val sdkInt: Int? = null,
+    /** `Build.SUPPORTED_ABIS`, most preferred first. Empty disables ABI filtering. */
+    val supportedAbis: List<String> = emptyList(),
+) {
+    fun supports(release: Release): Boolean {
+        if (sdkInt != null) {
+            release.minSdk?.let { if (it > sdkInt) return false }
+            release.maxSdk?.let { if (it < sdkInt) return false }
+        }
+        if (supportedAbis.isEmpty() || release.nativeCode.isEmpty()) return true
+        return release.nativeCode.any { abi -> supportedAbis.any { it.equals(abi, true) } }
+    }
+
+    /** Lower is better. Architecture-independent builds sort after every native match. */
+    private fun abiRank(release: Release): Int {
+        if (release.nativeCode.isEmpty()) return supportedAbis.size
+        return release.nativeCode
+            .minOfOrNull { abi ->
+                supportedAbis.indexOfFirst { it.equals(abi, true) }.takeIf { it >= 0 }
+                    ?: supportedAbis.size
+            }
+            ?: supportedAbis.size
+    }
+
+    /**
+     * The newest release this device can actually install. Highest version code wins, because
+     * F-Droid gives each architecture its own code and the newest compatible build is what the
+     * user wants; the device's ABI order only breaks ties between equal codes.
+     */
+    fun selectInstallable(releases: List<Release>): Release? = releases
+        .filter(::supports)
+        .minWithOrNull(
+            compareByDescending<Release> { it.versionCode ?: Long.MIN_VALUE }
+                .thenBy(::abiRank)
+                .thenByDescending { it.versionName.orEmpty() },
+        )
+}
 
 sealed interface VerifyResult {
     data class Verified(val sha256: String? = null) : VerifyResult

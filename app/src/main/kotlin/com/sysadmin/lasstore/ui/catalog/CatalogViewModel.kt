@@ -303,6 +303,7 @@ class CatalogViewModel : ViewModel() {
         snapshots = sl.catalogSnapshots,
         patForSource = { sourceKey -> sl.settings.getPat(sourceKey) },
         supportedAbis = Build.SUPPORTED_ABIS.toList(),
+        deviceSdkInt = Build.VERSION.SDK_INT,
         fdroidIndexProvider = sl.fdroidIndex,
         preferredChannelFor = { source, owner, repo ->
             sl.channelPreferences.get(source.key, owner, repo)
@@ -3019,6 +3020,8 @@ class CatalogViewModel : ViewModel() {
             CatalogFailureKind.Network -> "Check the connection and refresh."
             CatalogFailureKind.Server -> "GitHub reported a temporary server failure."
             CatalogFailureKind.InvalidResponse -> "GitHub returned unreadable release metadata."
+            CatalogFailureKind.NoCompatibleBuild ->
+                "Those apps ship only builds for another Android version or CPU architecture."
             CatalogFailureKind.Unknown -> "Check Activity for technical details."
         }
         val snapshot = primary.snapshotAgeMillis?.let {

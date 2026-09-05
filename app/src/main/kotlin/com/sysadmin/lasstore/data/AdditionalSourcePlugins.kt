@@ -104,6 +104,9 @@ data class FdroidVersion(
     val sizeBytes: Long,
     val sha256: String?,
     val minSdk: Int? = null,
+    val maxSdk: Int? = null,
+    /** ABIs this build ships native code for. Empty means an architecture-independent build. */
+    val nativeCode: List<String> = emptyList(),
     val whatsNew: String? = null,
 )
 
@@ -185,6 +188,8 @@ object FdroidIndexV2Parser {
         val versionName = manifest.string("versionName") ?: value.string("versionName")
         val minSdk = manifest["usesSdk"]?.jsonObject?.long("minSdkVersion")
             ?: manifest.long("minSdkVersion")
+        val maxSdk = manifest["usesSdk"]?.jsonObject?.long("maxSdkVersion")
+            ?: manifest.long("maxSdkVersion")
         val whatsNew = (value.localized("whatsNew") ?: manifest.localized("whatsNew"))
             ?.let(::validateWhatsNew)
         val downloadUrl = resolveAssetUrl(repositoryAddress, fileName)
@@ -196,6 +201,8 @@ object FdroidIndexV2Parser {
             sizeBytes = file.long("size") ?: 0L,
             sha256 = file.string("sha256"),
             minSdk = minSdk?.toInt(),
+            maxSdk = maxSdk?.toInt(),
+            nativeCode = manifest.stringSet("nativecode").toList(),
             whatsNew = whatsNew,
         )
     }
@@ -290,6 +297,8 @@ class FDroidIndexV2Plugin(
                     versionName = version.versionName,
                     versionCode = version.versionCode,
                     minSdk = version.minSdk,
+                    maxSdk = version.maxSdk,
+                    nativeCode = version.nativeCode,
                     body = version.whatsNew,
                     assets = listOf(
                         ReleaseAsset(

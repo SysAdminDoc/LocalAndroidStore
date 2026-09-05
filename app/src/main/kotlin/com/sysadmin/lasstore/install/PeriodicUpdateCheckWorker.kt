@@ -46,6 +46,7 @@ class PeriodicUpdateCheckWorker(
                 snapshots = sl.catalogSnapshots,
                 patForSource = { sourceKey -> sl.settings.getPat(sourceKey) },
                 supportedAbis = Build.SUPPORTED_ABIS.toList(),
+                deviceSdkInt = Build.VERSION.SDK_INT,
                 fdroidIndexProvider = sl.fdroidIndex,
                 preferredChannelFor = { source, owner, repo ->
                     sl.channelPreferences.get(source.key, owner, repo)

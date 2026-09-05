@@ -40,6 +40,7 @@ enum class CatalogFailureKind {
     Network,
     Server,
     InvalidResponse,
+    NoCompatibleBuild,
     Unknown,
 }
 
@@ -94,6 +95,8 @@ internal object CatalogFailureClassifier {
             CatalogFailureKind.Network -> "GitHub is unreachable from this device."
             CatalogFailureKind.Server -> "GitHub returned a temporary server error."
             CatalogFailureKind.InvalidResponse -> "GitHub returned metadata this app could not read."
+            CatalogFailureKind.NoCompatibleBuild ->
+                "This source published no build compatible with this device."
             CatalogFailureKind.Unknown -> "Catalog refresh failed unexpectedly."
         }
         return CatalogSourceIssue(
@@ -143,6 +146,8 @@ class DiscoveryUseCase(
     private val patForSource: (String) -> String = { "" },
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
     private val supportedAbis: List<String> = emptyList(),
+    /** `Build.VERSION.SDK_INT`. Null skips SDK-window filtering, as an empty ABI list skips ABI filtering. */
+    private val deviceSdkInt: Int? = null,
     private val fdroidIndexProvider: FdroidIndexProvider? = null,
     private val preferredChannelFor: (GitHubSource, String, String) -> ReleaseChannel? =
         { _, _, _ -> null },
@@ -212,14 +217,21 @@ class DiscoveryUseCase(
                 expectedFingerprint = endpoint.expectedFingerprint,
                 id = source.key,
             )
+            val deviceSupport = DeviceBuildSupport(
+                sdkInt = deviceSdkInt,
+                supportedAbis = supportedAbis,
+            )
+            var incompatibleAppCount = 0
             val apps = plugin.listApps().mapNotNull { discovered ->
                 val releases = plugin.getReleases(discovered.applicationId)
-                val release = releases
-                    .maxWithOrNull(
-                        compareBy<Release> { it.versionCode ?: Long.MIN_VALUE }
-                            .thenBy { it.versionName.orEmpty() },
-                    )
-                    ?: return@mapNotNull null
+                if (releases.isEmpty()) return@mapNotNull null
+                val release = deviceSupport.selectInstallable(releases)
+                if (release == null) {
+                    // F-Droid publishes one version code per architecture, so the highest code is
+                    // routinely a build this device cannot run. Say so instead of dropping the app.
+                    incompatibleAppCount++
+                    return@mapNotNull null
+                }
                 val asset = release.assets.firstOrNull { asset ->
                     asset.name.lowercase(Locale.US).endsWith(".apk")
                 } ?: return@mapNotNull null
@@ -285,7 +297,19 @@ class DiscoveryUseCase(
             }.onFailure {
                 logger?.warn("Discovery", "Could not persist snapshot for ${source.displayName}")
             }
-            SourceDiscovery(apps = apps)
+            SourceDiscovery(
+                apps = apps,
+                issue = incompatibleAppCount.takeIf { it > 0 }?.let { count ->
+                    CatalogSourceIssue(
+                        sourceKey = source.key,
+                        sourceLabel = source.displayName,
+                        kind = CatalogFailureKind.NoCompatibleBuild,
+                        message = "$count app(s) in this repository publish no build compatible " +
+                            "with this device's Android version or CPU architecture.",
+                        omittedCount = count,
+                    )
+                },
+            )
         } catch (throwable: Throwable) {
             if (throwable is CancellationException) throw throwable
             logger?.error(
@@ -530,7 +554,8 @@ class DiscoveryUseCase(
         CatalogFailureKind.Network -> 5
         CatalogFailureKind.Server -> 6
         CatalogFailureKind.InvalidResponse -> 7
-        CatalogFailureKind.Unknown -> 8
+        CatalogFailureKind.NoCompatibleBuild -> 8
+        CatalogFailureKind.Unknown -> 9
     }
 
     private fun CatalogFailureKind.isTransientLookupFailure(): Boolean = when (this) {
@@ -542,6 +567,7 @@ class DiscoveryUseCase(
         CatalogFailureKind.Authorization,
         CatalogFailureKind.Truncated,
         CatalogFailureKind.InvalidResponse,
+        CatalogFailureKind.NoCompatibleBuild,
         CatalogFailureKind.Unknown -> false
     }
 

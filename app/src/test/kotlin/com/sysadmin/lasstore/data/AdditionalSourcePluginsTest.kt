@@ -55,6 +55,59 @@ class AdditionalSourcePluginsTest {
     }
 
     @Test
+    fun carriesPerVersionNativeCodeAndSdkWindowThroughToTheReleaseContract() = runBlocking {
+        val fingerprint = "ab".repeat(32)
+        val raw = """
+            {
+              "repo": {"address": "https://example.invalid/repo", "fingerprint": "$fingerprint"},
+              "packages": {
+                "com.example.app": {
+                  "metadata": {"name": {"en-US": "Example"}},
+                  "versions": {
+                    "4030": {
+                      "manifest": {
+                        "versionName": "4.3", "versionCode": 4030,
+                        "nativecode": ["x86_64"],
+                        "usesSdk": {"minSdkVersion": 26, "maxSdkVersion": 35}
+                      },
+                      "file": {"name": "repo/x86_64.apk", "size": 1, "sha256": "${"cd".repeat(32)}"}
+                    },
+                    "4020": {
+                      "manifest": {
+                        "versionName": "4.3", "versionCode": 4020,
+                        "nativecode": ["arm64-v8a"],
+                        "usesSdk": {"minSdkVersion": 26}
+                      },
+                      "file": {"name": "repo/arm64.apk", "size": 1, "sha256": "${"ef".repeat(32)}"}
+                    }
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+
+        val parsed = FdroidIndexV2Parser.parse(raw).packages.single()
+        val top = parsed.versions.first { it.versionCode == 4030L }
+        assertEquals(listOf("x86_64"), top.nativeCode)
+        assertEquals(35, top.maxSdk)
+        assertEquals(
+            listOf("arm64-v8a"),
+            parsed.versions.first { it.versionCode == 4020L }.nativeCode,
+        )
+
+        val releases = FDroidIndexV2Plugin(
+            indexProvider = { raw },
+            baseUrl = "https://example.invalid/repo",
+            expectedFingerprint = fingerprint,
+        ).getReleases("com.example.app")
+        assertEquals(
+            listOf("x86_64"),
+            releases.first { it.versionCode == 4030L }.nativeCode,
+        )
+        assertEquals(35, releases.first { it.versionCode == 4030L }.maxSdk)
+    }
+
+    @Test
     fun endpointRequiresFingerprintAndRemovesItFromIndexRequest() {
         val fingerprint = "ab".repeat(32)
         val endpoint = FdroidRepositoryTrust.parseEndpoint(
