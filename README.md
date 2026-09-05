@@ -1,369 +1,200 @@
+<p align="center">
+  <img src="logo.svg" width="112" alt="LocalAndroidStore logo" />
+</p>
+
 <h1 align="center">LocalAndroidStore</h1>
 
 <p align="center">
-  <a href="https://github.com/SysAdminDoc/LocalAndroidStore/releases"><img src="https://img.shields.io/badge/version-0.2.6-cba6f7?style=for-the-badge" alt="Version" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a6e3a1?style=for-the-badge" alt="License" /></a>
-  <a href="https://developer.android.com/about/versions/oreo"><img src="https://img.shields.io/badge/Android-8.0%2B-74c7ec?style=for-the-badge" alt="Android 8.0+" /></a>
-  <a href="https://kotlinlang.org/"><img src="https://img.shields.io/badge/Kotlin-2.4-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin" /></a>
+  <strong>Your releases, installed with proof.</strong><br />
+  A private Android catalog for GitHub and F-Droid releases, with APK inspection and publisher continuity built in.
 </p>
 
-> **A personal store for the Android apps you build yourself.**
-> Lists every APK across your GitHub releases, downloads the latest, and drives the system installer with a single tap. Install. Update. Uninstall. Move on.
+<p align="center">
+  <a href="https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest"><img src="https://img.shields.io/badge/version-0.2.7-cba6f7?style=flat-square" alt="Version 0.2.7" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a6e3a1?style=flat-square" alt="MIT license" /></a>
+  <a href="https://developer.android.com/about/versions/oreo"><img src="https://img.shields.io/badge/Android-8.0%2B-74c7ec?style=flat-square&logo=android&logoColor=white" alt="Android 8.0 or newer" /></a>
+  <a href="https://kotlinlang.org/"><img src="https://img.shields.io/badge/Kotlin-2.4.10-7f52ff?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin 2.4.10" /></a>
+</p>
 
-LocalAndroidStore exists for one reason: when you ship a lot of Android apps from GitHub Releases, sideloading each one through the file manager on every fresh install / re-image is friction. F-Droid won't host private or in-development apps. Obtainium is the closest generic equivalent, but it's not tailored to your catalog or your visual identity.
+<p align="center">
+  <a href="https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest/download/LocalAndroidStore-v0.2.7-release.apk"><strong>Download the Android app</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#trust-before-install">See the trust model</a>
+  &nbsp;·&nbsp;
+  <a href="#build-from-source">Build from source</a>
+</p>
 
-This is the Android sibling of [LocalChromeStore](https://github.com/SysAdminDoc/LocalChromeStore): same idea, same look, different platform.
+![LocalAndroidStore product overview](docs/assets/hero.png)
 
----
+LocalAndroidStore is for people who publish Android apps outside a public store. Point it at GitHub owners or fingerprint-pinned F-Droid repositories. It finds installable releases, remembers what is on the device, and makes every install pass the same package and publisher checks.
 
-## Why it exists
+The catalog is useful on a fresh phone, a test device, or a private fleet. It can follow public projects too. A personal access token is optional, source-specific, and stored only on the device.
 
-Stock Android won't let an ordinary installer silently install anything. LocalAndroidStore uses the normal system PackageInstaller dialog by default, and offers an explicit Shizuku shell-installer tier for users who have already configured Shizuku. What we *can* do is:
+## See it in action
 
-- discover every APK release across your GitHub repos,
-- download the latest one and drive `PackageInstaller.Session` so the system dialog appears once per install,
-- pin the publisher's signing certificate so a silent key swap (repo takeover, MITM) gets blocked instead of installed,
-- show installed-state and update-available status, and
-- give you a one-tap launch / uninstall path.
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="docs/assets/screenshots/catalog.png" alt="Authenticated LocalAndroidStore catalog showing available Android releases" /><br /><sub>Authenticated catalog with 22 installable releases</sub></td>
+    <td width="33%" align="center"><img src="docs/assets/screenshots/settings.png" alt="LocalAndroidStore source and access settings" /><br /><sub>Source controls, encrypted secrets, backup, and restore</sub></td>
+    <td width="33%" align="center"><img src="docs/assets/screenshots/activity.png" alt="LocalAndroidStore device journal with test evidence" /><br /><sub>Device journal with deterministic test evidence</sub></td>
+  </tr>
+</table>
 
-That's what this is.
+The catalog and Settings images above come from the signed v0.2.7 release running on an Android 15 emulator. The journal image uses the app's deterministic visual-test data so its diagnostic categories stay reproducible.
 
----
+## What makes it different
 
-## Features (current)
+- **Several sources, one library.** Add GitHub users or organizations, private repositories through a read-only token, and F-Droid index-v2 endpoints with a required fingerprint.
+- **APK evidence comes first.** LocalAndroidStore checks the exact download, manifest package, version, signing schemes, and current signer before permission review.
+- **Publisher continuity survives updates.** The first accepted signer becomes a local pin. A valid APK Signature Scheme v3 or v3.1 rotation lineage can advance it. An unrelated key is blocked.
+- **The catalog remains useful offline.** ETags reduce repeat work, refreshes have bounded concurrency, and a dated on-device snapshot can remain available for up to seven days.
+- **Release management goes beyond a download button.** Browse history, follow a channel, compare standalone variants, install split archives, stage updates, and restore a saved library.
+- **Android stays in charge of consent.** The normal path uses `PackageInstaller.Session` and Android's confirmation UI. Shizuku is an explicit option for users who already run it.
+- **It fits more than a phone.** The UI supports touch, large screens, Android TV directional navigation, AMOLED and light themes, plus a separate Wear OS update-count companion.
 
-- **Multi-source GitHub discovery**: every enabled GitHub user / org source with a `.apk` asset on its latest release. Each source has its own enable toggle, optional topic filter, pre-release toggle, and optional PAT.
-- **Pinned F-Droid repositories**: add any HTTPS F-Droid index-v2 endpoint by pasting its `?fingerprint=` URL. The repository fingerprint is checked before metadata is exposed, and signed `entry.jar` metadata is verified when the repository provides it. APK SHA-256 digests and F-Droid anti-features travel into the catalog, where filter chips and severity-colored badges make the published taxonomy visible.
-- **Multi-source package aggregation**: once an Android package identity is known, releases from multiple configured sources share one card. Open the card's source chooser to inspect every candidate and pin the preferred source for that package.
-- **Curated source directory**: Settings can load a bounded, HTTPS-only `sources-of-sources.json` feed, display its GitHub or fingerprint-pinned F-Droid definitions, and add only the entries the user selects. Feed entries never carry PATs or auto-enable themselves.
-- **SOCKS5 / Orbot proxy**: opt-in Settings routing sends GitHub, F-Droid, branding, and directory traffic through a configured SOCKS5 endpoint with proxy-side DNS resolution; direct networking remains the default.
-- **Per-app release channels**: release tags and pre-release metadata derive stable, beta, alpha, nightly, release-candidate, and development labels. Use a card's overflow menu to pin the channel; GitHub discovery searches the bounded release history for that channel and falls back safely when none is published.
-- **Per-app language controls**: on Android 13+, an installed app's card opens that package's system language page. Automatic `LocaleConfig` generation keeps LocalAndroidStore's supported locales synchronized as translated resources are added.
-- **Wear OS companion**: the separate `wear` module provides an update-count Tile and short-text complication. A paired watch can send a user-initiated refresh request back to the phone; no APK is installed on-watch.
-- **Theme and source accents**: choose Catppuccin Mocha AMOLED dark or Latte light, then select Mauve, Sapphire, Green, Yellow, Red, Pink, Teal, or Lavender. Each GitHub or F-Droid source can inherit the global accent or use its own tint on catalog cards and primary actions. Android 12+ users can separately opt into wallpaper-derived Material You colors, and the Appearance panel provides a persisted high-contrast mode that promotes secondary text and strengthens borders.
-- **Publisher-feed branding**: optionally attach an HTTPS AltStore-compatible feed to a source. The catalog renders bounded header/icon imagery, tint, featured-app identifiers, and a safe HTTPS news link without making source discovery depend on the branding feed.
-- **APK lockfile**: every successful LocalAndroidStore install updates app-private `files/las.lock` with application id, manifest version code, source/repository release identity, downloaded source URL, APK SHA-256, raw `AndroidManifest.xml` SHA-256, and publisher certificate SHA-256 for later restore/export workflows.
-- **Portable library restore**: Settings exports a bounded `.las-library` archive containing the plain `library.las-versions` lockfile and credential-free `sources.json`. Import merges favorites, collections, and source definitions without importing PATs, then Catalog offers a restore action that re-fetches exact source-release matches through the normal foreground verification and permission gates.
-- **APK transparency report**: installed cards can decode the verified binary manifest, enumerate APK Signing Block pairs and signature schemes, and scan DEX entries against a small packaged Exodus-style tracker-signature snapshot. The scan stays on-device and reports matches as static evidence, never as proof of runtime tracking.
-- **APK variant matrix**: releases with multiple standalone APKs show ABI, density, minimum SDK, SHA-256 prefix, and size columns. The row matching the device's primary ABI, density bucket, and SDK is labeled before download; unavailable per-file metadata remains explicit as universal, any, or unknown.
-- **APK-set installs**: `.apks`, `.xapk`, `.apkm`, and `.apkset` archives are bounded and extracted privately. Every split must pass the normal exact-byte signature/package/version checks, then a foreground checklist lets you keep the device-compatible ABI, density, language, and feature splits before one atomic PackageInstaller session. `.aab` releases should publish a pre-extracted APK set; desktop bundletool conversion is not run inside the app.
-- **Android app archiving**: on Android 15+, archive managed apps to remove their APK and cache while retaining user data. A launcher-stub restore request returns to LocalAndroidStore, which re-fetches the selected release and reinstalls it through the normal verification and PackageInstaller flow.
-- **Rate-aware offline catalog**: repository discovery continues through a bounded 50-page policy, release lookups are capped at four concurrent requests, GitHub ETags reuse unchanged responses, partial sources retain only current candidates whose release lookup failed transiently, and a dated on-device snapshot remains usable offline for up to seven days. Retained cards are marked stale; removed, archived, topic-excluded, missing-release, and non-transiently failed repositories are not resurrected. A source that exceeds the repository bound is marked truncated with fetched/omitted evidence instead of appearing complete; use a topic filter to narrow it. TLS, token, authorization, rate-limit, network, server, malformed-response, truncation, and valid-empty outcomes are shown distinctly.
-- **Store-style cards**: Catppuccin Mocha on AMOLED black or Catppuccin Latte light. Repo handle, star count, version tag, status badge, two-line description.
-- **Android TV / D-pad navigation**: the catalog uses a responsive, focus-grouped card grid. Cards expose a visible focus ring and a select-button primary action, while directional navigation moves predictably across the leanback-friendly layout.
-- **Reduced motion**: release-note transitions follow Android's global animator-duration setting and become instantaneous when the system scale is zero; the preference is observed while the app is running.
-- **Fast catalog search**: filter by app name, repo owner / handle, description, tag, version, or package id. Exact hits rank first, with lightweight fuzzy matching for compact names.
-- **One-tap install**: APK is downloaded to app cache, then driven through `PackageInstaller.Session`. The system shows its install dialog, the user confirms once, done.
-- **Optional Shizuku installer**: Settings can opt foreground and queued installs into a shell-privileged `IPackageInstaller` bridge. Shizuku must be running and approved for LocalAndroidStore; otherwise the normal installer is used. APK digest, package identity, signer, version, and audit gates still run before the session is created.
-- **Recoverable foreground installs**: download, preapproval, permission review, and installer-session ownership are persisted. Restart restores review/commit work when safe, and interrupted downloads keep a source/release-keyed partial in `cacheDir/apks/.partial/` for an explicit **Resume download** action; cancellation reaches the OkHttp call and terminal paths remove transient files.
-- **One-tap uninstall**: fires `Intent.ACTION_DELETE`, lands on the system uninstall confirmation. Catalog refreshes after.
-- **One-tap open**: launches the installed app's main activity.
-- **Gentle queued updates**: installed updates can run through Android 14+ user-initiated data-transfer jobs (WorkManager fallback on older versions), then wait for the target app to leave the foreground, device idle, and calls to end before commit. Attempts are capped and terminal reasons persist on the card.
-- **Batch selection actions**: long-press a card to enter selection mode, then install selected releases, stage selected managed updates into the durable confirmation queue, or start a persisted one-at-a-time uninstall sequence. Android confirmation remains required for each uninstall.
-- **Verified APK signature pinning**: `apksig` must cryptographically verify the exact downloaded bytes, expose exactly one current signer, and agree with Android's archive parser before the first SHA-256 pin can be enrolled. Invalid, tampered, unsigned, malformed, or unexpectedly multi-signed APKs are blocked before permission review. Future updates must match the pin or carry a verified v3/v3.1 proof-of-rotation lineage.
-- **Audited publisher-key recovery**: an unrelated signer remains blocked by default. Trust details compare the source, live installed signer, stored pin, downloaded signer, verified schemes, and rotation lineage. Replacing the pin requires typing the exact package id, advancing to a separate warning, and affirming independent fingerprint verification; the decision is durably audited and never resumes an install automatically.
-- **Developer Verification preflight**: installs separately report whether a Google verification surface is present, that package registration is **Unknown** (Android exposes no status capability to this app), and that LocalAndroidStore's direct sideload route is outside the initial participating-store enforcement beginning 2026-09-30. The advisory links to Google's official guidance.
-- **Source verification badges**: every catalog card exposes Verified / Unverified / Unknown local publisher-key evidence. Tap a badge for the distinction between LocalAndroidStore's pin and Google's system-owned registration decision, open Android developer options for the advanced sideloading entry point, or hide unverified cards from Settings.
-- **Per-source threat models**: each GitHub or F-Droid definition stores a bounded, editable paragraph describing source control, the APK/publisher evidence LAS verifies, and the consequence of a repository or signing-key compromise. Blank legacy entries receive a conservative default.
-- **Version-aware installed state**: source-scoped records retain package, manifest version, signer, and GitHub asset identity. A tag or asset change is shown as a new release until its APK is inspected; only a higher manifest `versionCode` becomes an update, while equal-code reinstalls and lower-code downgrades require explicit actions.
-- **Historical release browsing**: open a bounded, paged release history from a card, review dates, pre-release labels, APK digests, and any cached signer/version evidence, then explicitly select an older release for the normal foreground inspection and downgrade/trust gates. Historical selections never enter the background update queue.
-- **Release notes**: release bodies render bounded Markdown, and installed cards can show a cumulative “What’s new since installed” view from F-Droid `whatsNew` entries or bounded GitHub release history. F-Droid notes are size/control-character validated before entering the catalog.
-- **Repository lifecycle warnings**: archived GitHub repositories and repositories with no push activity for 12+ months remain visible when they publish an APK, with a review warning before installation or updates.
-- **GitHub PATs (optional)**: classic and fine-grained tokens are accepted through GitHub's Bearer API. For fine-grained access, grant only **Metadata: read** and **Contents: read** on the selected repositories; LAS performs read-only repository/release lookups and requests no write permission. Stored in a Tink AEAD-encrypted app-private file, with the keyset protected by Android Keystore. See [GitHub's endpoint permission table](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens).
-- **Durable device journal + redacted support export**: runtime diagnostics, install/trust decisions, and crash evidence are separate restart-safe streams with independent clear controls. A bounded ZIP can be shared without PATs, authorization headers, credential-bearing URLs, signing secrets, or installed-app inventory.
-- **Async everywhere**: the UI never blocks on a download or an API call.
+## A safer private catalog
 
----
+| Question | Browser and file manager | LocalAndroidStore |
+| --- | --- | --- |
+| What changed? | Check each release page | One searchable catalog with update state |
+| Which file fits this device? | Infer it from the filename | Compare ABI, density, SDK, and package metadata |
+| Is the APK signed as expected? | Usually unknown | Verify with `apksig` and compare publisher evidence |
+| Did the publisher key change? | Easy to miss | Block unrelated signers and require a separate recovery review |
+| Can I work during a GitHub outage? | Only with files already downloaded | Use a dated, clearly marked catalog snapshot |
+| What happened on this device? | Reconstruct it manually | Read a local journal and export a redacted support bundle |
+
+If you only track one public APK, a release page may be enough. LocalAndroidStore earns its place when the source list is private, the catalog is large, or signer continuity matters.
+
+## Trust before install
+
+Every install follows one shared decision path:
+
+```text
+Release asset
+  -> bounded download and SHA-256
+  -> package, version, and split inspection
+  -> cryptographic APK signature verification
+  -> publisher pin or verified rotation lineage
+  -> permission and version review
+  -> Android PackageInstaller or approved Shizuku session
+```
+
+An unrelated signer never becomes trusted because a repository served it. LocalAndroidStore shows the installed signer, saved pin, downloaded signer, verified schemes, and available rotation evidence. Recovery changes the trust record only. It does not resume the install.
+
+<p align="center">
+  <img src="docs/assets/screenshots/publisher-trust-recovery.png" width="480" alt="Final publisher trust replacement review" />
+</p>
+
+The app can verify properties of the bytes it downloaded and compare them with local history. It cannot prove that a GitHub account owner or signing key has not been compromised. The source threat model in Settings makes that boundary visible instead of hiding it.
 
 ## Install
 
-### From release (recommended)
+### Phone, tablet, or Android TV
 
-1. Grab the latest `LocalAndroidStore-vX.Y.Z.apk` from the [Releases page](https://github.com/SysAdminDoc/LocalAndroidStore/releases).
-2. Sideload it to your device however you sideload (`adb install`, file manager, Sync to phone, etc.).
-3. The first time you open it and use the normal installer, Android will prompt for **"Install unknown apps"**: grant it. The app deep-links to the right setting.
-4. *(Optional)* Install and start [Shizuku](https://shizuku.rikka.app/), grant LocalAndroidStore access from the Shizuku prompt, then enable **Use Shizuku for no-prompt installs** in Settings. Shizuku may need to be restarted after reboot unless Sui/root keeps it available.
+1. Download [LocalAndroidStore v0.2.7](https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest/download/LocalAndroidStore-v0.2.7-release.apk).
+2. Check the file against [SHA256SUMS](https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest/download/SHA256SUMS) if you verify downloads manually.
+3. Open the APK. Android may ask you to allow installs from the app you used to open it.
+4. Launch LocalAndroidStore, open Settings, and save your first source.
 
-### From source
+Android 8.0 or newer is required. Android 12 or newer can use Material You colors, and Android 15 adds managed-app archiving.
+
+### Wear OS companion
+
+The separate [Wear OS APK](https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest/download/LocalAndroidStore-v0.2.7-wear-release.apk) provides an update-count Tile and a short-text complication. A paired watch can ask the phone to refresh. APK installation stays on the phone.
+
+### Optional Shizuku path
+
+The default installer works without root or Shizuku. If Shizuku is already running, Settings can opt into its shell-owned install session. Digest, package, signer, version, and audit checks still run before a session is created. When Shizuku is unavailable, LocalAndroidStore falls back to Android's normal installer.
+
+## First setup
+
+1. Open **Settings** from the bottom navigation.
+2. Edit the default GitHub source or add another owner or organization.
+3. Add a source-specific personal access token if you need private repositories or a larger rate budget. For a fine-grained token, grant repository metadata and contents read access only.
+4. Save the source registry, return to **Catalog**, and refresh.
+5. Open a card to choose an APK, inspect an older release, or set a preferred channel.
+
+Tokens are masked in the UI. Removing or renaming a source also removes its credential override when the registry is saved.
+
+## Release formats
+
+| Source or asset | Support |
+| --- | --- |
+| GitHub `.apk` release assets | Discover, inspect, download, and install |
+| `.apks`, `.xapk`, `.apkm`, `.apkset` | Bounded private extraction with per-split package and signer checks |
+| F-Droid index-v2 | Fingerprint-pinned repository metadata, signed entry verification when provided, APK digest checks |
+| Multiple standalone APKs | Device-aware matrix for ABI, density, minimum SDK, size, and digest |
+| Android App Bundle `.aab` | Not converted on-device. Publish an APK or prebuilt APK set beside it |
+
+Historical releases use the same foreground checks as the latest release. Downgrades and reinstalls remain explicit. Selected historical builds never enter the background update queue by themselves.
+
+## Everyday controls
+
+- Search by app name, repository, version, package id, tag, or description.
+- Mark favorites and build collections that survive library export and restore.
+- Follow stable, beta, alpha, release-candidate, nightly, or development channels per repository.
+- Choose a preferred source when several repositories publish the same Android package.
+- Stage managed updates, apply per-app cadence rules, and keep dated holds.
+- Inspect an installed APK's decoded manifest, signing block, digests, and static tracker-signature matches without uploading it.
+- Archive managed apps on Android 15 or newer while keeping their data and restore path.
+
+## Privacy and local data
+
+| Data | Handling |
+| --- | --- |
+| GitHub personal access tokens | Tink AEAD-encrypted app-private file with an Android Keystore-protected keyset |
+| Publisher pins and install evidence | Stored on-device and used by the shared verification path |
+| Catalog snapshots and partial downloads | App-private storage with explicit age and size bounds |
+| Library exports | Favorites, collections, source definitions, and verified install records; credentials are excluded |
+| Support bundles | Allowlisted, bounded, and redacted before Android's share sheet opens |
+
+There is no advertising SDK or analytics service. Network requests go to the release sources and optional branding or source-directory URLs you configure. An optional SOCKS5 endpoint can route those requests with proxy-side DNS.
+
+## Build from source
+
+The project uses Gradle 9.3.1, Android Gradle Plugin 9.1.1, Kotlin 2.4.10, and Compose BOM 2026.06.01. Compile and Kotlin targets are Java 17.
+
+Prerequisites:
+
+- Android Studio or the Android SDK with API 37
+- JDK 17 or newer
+- An Android 8.0 or newer emulator or device for runtime checks
 
 ```bash
 git clone https://github.com/SysAdminDoc/LocalAndroidStore.git
 cd LocalAndroidStore
-./gradlew assembleDebug
-# then sideload app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+./gradlew :app:assembleDebugAndroidTest :app:assembleRelease
+./gradlew :wear:testDebugUnitTest :wear:assembleRelease
 ```
 
-Automated verification produces the debug APK only. This repository does not publish CI-signed or
-attested release artifacts; release signing is a deliberate local release-owner operation.
+Windows users can run the same tasks through `gradlew.bat`.
 
----
+Release signing is local by design. Without the repository owner's `keystore.properties` and keystore, Gradle can still compile the project but cannot produce the official signed release identity. Never commit a keystore or its passwords.
 
-## Usage
-
-1. Tap **Settings** in the bottom nav.
-2. Configure one or more **GitHub sources**. Each source is a GitHub user or org; the default source is `SysAdminDoc`.
-3. *(Optional)* Paste a source-specific personal access token to raise rate limits and surface private repos owned by that source. The field is masked; the value lives in a Tink AEAD-encrypted app-private file with an Android Keystore-protected keyset.
-4. *(Optional)* Enable **Filter by topic** per source if you want to limit discovery to repos tagged with that source's topic.
-5. *(Optional)* Toggle **Show pre-releases** per source if you want to see `prerelease: true` releases.
-6. *(Optional)* Add one or more **F-Droid repositories** by pasting the repository's HTTPS `index-v2.json?fingerprint=...` URL. The fingerprint is required as a local trust pin; only repositories whose published fingerprint matches are shown.
-7. Tap **Save settings**, hop back to **Catalog**, hit **Refresh**.
-
-Every qualifying repo appears as a card. Tap **Install**: the APK downloads, then uses the selected installer path. With the default path, the system install dialog appears and you confirm; with an active Shizuku path, Android may complete the shell-owned session without that dialog. Tap **Open** to launch. Tap **Uninstall** to land on the system uninstall confirmation.
-
-On Android TV, use the directional pad to move between cards and nested actions. Select a focused card to run its primary action; the same grid remains touch-friendly on phones and tablets.
-
-For an installed card, open the overflow menu and choose **Inspect APK transparency**. The report
-shows the verified package/version/digests/signer, parsed Signing Block entries, known static tracker
-matches, and a selectable decoded `AndroidManifest.xml`. It reads the installed APK (or an APK
-already retained by an active foreground operation) locally; it does not upload the artifact.
-
-When the same package is available from more than one source, open the card overflow menu and choose
-**Choose preferred source**. The preference is stored per package on this device; cards without a
-verified package identity remain source-specific until an APK has been inspected.
-
-To follow a release track, open a card's overflow menu and choose **Set release channel**. The
-preference is stored per source repository; **Follow source default** removes the pin. Stable,
-beta, alpha, nightly, release-candidate, and development tags are recognized automatically.
-
-To inspect or restore an older published version, open a card's overflow menu and choose **Release history**. Select a release to replace the card's current target; LocalAndroidStore records that foreground choice, then requires the same APK inspection, publisher-trust, permission, and explicit downgrade checks used by any other install. It never queues a historical selection automatically.
-
-To operate on several cards, long-press any card. Tap other cards to select them, use **Select
-visible** when useful, then choose **Install selected**, **Stage updates**, or **Uninstall selected**.
-The update action uses the durable batch queue and the uninstall action opens Android's confirmation
-screen one package at a time; returning to LocalAndroidStore advances the queue.
-
----
-
-## How discovery works
-
-For each enabled GitHub source, LocalAndroidStore:
-
-1. Lists owned, non-fork public repos via the GitHub REST API (`/users/{user}/repos`), continuing up to 50 pages of 100 repositories and reporting a typed truncation if the next page still contains results. Archived repositories remain eligible when they publish an APK, and the card surfaces a lifecycle warning.
-2. If the source has a PAT, also lists authenticated repos via `/user/repos`, filters them back to the source owner, and dedupes them with the public list so private user / org repos can appear.
-3. For each repo, fetches the latest release (`/repos/{owner}/{repo}/releases/latest`, or the first non-draft from `/releases?per_page=10` when pre-releases are enabled), with a global maximum of four concurrent release requests.
-4. Picks one installable APK asset per release: skips signature sidecars, app bundles, and split/config APK sets; prefers an explicit universal/no-arch build, then an unlabeled standalone APK, then the device's highest-priority compatible ABI.
-5. Drops repos with no APK asset on their latest release. Archived repos and forks are dropped at step 1.
-6. Persists ETag-tagged GitHub responses and a per-source catalog snapshot. A `304 Not Modified` reuses the saved response; partial, offline, and rate-limited refreshes keep usable releases and show snapshot age. Truncated repository results are never backfilled from an older snapshot, because that could hide the omitted portion behind a false complete state.
-
-Release history is a separate, explicit card action. It requests at most ten pages of 20 releases, filters drafts and the source's pre-release policy, and does not change the normal latest-release target until the user selects an entry.
-
-There is no opinionated topic filter unless you turn one on: your own user / org listing already keeps the catalog tight.
-
-F-Droid repositories are read through their pinned index-v2 metadata. The catalog keeps the newest
-version with a standalone APK for each package, verifies the repository fingerprint before parsing,
-and shows taxonomy-aware anti-feature filter chips and red/yellow app badges when the index publishes
-them. Security-sensitive entries such as tracking, known vulnerabilities, and disabled algorithms are
-red; licensing, advertising, network, and source-availability notices are yellow. HTTPS is required
-for index and APK URLs.
-
-When a foreground APK transfer is interrupted, the next catalog refresh matches the partial to the
-same source, release, asset URL, and published digest. If the server supports byte ranges, the
-remaining bytes are requested with `Range: bytes=N-`; a server that ignores the range safely starts
-that transfer over and replaces the partial.
-
-The optional Wear OS companion is built with `./gradlew :wear:assembleDebug` and installed on a
-paired watch. Add the Tile or short-text complication from the watch face editor; the watch receives
-the phone's available-update count and its Tile action asks the phone to open LocalAndroidStore for
-a refresh.
-
----
-
-## Where things live
+## Project map
 
 | Path | Purpose |
 | --- | --- |
-| `<files-dir>/logs/diagnostics.log[.1]` | Bounded, redacted runtime diagnostics |
-| `<files-dir>/logs/install.log[.1]` | Bounded install, uninstall, and publisher-trust audit |
-| `<files-dir>/logs/crash.log[.1]` | Bounded handled and uncaught failure evidence |
-| `<cache-dir>/support/` | Latest user-requested redacted support ZIP |
-| `<files-dir>/catalog/http/` | ETag-tagged GitHub response cache |
-| `<files-dir>/catalog/snapshots/` | Dated per-source offline catalog snapshots |
-| `<cache-dir>/apks/` | Downloaded APKs (transient, OS-cleanable) |
-| `<files-dir>/secrets/secrets.v1.tinkaead` | Tink AEAD-encrypted GitHub PATs and signing-cert pins per `applicationId` |
-| DataStore `settings` | GitHub sources, F-Droid repository endpoints, topic filters, pre-release toggles, source-verification visibility preference |
-| SharedPreferences `las_appid_cache` | Source/repository-scoped installed package, version, signer, and release-asset identity |
-| SharedPreferences `foreground_install_state` | Recoverable foreground install phase, installer session, APK metadata, and pending MediaStore cleanup |
-| SharedPreferences `queued_update_status` | Attempt count and durable queued-update terminal state |
-| SharedPreferences `las_release_channels_v1` | Per-source repository release-channel preferences |
-| SharedPreferences `las_shizuku_install_v1` | Explicit opt-in for the optional Shizuku shell installer |
-| SharedPreferences `las_batch_uninstall_v1` | Persisted one-at-a-time Android confirmations for multi-select uninstall |
+| `app/src/main/kotlin/com/sysadmin/lasstore/data` | Source clients, encrypted settings, caches, journals, and export formats |
+| `app/src/main/kotlin/com/sysadmin/lasstore/domain` | Discovery, release selection, channels, and catalog policy |
+| `app/src/main/kotlin/com/sysadmin/lasstore/install` | Artifact verification, install sessions, recovery, and queued work |
+| `app/src/main/kotlin/com/sysadmin/lasstore/ui` | Compose catalog, Settings, activity journal, and trust review |
+| `wear` | Wear OS Tile, complication, and phone refresh request |
+| `scripts` | Local version and trust-matrix verification |
 
-Android backup/device transfer includes only the non-sensitive `las_library_v1.xml` favorites and collection file. Secrets, catalog caches, logs, and install state remain excluded.
+The phone app is a single-activity Compose application. Long-running work uses coroutines, WorkManager, or Android's user-initiated job path. Runtime failures remain visible in the UI and device journal.
 
----
+## Related project
 
-## Architecture
+[LocalChromeStore](https://github.com/SysAdminDoc/LocalChromeStore) applies the same personal-catalog idea to locally managed browser extensions.
 
-Single-Activity Compose app, ~2,100 lines of Kotlin. No DI framework, no Retrofit: the surface is small enough that a hand-rolled `ServiceLocator` + OkHttp is cleaner.
+## Contributing
 
-```
-app/src/main/kotlin/com/sysadmin/lasstore/
-├── data/
-│   ├── GitHubClient.kt        OkHttp + kotlinx.serialization, paginated repo + release listing
-│   ├── ApkInspector.kt        apksig verification → PackageManager metadata/signer cross-check
-│   ├── ApkTransparencyInspector.kt  Binary manifest, Signing Block, and offline tracker scan
-│   ├── InstallStateRepo.kt    PackageManager wrapper for "is X installed at version Y?"
-│   ├── DeveloperVerificationPreflight.kt  Android Developer Verification advisory detector
-│   ├── SecretStore.kt         Tink AEAD secret file for PAT + per-package signing pins
-│   ├── AppSettings.kt         Source settings model + normalization
-│   ├── SourceBranding.kt       HTTPS AltStore-compatible source feed + image cache
-│   ├── SettingsStore.kt       DataStore Preferences for non-secret settings
-│   ├── Logger.kt              Restart-safe bounded diagnostics + crash evidence
-│   ├── InstallAuditLog.kt     Durable install and publisher-trust decisions
-│   ├── SupportBundle.kt       Allowlisted, bounded, redacted ZIP export
-│   └── ServiceLocator.kt      Hand-rolled DI, init from App.onCreate()
-├── domain/
-│   ├── AppInfo.kt             Discovered model + CardStatus enum
-│   └── DiscoveryUseCase.kt    Listing → release → APK-asset picker
-├── install/
-│   ├── PackageInstallerService.kt   Session-backed install, Shizuku fallback, uninstall, launch
-│   ├── ShizukuInstaller.kt           Optional shell/root IPackageInstaller bridge
-│   ├── ForegroundInstallStore.kt    Process-safe download/review/commit ownership + cleanup
-│   ├── BatchUninstallStore.kt        Persisted one-at-a-time uninstall confirmation queue
-│   └── QueuedUpdate*.kt             UIDT/WorkManager scheduling, constraints, durable outcomes
-├── ui/
-│   ├── theme/                 Catppuccin Mocha/Latte palettes + accent tokens
-│   ├── catalog/               LazyVerticalGrid + search/filter + ReleaseCard + StatusBadge + ViewModel
-│   ├── settings/              Form + ViewModel
-│   └── log/                   Live log viewer
-└── App.kt + MainActivity.kt
-wear/
-└── Wear OS Tile, complication, and phone back-channel companion
-```
+Bug reports are most useful when they include the Android version, source type, release asset names, and the exact on-screen failure. Export a redacted support bundle from **Activity** when the problem reaches that screen. Do not post access tokens, APK signing keys, or an unredacted private repository URL.
 
-The signature-pin store is keyed by `applicationId`. Before the installer or permission-review step, `ApkInspector` asks `apksig` to verify the exact downloaded bytes across the app's API 26+ support window. Verification must report a supported v1/v2/v3/v3.1 scheme, exactly one current certificate, no errors, and:when present:a valid proof-of-rotation lineage ending at that certificate. Android's archive parser must independently return the same current signer and a valid package id. Only metadata carrying that verified evidence can enroll or roll forward a pin after a successful install; the secret store also rejects incomplete fingerprints.
-
-An unrelated publisher key is never accepted automatically. The recovery surface is intentionally separate from installation: it re-reads the live pin and installed signer, requires exact typed package confirmation plus a second independent-verification acknowledgement, writes authorization and completion events to the install audit, replaces only the local pin, and requires the APK to pass the full download/inspection flow again.
-
-The manifest retains `QUERY_ALL_PACKAGES` for one narrow compatibility reason: catalog APKs can be arbitrary headless packages without launcher activities, while their package IDs are discovered at runtime. `InstallStateRepo` validates and queries only the specific package ID needed for a catalog card or install-ownership check; it does not enumerate installed packages, and support exports exclude installed-app inventory. A launcher-only `<queries>` declaration would make those valid headless apps appear uninstalled on Android 11+.
-
-Developer Verification preflight runs after APK metadata inspection and before `PackageInstaller.Session.commit()`. It models verification-surface presence, registration status, and rollout applicability as separate facts. Registration remains `Unknown` because Android exposes no status capability to LocalAndroidStore. Google's [official FAQ](https://developer.android.com/developer-verification/guides/faq) says direct sideloads and stores outside its initial participating list are not subject to the 2026-09-30 regional phase; global rollout begins in 2027, with the exact date and future independent-store behavior still unpublished. The advisory is informational and never blocks installation.
-
-Catalog source badges are intentionally narrower than Google's registration check. `Verified` means the locally observed publisher signer matches LocalAndroidStore's stored application pin; `Unverified` means a package is known but that local continuity is absent or mismatched; `Unknown` means package or signer evidence is not available yet. Android's public developer-settings screen is used as the advanced-flow entry point because the final registration decision and any waiting period are owned by the system installer.
-
-The one-release EncryptedSharedPreferences migration window ended after v0.2.1, so `androidx.security:security-crypto` is no longer shipped. The plaintext emergency fallback is still migrated into Tink and cleared whenever Android Keystore becomes available again.
-
----
-
-## Why not Obtainium?
-
-Obtainium is great for what it does: point-and-shoot any GitHub release URL into a generic source list. This is more opinionated:
-
-- Tailored UI for your catalog (a small, intentional set of GitHub users / orgs instead of a generic source-URL bag).
-- Shared visual language with [LocalChromeStore](https://github.com/SysAdminDoc/LocalChromeStore).
-- Signature pinning is enforced per `applicationId`, not optional.
-- AMOLED-true-black + Catppuccin accents.
-
-Use Obtainium if you want the bigger source ecosystem (F-Droid, IzzyOnDroid, html scrapers, etc.). Use this if you ship from GitHub Releases and want a clean store UI for *your* repos.
-
----
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md). Highlights:
-
-- **v0.2.x**: Preapproval/constraints for update installs, UIDT download work.
-- **v0.3.0**: Source plugin contract, F-Droid index consume/export, Wear OS companion, multi-device ADB pair.
-- **v0.4.0**: Light theme + accent picker.
-
----
-
-## Build environment
-
-- AGP 9.1.1 / Kotlin 2.4.10 / Compose BOM 2026.06.01
-- JDK 21 at `C:/Program Files/Eclipse Adoptium/jdk-21.0.12.8-hotspot`
-- minSdk 26 (Android 8.0), targetSdk / compileSdk 37
-- Debug APK assembly, lint, unit tests, and connected-device tests are the supported automated verification path.
-
-Run the complete trust-boundary matrix from PowerShell:
-
-```powershell
-pwsh -NoProfile -File .\scripts\verify-trust-matrix.ps1
-```
-
-The command runs unit tests (including Robolectric API 32/33 contracts), lint, debug APK assembly, and the full instrumented suite on the local `LAS_API_26`, `Aura_API_35`, and `OpenTasker_API_37` AVDs. It reserves its own emulator serial and never selects a connected physical device. Override the AVD names or emulator port with the script parameters when local names differ.
-
----
-
-## Threat model
-
-LocalAndroidStore is in your trust boundary: once you grant it "Install unknown apps," it can install any APK on your device. Be honest about what that means.
-
-**What you trust:**
-
-- **The GitHub repo owner** of every catalog source you add. If they ship malware, LAS will install it. Signature pinning catches a *change* in publisher key, not a publisher who was malicious from the start.
-- **Android's maintained system CA store** for HTTPS connections to GitHub. Static CA pins were removed on 2026-07-29 after GitHub's live certificate chain no longer matched them and catalog access failed closed. Cleartext traffic remains disabled.
-- **OkHttp 5.4**: the pinned client/BOM line is kept current with the API-37 dependency lane.
-- **The Android Keystore-backed Tink keyset** that protects local PATs and signing pins.
-- **The Android platform's `PackageInstaller.Session` + `apksig`** for verifying signatures. Both are first-party Google code.
-- **LocalAndroidStore itself.** A release owner signs the release APK locally with the ignored `keystore.properties` configuration and records its certificate fingerprint and SHA-256 alongside the release. This checkout does not claim CI signing, artifact attestations, or reproducible release bytes. The publisher key (`9c6a9276…e6ebd3a0d`) is the project's identity: if it leaks, the project is compromised; mitigation is rotating the key and getting users to verify the new lineage manually.
-- **The packaged tracker-signature snapshot.** It is a bounded, offline static signature list, not a live Exodus report or a behavioral verdict. A missing match does not mean an APK is private, and a match should be reviewed in context.
-
-**What you don't trust:**
-
-- A *new* publisher key on a previously-installed app. v0.2 hard-rejects an unannounced key swap. Legitimate Android Signature Scheme v3 / v3.1 rotations (pin in the new APK's signing-cert lineage) are accepted automatically and the pin rolls forward.
-- A tampered or re-signed APK delivered via a hostile network. HTTPS authenticates GitHub through Android's system trust store; independently, `apksig` rejects invalid bytes and the per-application publisher-signature pin rejects an unexpected signing key.
-- A competing installer trying to silently update an LAS-installed app. v0.2 claims update ownership on first install (Android 14+), so other installers must show the user a system dialog before overwriting.
-- Anything LAS-installed targeting Accessibility / Notification Listener / Device Admin without your conscious consent. v0.2 declares `PACKAGE_SOURCE_STORE` so downstream apps don't get a free pass on Restricted Settings: *you still have to flip those toggles per-app*.
-- An unknown Android Developer Verification registration status. Presence of a Google verification package is reported only as capability-surface presence and never treated as proof of registration or enforcement; the platform owns the final install decision.
-
-**What we're not in the business of:**
-
-- We don't ship telemetry. Diagnostics, install audit, and crash evidence stay local unless you explicitly use **Export redacted support bundle** from Activity.
-- We don't run privileged installs by default. The optional Shizuku path is disabled until the user enables it and grants Shizuku access; if it is unavailable, the normal Android installer remains the fallback.
-- We don't fetch a second APK at runtime. The APK staged for install is the APK published on GitHub Releases; nothing else.
-- We don't share your installed-app list with anyone.
-- APK transparency inspection stays on-device. It reads only a verified local APK and never sends APK bytes, manifest contents, or tracker hashes to a remote scanner.
-
-**How the release owner builds and verifies a release:**
-
-The release owner must have an external signing keystore and an ignored `keystore.properties` file;
-a clean checkout without that file must not be distributed as a release. Run:
-
-```bash
-# Build the non-debug release with the locally configured keystore
-./gradlew assembleRelease
-
-# Check README, Gradle, changelog, and working-note release metadata agree
-powershell -NoProfile -File scripts/verify-version.ps1
-
-# Verify the exact artifact before publishing it
-apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
-sha256sum app/build/outputs/apk/release/app-release.apk
-```
-
-Record the printed certificate fingerprint and SHA-256 in the release notes. A user can then verify
-the downloaded artifact directly:
-
-```bash
-apksigner verify --verbose --print-certs LocalAndroidStore-vX.Y.Z.apk
-sha256sum -c LocalAndroidStore-vX.Y.Z.apk.sha256
-```
-
-If the keystore is unavailable, the certificate or hash does not match the release notes, or either
-verification command fails, treat the binary as untrusted and do not distribute it.
-
----
-
-## Limitations
-
-- No privileged install without user setup. The default path uses Android's install dialog; the optional Shizuku path requires a running, approved Shizuku service and can still be rejected by device policy or OEM restrictions.
-- Uninstall opens the system uninstall confirmation. We can't bypass it without device-owner / Work Profile admin.
-- Catalog refresh still happens on-tap for the foreground view. A durable WorkManager check also
-  runs every 24 hours on unmetered Wi-Fi while battery and storage are healthy; it queues only
-  digest-published releases for apps already managed by LocalAndroidStore and posts a notification
-  when work is added. Ambiguous variants, stale snapshots, ignored apps, and externally installed
-  packages remain foreground-only.
-- Automatic update policy is configurable: choose a daily cap in Settings, then set individual
-  managed apps to auto, notify-only, pinned priority, or a dated hold from the card actions menu.
-- Update actions can be staged into a durable batch from card menus. Confirming the batch submits
-  each persisted generation through the normal background-install safeguards; a process restart
-  preserves unconfirmed actions and reconciles actions already submitted.
-- GitHub Releases and pinned F-Droid index-v2 repositories are supported today. GitLab and HTML source plugins remain adapter-level work rather than configured catalog sources.
-- Transparency reports are available for installed/local APKs. The tracker scan is a static, bounded snapshot and does not replace a full current Exodus analysis.
-
----
+See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)

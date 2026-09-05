@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">LocalAndroidStore monochrome mark</title>
+  <desc id="desc">A single-color open catalog with a transparent verification check.</desc>
+  <defs>
+    <mask id="mark-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#000"/>
+      <g fill="#fff" stroke="#fff" stroke-width="34" stroke-linejoin="round">
+        <path d="M512 76c18 0 35 5 51 14l241 139c33 19 33 67 0 86L563 454c-32 18-70 18-102 0L220 315c-33-19-33-67 0-86L461 90c16-9 33-14 51-14Z"/>
+        <path d="M215 304 470 451 350 520c-20 12-20 41 0 53l120 69v237c0 35-38 56-68 38L205 803c-49-28-79-81-79-138V397c0-72 78-116 140-80l-51-13Z"/>
+        <path d="M809 304 554 451l120 69c20 12 20 41 0 53l-120 69 96 55c15 9 34 9 49 0l141-81c36-21 58-59 58-101V397c0-72-78-116-140-80l51-13Z"/>
+        <path d="m650 560 144-83c31-18 69-18 100 0l6 4v234c0 57-30 110-79 138l-126 73c-47 27-106-7-106-61V666c0-44 23-84 61-106Z"/>
+      </g>
+      <path d="m650 742 60 60 127-147" fill="none" stroke="#000" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <rect width="1024" height="1024" fill="#fff" mask="url(#mark-mask)"/>
+</svg>

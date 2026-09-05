@@ -14,6 +14,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -39,9 +41,8 @@ class CatalogAccessibilityInstrumentedTest {
         renderCard()
 
         composeRule.onNodeWithText("Example").assertIsDisplayed()
-        composeRule.onNodeWithText("UPDATE").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Status: Update").assertIsDisplayed()
-        composeRule.onNodeWithText("Update")
+        composeRule.onNode(hasText("Update") and hasClickAction())
             .assertIsEnabled()
             .assertHasClickAction()
         composeRule.onNodeWithContentDescription("More actions for Example")
@@ -69,7 +70,7 @@ class CatalogAccessibilityInstrumentedTest {
         renderCard(fontScale = 2f)
 
         composeRule.onNodeWithText("Example").assertIsDisplayed()
-        composeRule.onNodeWithText("Update")
+        composeRule.onNode(hasText("Update") and hasClickAction())
             .performScrollTo()
             .assertIsDisplayed()
             .assertHasClickAction()
@@ -104,7 +105,7 @@ class CatalogAccessibilityInstrumentedTest {
 
         composeRule.onNodeWithContentDescription("More actions for Example")
             .assertIsDisplayed()
-        composeRule.onNodeWithText("Update")
+        composeRule.onNode(hasText("Update") and hasClickAction())
             .performScrollTo()
             .assertIsDisplayed()
             .assertHasClickAction()

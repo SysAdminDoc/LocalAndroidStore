@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.7 (2026-09-05)
+
+> **v0.2.7 status**: Current 2026-09-05 (`versionCode = 9`, `versionName = "0.2.7"`). Brand, release presentation, and installed-product verification pass.
+
+- Replaced the generic storefront icon with a flat catalog-and-verification mark that remains legible at launcher size. The editable SVG, monochrome source, legacy PNG, adaptive foregrounds, and themed icon layers now share one geometry.
+- Rebuilt the public project page around a clear private-catalog promise, direct release downloads, an honest trust model, current toolchain facts, and screenshots captured from the signed Android 15 installation.
+- Added a reusable 1600 by 900 product hero plus catalog, Settings, activity-journal, and publisher-recovery images. Security screenshots use deterministic instrumented data; the catalog was populated through an authenticated source on the installed release build.
+- Updated both phone and Wear OS package versions to 0.2.7, refreshed the release icon background for better dark-theme contrast, and wired the companion release to the same local signing identity.
+- Fixed the WorkManager 2.11.2 instrumentation regression by asserting queued generation evidence through LocalAndroidStore's persisted status store instead of the removed `WorkInfo.inputData` surface.
+- Updated catalog accessibility checks to select the clickable update action instead of colliding with the status badge that carries the same visible label.
+- Verified the final phone and Wear OS release APKs under the same publisher certificate. Phone and Wear unit tests, both lint targets, release assembly, and all 36 Android 15 instrumentation tests pass locally.
+
 ## v0.2.6 (2026-09-05)
 
 > **v0.2.6 status**: Current 2026-09-05 (`versionCode = 8`, `versionName = "0.2.6"`). Trust pass on library restore and F-Droid build selection. The full unit suite could not be run on the build host during this pass; see `Roadmap_Blocked.md`.

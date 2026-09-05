@@ -59,7 +59,7 @@ class BackgroundSchedulingInstrumentedTest {
             assertTrue(work.isNotEmpty())
             assertEquals(
                 payload.generationId,
-                work.first().inputData.getString("generation_id"),
+                ServiceLocator.queuedUpdateStatus.get(payload)?.generationId,
             )
             assertTrue(
                 work.all {

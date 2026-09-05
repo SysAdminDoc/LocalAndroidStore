@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">LocalAndroidStore product overview</title>
+  <desc id="desc">A private Android app catalog with authenticated release discovery, signed APK verification, safe updates, and an on-device activity journal.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#09070f"/>
+      <stop offset="0.58" stop-color="#100b1a"/>
+      <stop offset="1" stop-color="#07131a"/>
+    </linearGradient>
+    <radialGradient id="mauveGlow" cx="0.18" cy="0.16" r="0.72">
+      <stop offset="0" stop-color="#cba6f7" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#cba6f7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blueGlow" cx="0.92" cy="0.72" r="0.66">
+      <stop offset="0" stop-color="#74c7ec" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#74c7ec" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wordmark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f5f0ff"/>
+      <stop offset="0.46" stop-color="#cba6f7"/>
+      <stop offset="0.74" stop-color="#74c7ec"/>
+      <stop offset="1" stop-color="#a6e3a1"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000000" flood-opacity="0.62"/>
+    </filter>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000000" flood-opacity="0.46"/>
+    </filter>
+    <clipPath id="catalogClip">
+      <rect x="1030" y="54" width="470" height="792" rx="54"/>
+    </clipPath>
+    <clipPath id="settingsClip">
+      <rect x="824" y="164" width="356" height="654" rx="44"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#background)"/>
+  <rect width="1600" height="900" fill="url(#mauveGlow)"/>
+  <rect width="1600" height="900" fill="url(#blueGlow)"/>
+  <path d="M0 694C264 594 474 606 726 712s494 118 874-72v260H0Z" fill="#161124" opacity="0.4"/>
+  <path d="M0 760c302-104 548-48 764 28 206 74 462 88 836-84" fill="none" stroke="#cba6f7" stroke-opacity="0.12" stroke-width="2"/>
+
+  <g transform="translate(92 76) scale(.155)" stroke="#181825" stroke-width="34" stroke-linejoin="round" filter="url(#softShadow)">
+    <path fill="#CBA6F7" d="M512 76c18 0 35 5 51 14l241 139c33 19 33 67 0 86L563 454c-32 18-70 18-102 0L220 315c-33-19-33-67 0-86L461 90c16-9 33-14 51-14Z"/>
+    <path fill="#74C7EC" d="M215 304 470 451 350 520c-20 12-20 41 0 53l120 69v237c0 35-38 56-68 38L205 803c-49-28-79-81-79-138V397c0-72 78-116 140-80l-51-13Z"/>
+    <path fill="#B4BEFE" d="M809 304 554 451l120 69c20 12 20 41 0 53l-120 69 96 55c15 9 34 9 49 0l141-81c36-21 58-59 58-101V397c0-72-78-116-140-80l51-13Z"/>
+    <path fill="#A6E3A1" d="m650 560 144-83c31-18 69-18 100 0l6 4v234c0 57-30 110-79 138l-126 73c-47 27-106-7-106-61V666c0-44 23-84 61-106Z"/>
+    <path d="m650 742 60 60 127-147" fill="none" stroke="#181825" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <text x="280" y="120" fill="#cba6f7" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="700" letter-spacing="3.4">PRIVATE RELEASES. VERIFIED LOCALLY.</text>
+  <text x="92" y="288" fill="url(#wordmark)" font-family="Segoe UI, Arial, sans-serif" font-size="78" font-weight="800" letter-spacing="-4">LocalAndroidStore</text>
+  <text x="96" y="363" fill="#eee9f7" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="650">Your releases, installed with proof.</text>
+  <text x="96" y="412" fill="#b8b0c9" font-family="Segoe UI, Arial, sans-serif" font-size="25">Bring private GitHub and F-Droid releases into one catalog.</text>
+  <text x="96" y="448" fill="#b8b0c9" font-family="Segoe UI, Arial, sans-serif" font-size="25">Inspect APK identity and signer continuity before install.</text>
+
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="650">
+    <g transform="translate(96 498)">
+      <rect width="184" height="48" rx="24" fill="#1d1728" stroke="#5d4777"/>
+      <circle cx="25" cy="24" r="7" fill="#cba6f7"/>
+      <text x="43" y="31" fill="#e8e1f1">GitHub Releases</text>
+    </g>
+    <g transform="translate(294 498)">
+      <rect width="120" height="48" rx="24" fill="#111d22" stroke="#31576a"/>
+      <circle cx="25" cy="24" r="7" fill="#74c7ec"/>
+      <text x="43" y="31" fill="#e8e1f1">F-Droid</text>
+    </g>
+    <g transform="translate(428 498)">
+      <rect width="130" height="48" rx="24" fill="#15221b" stroke="#3c6146"/>
+      <circle cx="25" cy="24" r="7" fill="#a6e3a1"/>
+      <text x="43" y="31" fill="#e8e1f1">Wear OS</text>
+    </g>
+    <g transform="translate(572 498)">
+      <rect width="130" height="48" rx="24" fill="#231b16" stroke="#6a513b"/>
+      <circle cx="25" cy="24" r="7" fill="#fab387"/>
+      <text x="43" y="31" fill="#e8e1f1">Shizuku</text>
+    </g>
+  </g>
+
+  <g transform="translate(96 612)" font-family="Segoe UI, Arial, sans-serif" filter="url(#softShadow)">
+    <rect width="654" height="164" rx="28" fill="#14101d" stroke="#30263f"/>
+    <line x1="218" y1="30" x2="218" y2="134" stroke="#30263f"/>
+    <line x1="436" y1="30" x2="436" y2="134" stroke="#30263f"/>
+    <g transform="translate(30 31)">
+      <text y="32" fill="#a6e3a1" font-size="30" font-weight="800">PINNED</text>
+      <text y="64" fill="#d7d0e1" font-size="16" font-weight="650">publisher keys</text>
+      <text y="89" fill="#8f879f" font-size="14">with rotation proof</text>
+    </g>
+    <g transform="translate(247 31)">
+      <text y="32" fill="#74c7ec" font-size="30" font-weight="800">OFFLINE</text>
+      <text y="64" fill="#d7d0e1" font-size="16" font-weight="650">saved catalog</text>
+      <text y="89" fill="#8f879f" font-size="14">rate-aware refreshes</text>
+    </g>
+    <g transform="translate(465 31)">
+      <text y="32" fill="#cba6f7" font-size="30" font-weight="800">LOCAL</text>
+      <text y="64" fill="#d7d0e1" font-size="16" font-weight="650">device journal</text>
+      <text y="89" fill="#8f879f" font-size="14">redacted support export</text>
+    </g>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="808" y="148" width="388" height="686" rx="58" fill="#08070c" stroke="#4e3b65" stroke-width="3"/>
+    <image x="824" y="164" width="356" height="791" xlink:href="screenshots/settings.png" clip-path="url(#settingsClip)" preserveAspectRatio="xMidYMin slice"/>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="1012" y="36" width="506" height="828" rx="68" fill="#050407" stroke="#765896" stroke-width="4"/>
+    <image x="1030" y="54" width="470" height="1044" xlink:href="screenshots/catalog.png" clip-path="url(#catalogClip)" preserveAspectRatio="xMidYMin slice"/>
+  </g>
+  <circle cx="1491" cy="94" r="8" fill="#a6e3a1"/>
+  <text x="1445" y="128" fill="#a6e3a1" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="750" text-anchor="middle" letter-spacing="1.2">SIGNED</text>
+</svg>
