@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v0.2.6 (2026-09-05)
+
+> **v0.2.6 status**: Current 2026-09-05 (`versionCode = 8`, `versionName = "0.2.6"`). Trust pass on library restore and F-Droid build selection. The full unit suite could not be run on the build host during this pass; see `Roadmap_Blocked.md`.
 
 - F-Droid version selection now honours the device's CPU architecture and Android version. The index-v2 parser reads each version's `nativecode` and `usesSdk.maxSdkVersion` alongside the existing `minSdkVersion`, and the catalog picks the newest version this device can actually install instead of the highest version code. F-Droid gives every architecture its own version code, so the highest one is routinely a build the device cannot run. When a repository publishes nothing compatible, the source now reports how many apps were skipped instead of dropping them silently.
 
