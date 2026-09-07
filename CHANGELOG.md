@@ -1,8 +1,19 @@
 # Changelog
 
+## v0.2.8 (2026-09-07)
+
+> **v0.2.8 status**: Current 2026-09-07 (`versionCode = 10`, `versionName = "0.2.8"`). Brand concept archive release.
+
+- Preserved all five original LocalAndroidStore logo directions under `assets/brand/concepts/`, including the approved catalog-and-verification design.
+- Added the untouched selected master and a machine-readable selection record so future brand work starts from the approved source.
+- Made the journal device check tolerate legitimate ambient diagnostic entries while still requiring the interactive Diagnostics tab.
+- Fixed the trust-matrix runner's Windows SDK path parsing, made every emulator run fully headless, and moved it to the current SwiftShader renderer. API 37 checks now run in rebooted groups to avoid preview-system resource exhaustion, and `-Apis` supports focused reruns.
+- Corrected the API 26 queue-generation assertion and kept dialog screenshot capture on Android versions where Compose supports it.
+- Rebuilt and verified the signed phone and Wear OS release packages under the existing publisher identity.
+
 ## v0.2.7 (2026-09-05)
 
-> **v0.2.7 status**: Current 2026-09-05 (`versionCode = 9`, `versionName = "0.2.7"`). Brand, release presentation, and installed-product verification pass.
+> **v0.2.7 status**: Released 2026-09-05 (`versionCode = 9`, `versionName = "0.2.7"`). Brand, release presentation, and installed-product verification pass.
 
 - Replaced the generic storefront icon with a flat catalog-and-verification mark that remains legible at launcher size. The editable SVG, monochrome source, legacy PNG, adaptive foregrounds, and themed icon layers now share one geometry.
 - Rebuilt the public project page around a clear private-catalog promise, direct release downloads, an honest trust model, current toolchain facts, and screenshots captured from the signed Android 15 installation.
@@ -504,7 +515,7 @@ These came up in research and will not ship. Stated up-front to prevent silent r
 
 - **v0.x.0 = milestone** with a changelog entry, signed APK + sha256 sidecar, release notes summarizing every numbered item in the tier.
 - **v0.x.y = bug-fix** with a single-line CHANGELOG entry. No new tier items move.
-- **CHANGELOG.md, README badge, `app/build.gradle.kts` versionName/versionCode, ROADMAP version-line, repo `CLAUDE.md` version-history line: must all match.** The user's "Release vX.Y.Z" recipe is the source of truth.
+- **CHANGELOG.md, the README badge, Gradle version fields, the roadmap version, and local working notes must all match.** The release recipe is the source of truth.
 
 ---
 

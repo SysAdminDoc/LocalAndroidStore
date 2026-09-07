@@ -1,6 +1,7 @@
 package com.sysadmin.lasstore.ui.catalog
 
 import android.content.Context
+import android.os.Build
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
@@ -57,7 +58,9 @@ class PublisherTrustRecoveryDialogInstrumentedTest {
         composeRule.onAllNodesWithText(NEW_SIGNER, useUnmergedTree = true).assertCountEquals(1)
         composeRule.onNodeWithText("2. $NEW_SIGNER", substring = true).assertExists()
         composeRule.onNodeWithText("Continue").assertIsNotEnabled()
-        saveScreenshot("publisher-trust-details.png")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            saveScreenshot("publisher-trust-details.png")
+        }
 
         composeRule.onNodeWithText("Type the exact package id").performTextInput(PACKAGE_NAME)
         composeRule.onNodeWithText("Continue").assertIsEnabled().performClick()
@@ -69,7 +72,9 @@ class PublisherTrustRecoveryDialogInstrumentedTest {
             substring = true,
         ).performClick()
         composeRule.onNodeWithText("Replace publisher pin").assertIsEnabled()
-        saveScreenshot("publisher-trust-final.png")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            saveScreenshot("publisher-trust-final.png")
+        }
         composeRule.onNodeWithText("Replace publisher pin").performClick()
 
         assertEquals(1, confirmations)

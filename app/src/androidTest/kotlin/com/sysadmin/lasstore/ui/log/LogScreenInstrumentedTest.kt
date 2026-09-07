@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -57,8 +59,13 @@ class LogScreenInstrumentedTest {
             }
         }
 
-        composeRule.onNodeWithText("Diagnostics 3").assertExists()
-        composeRule.onNodeWithText("Install audit 1").assertExists().performClick()
+        composeRule.onNode(
+            hasText("Diagnostics", substring = true) and hasClickAction(),
+        ).assertExists()
+        composeRule.onNodeWithText("Catalog refresh completed").assertExists()
+        composeRule.onNode(
+            hasText("Install audit", substring = true) and hasClickAction(),
+        ).assertExists().performClick()
         composeRule.onNodeWithText("com.example.journal").assertExists()
         composeRule.onNodeWithContentDescription("Export redacted support bundle").assertExists()
         saveScreenshot("activity-journal.png")
@@ -71,7 +78,9 @@ class LogScreenInstrumentedTest {
         ).assertExists()
         composeRule.onNodeWithText("Cancel").performClick()
 
-        composeRule.onNodeWithText("Crash evidence 1").performClick()
+        composeRule.onNode(
+            hasText("Crash evidence", substring = true) and hasClickAction(),
+        ).performClick()
         composeRule.onNodeWithText("Install failed safely").assertExists()
     }
 

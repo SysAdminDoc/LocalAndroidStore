@@ -52,7 +52,7 @@ class BackgroundSchedulingInstrumentedTest {
         val scheduler = BackgroundUpdateScheduler(context, ServiceLocator.logger)
 
         try {
-            assertTrue(scheduler.enqueue(info))
+            assertTrue(scheduler.enqueue(payload))
             val work = WorkManager.getInstance(context)
                 .getWorkInfosForUniqueWork(payload.workName)
                 .get(10, TimeUnit.SECONDS)

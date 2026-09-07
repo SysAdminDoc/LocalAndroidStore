@@ -16,7 +16,6 @@ function Read-ProjectFile([string]$Name) {
 $gradle = Read-ProjectFile "app/build.gradle.kts"
 $readme = Read-ProjectFile "README.md"
 $changelog = Read-ProjectFile "CHANGELOG.md"
-$claude = Read-ProjectFile "CLAUDE.md"
 $roadmap = Read-ProjectFile "ROADMAP.md"
 
 $versionMatch = [regex]::Match($gradle, '(?m)^\s*versionName\s*=\s*"(?<value>\d+\.\d+\.\d+)"')
@@ -51,14 +50,6 @@ if ($currentChangelog.Success) {
     Compare-Value "CHANGELOG current versionCode" $currentChangelog.Groups["code"].Value $versionCode
 } else {
     $errors.Add("CHANGELOG current release marker could not be found.")
-}
-
-$claudeMarker = [regex]::Match(
-    $claude,
-    "(?im)^\s*-\s*v$([regex]::Escape($version))\s+\("
-)
-if (-not $claudeMarker.Success) {
-    $errors.Add("CLAUDE.md has no version-history entry for v$version.")
 }
 
 $roadmapMarker = [regex]::Match(

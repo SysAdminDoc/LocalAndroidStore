@@ -10,14 +10,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest"><img src="https://img.shields.io/badge/version-0.2.7-cba6f7?style=flat-square" alt="Version 0.2.7" /></a>
+  <a href="https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest"><img src="https://img.shields.io/badge/version-0.2.8-cba6f7?style=flat-square" alt="Version 0.2.8" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a6e3a1?style=flat-square" alt="MIT license" /></a>
   <a href="https://developer.android.com/about/versions/oreo"><img src="https://img.shields.io/badge/Android-8.0%2B-74c7ec?style=flat-square&logo=android&logoColor=white" alt="Android 8.0 or newer" /></a>
   <a href="https://kotlinlang.org/"><img src="https://img.shields.io/badge/Kotlin-2.4.10-7f52ff?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin 2.4.10" /></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest/download/LocalAndroidStore-v0.2.7-release.apk"><strong>Download the Android app</strong></a>
+  <a href="https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest/download/LocalAndroidStore-v0.2.8-release.apk"><strong>Download the Android app</strong></a>
   &nbsp;·&nbsp;
   <a href="#trust-before-install">See the trust model</a>
   &nbsp;·&nbsp;
@@ -40,7 +40,7 @@ The catalog is useful on a fresh phone, a test device, or a private fleet. It ca
   </tr>
 </table>
 
-The catalog and Settings images above come from the signed v0.2.7 release running on an Android 15 emulator. The journal image uses the app's deterministic visual-test data so its diagnostic categories stay reproducible.
+The catalog and Settings images above show the signed release running on an Android 15 emulator. The journal image uses the app's deterministic visual-test data so its diagnostic categories stay reproducible.
 
 ## What makes it different
 
@@ -91,7 +91,7 @@ The app can verify properties of the bytes it downloaded and compare them with l
 
 ### Phone, tablet, or Android TV
 
-1. Download [LocalAndroidStore v0.2.7](https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest/download/LocalAndroidStore-v0.2.7-release.apk).
+1. Download [LocalAndroidStore v0.2.8](https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest/download/LocalAndroidStore-v0.2.8-release.apk).
 2. Check the file against [SHA256SUMS](https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest/download/SHA256SUMS) if you verify downloads manually.
 3. Open the APK. Android may ask you to allow installs from the app you used to open it.
 4. Launch LocalAndroidStore, open Settings, and save your first source.
@@ -100,7 +100,7 @@ Android 8.0 or newer is required. Android 12 or newer can use Material You color
 
 ### Wear OS companion
 
-The separate [Wear OS APK](https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest/download/LocalAndroidStore-v0.2.7-wear-release.apk) provides an update-count Tile and a short-text complication. A paired watch can ask the phone to refresh. APK installation stays on the phone.
+The separate [Wear OS APK](https://github.com/SysAdminDoc/LocalAndroidStore/releases/latest/download/LocalAndroidStore-v0.2.8-wear-release.apk) provides an update-count Tile and a short-text complication. A paired watch can ask the phone to refresh. APK installation stays on the phone.
 
 ### Optional Shizuku path
 
@@ -181,6 +181,7 @@ Release signing is local by design. Without the repository owner's `keystore.pro
 | `app/src/main/kotlin/com/sysadmin/lasstore/install` | Artifact verification, install sessions, recovery, and queued work |
 | `app/src/main/kotlin/com/sysadmin/lasstore/ui` | Compose catalog, Settings, activity journal, and trust review |
 | `wear` | Wear OS Tile, complication, and phone refresh request |
+| `assets/brand` | Selected logo master and the original concept directions |
 | `scripts` | Local version and trust-matrix verification |
 
 The phone app is a single-activity Compose application. Long-running work uses coroutines, WorkManager, or Android's user-initiated job path. Runtime failures remain visible in the UI and device journal.

@@ -14,8 +14,8 @@ android {
         applicationId = "com.sysadmin.lasstore.wear"
         minSdk = 26
         targetSdk = 37
-        versionCode = 9
-        versionName = "0.2.7"
+        versionCode = 10
+        versionName = "0.2.8"
     }
 
     signingConfigs {
